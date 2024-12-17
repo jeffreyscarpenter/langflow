@@ -1,117 +1,74 @@
-from pathlib import Path
-from urllib.parse import urlparse
-
-from loguru import logger
-
 from langflow.custom import Component
-from langflow.io import BoolInput, DropdownInput, FileInput, IntInput, MessageTextInput, Output
+from langflow.io import MessageTextInput, Output
 from langflow.schema import Data
 
+from nv_ingest_client.client import NvIngestClient
+from nv_ingest_client.primitives import JobSpec
+from nv_ingest_client.primitives.tasks import ExtractTask
+from nv_ingest_client.primitives.tasks import SplitTask
+from nv_ingest_client.util.file_processing.extract import extract_file_content, EXTENSION_TO_DOCUMENT_TYPE
+import logging, time
 
-class NvidiaIngestComponent(Component):
-    display_name = "NVIDIA Ingest"
-    description = "Process, transform, and store data."
+class NVIDIAIngestComponent(Component):
+    display_name = "NVIDIA Ingest Component"
+    description = "Ingest documents"
     documentation: str = "https://github.com/NVIDIA/nv-ingest/tree/main/docs"
     icon = "NVIDIA"
     name = "NVIDIAIngest"
-    beta = True
 
-    try:
-        from nv_ingest_client.util.file_processing.extract import EXTENSION_TO_DOCUMENT_TYPE
-
-        file_types = list(EXTENSION_TO_DOCUMENT_TYPE.keys())
-        supported_file_types_info = f"Supported file types: {', '.join(file_types)}"
-    except ImportError:
-        msg = (
-            "NVIDIA Ingest dependencies missing. "
-            "Please install them using your package manager. (e.g. uv pip install langflow[nv-ingest])"
-        )
-        logger.warning(msg)
-        file_types = [msg]
-        supported_file_types_info = msg
+    file_types = list(EXTENSION_TO_DOCUMENT_TYPE.keys())
+    supported_file_types_info = f"Supported file types: {', '.join(file_types)}"
 
     inputs = [
-        MessageTextInput(
-            name="base_url",
-            display_name="NVIDIA Ingestion URL",
-            info="The URL of the NVIDIA Ingestion API.",
-        ),
         FileInput(
             name="path",
             display_name="Path",
             file_types=file_types,
             info=supported_file_types_info,
-            required=True,
         ),
         BoolInput(
             name="extract_text",
-            display_name="Extract Text",
-            info="Extract text from documents",
+            display_name="Extract text?",
+            info="Extract text or not",
             value=True,
         ),
         BoolInput(
-            name="extract_charts",
-            display_name="Extract Charts",
-            info="Extract text from charts",
+            name="extract_images",
+            display_name="Extract images?",
+            info="Extract images or not",
             value=False,
         ),
         BoolInput(
             name="extract_tables",
-            display_name="Extract Tables",
-            info="Extract text from tables",
+            display_name="Extract tables?",
+            info="Extract tables or not",
             value=True,
-        ),
-        DropdownInput(
-            name="text_depth",
-            display_name="Text Depth",
-            info=(
-                "Level at which text is extracted (applies before splitting). "
-                "Support for 'block', 'line', 'span' varies by document type."
-            ),
-            options=["document", "page", "block", "line", "span"],
-            value="document",  # Default value
-            advanced=True,
         ),
         BoolInput(
             name="split_text",
-            display_name="Split Text",
-            info="Split text into smaller chunks",
+            display_name="Split text?",
+            info="Split text into smaller chunks?",
             value=True,
         ),
-        DropdownInput(
-            name="split_by",
-            display_name="Split By",
-            info="How to split into chunks ('size' splits by number of characters)",
-            options=["page", "sentence", "word", "size"],
-            value="word",  # Default value
-            advanced=True,
-        ),
         IntInput(
-            name="split_length",
-            display_name="Split Length",
-            info="The size of each chunk based on the 'split_by' method",
+            name="chunk_overlap",
+            display_name="Chunk Overlap",
+            info="Number of characters to overlap between chunks.",
             value=200,
             advanced=True,
         ),
         IntInput(
-            name="split_overlap",
-            display_name="Split Overlap",
-            info="Number of segments (as determined by the 'split_by' method) to overlap from previous chunk",
-            value=20,
-            advanced=True,
-        ),
-        IntInput(
-            name="max_character_length",
-            display_name="Max Character Length",
-            info="Maximum number of characters in each chunk",
+            name="chunk_size",
+            display_name="Chunk Size",
+            info="The maximum number of characters in each chunk.",
             value=1000,
             advanced=True,
         ),
-        IntInput(
-            name="sentence_window_size",
-            display_name="Sentence Window Size",
-            info="Number of sentences to include from previous and following chunk (when split_by='sentence')",
-            value=0,
+        MessageTextInput(
+            name="separator",
+            display_name="Separator",
+            info="The character to split on. Defaults to newline.",
+            value="\n",
             advanced=True,
         ),
     ]
@@ -120,116 +77,63 @@ class NvidiaIngestComponent(Component):
         Output(display_name="Data", name="data", method="load_file"),
     ]
 
-    def load_file(self) -> list[Data]:
-        try:
-            from nv_ingest_client.client import Ingestor
-        except ImportError as e:
-            msg = (
-                "NVIDIA Ingest dependencies missing. "
-                "Please install them using your package manager. (e.g. uv pip install langflow[nv-ingest])"
-            )
-            raise ImportError(msg) from e
-
-        self.base_url: str | None = self.base_url.strip() if self.base_url else None
-
+    def load_file(self) -> Data:
         if not self.path:
-            err_msg = "Upload a file to use this component."
-            self.log(err_msg, name="NVIDIAIngestComponent")
-            raise ValueError(err_msg)
-
+            raise ValueError("Please, upload a file to use this component.")
         resolved_path = self.resolve_path(self.path)
+
         extension = Path(resolved_path).suffix[1:].lower()
+
         if extension not in self.file_types:
-            err_msg = f"Unsupported file type: {extension}"
-            self.log(err_msg, name="NVIDIAIngestComponent")
-            raise ValueError(err_msg)
+            raise ValueError(f"Unsupported file type: {extension}")
 
-        try:
-            parsed_url = urlparse(self.base_url)
-            if not parsed_url.hostname or not parsed_url.port:
-                err_msg = "Invalid URL: Missing hostname or port."
-                self.log(err_msg, name="NVIDIAIngestComponent")
-                raise ValueError(err_msg)
-        except Exception as e:
-            self.log(f"Error parsing URL: {e}", name="NVIDIAIngestComponent")
-            raise
+        file_content, file_type = extract_file_content(resolved_path)
 
-        self.log(
-            f"Creating Ingestor for host: {parsed_url.hostname!r}, port: {parsed_url.port!r}",
-            name="NVIDIAIngestComponent",
+        job_spec = JobSpec(
+            document_type=file_type,
+            payload=file_content,
+            source_id=self.path,
+            source_name=self.path,
+            extended_options={"tracing_options": {"trace": True, "ts_send": time.time_ns()}},
         )
-        try:
-            from nv_ingest_client.client import Ingestor
 
-            ingestor = (
-                Ingestor(message_client_hostname=parsed_url.hostname, message_client_port=parsed_url.port)
-                .files(resolved_path)
-                .extract(
-                    extract_text=self.extract_text,
-                    extract_tables=self.extract_tables,
-                    extract_charts=self.extract_charts,
-                    extract_images=False,  # Currently not supported
-                    text_depth=self.text_depth,
-                )
-            )
-        except Exception as e:
-            self.log(f"Error creating Ingestor: {e}", name="NVIDIAIngestComponent")
-            raise
+        extract_task = ExtractTask(
+            document_type=file_type,
+            extract_text=self.extract_text,
+            extract_images=self.extract_images,
+            extract_tables=self.extract_tables,
+        )
+
+        job_spec.add_task(extract_task)
 
         if self.split_text:
-            ingestor = ingestor.split(
-                split_by=self.split_by,
-                split_length=self.split_length,
-                split_overlap=self.split_overlap,
-                max_character_length=self.max_character_length,
-                sentence_window_size=self.sentence_window_size,
+            split_task = SplitTask(
+                split_by="word",
+                split_length=self.chunk_size,
+                split_overlap=self.chunk_overlap,
+                max_character_length=self.chunk_size,
+                sentence_window_size=0,
             )
+            job_spec.add_task(split_task)
 
-        try:
-            result = ingestor.ingest()
-        except Exception as e:
-            self.log(f"Error during ingestion: {e}", name="NVIDIAIngestComponent")
-            raise
+        client = NvIngestClient() # message_client_hostname="localhost", message_client_port=7670
 
-        self.log(f"Results: {result}", name="NVIDIAIngestComponent")
+        job_id = client.add_job(job_spec)
+
+        client.submit_job(job_id, "morpheus_task_queue")
+
+        result = client.fetch_job_result(job_id, timeout=60)
 
         data = []
-        document_type_text = "text"
-        document_type_structured = "structured"
 
-        # Result is a list of segments as determined by the text_depth option (if "document" then only one segment)
-        # each segment is a list of elements (text, structured, image)
-        for segment in result:
-            for element in segment:
-                document_type = element.get("document_type")
-                metadata = element.get("metadata", {})
-                source_metadata = metadata.get("source_metadata", {})
-                content_metadata = metadata.get("content_metadata", {})
+        for element in result[0][0]:
+            if element['document_type'] == 'text':
+                data.append(Data(text=element['metadata']['content'],file_path=element['metadata']['source_metadata']['source_name'],document_type=element['document_type'],description=element['metadata']['content_metadata']['description']))
+            elif element['document_type'] == 'structured':
+                data.append(Data(text=element['metadata']['table_metadata']['table_content'],file_path=element['metadata']['source_metadata']['source_name'],document_type=element['document_type'],description=element['metadata']['content_metadata']['description']))
+            #TODO handle image
 
-                if document_type == document_type_text:
-                    data.append(
-                        Data(
-                            text=metadata.get("content", ""),
-                            file_path=source_metadata.get("source_name", ""),
-                            document_type=document_type,
-                            description=content_metadata.get("description", ""),
-                        )
-                    )
-                # Both charts and tables are returned as "structured" document type,
-                # with extracted text in "table_content"
-                elif document_type == document_type_structured:
-                    table_metadata = metadata.get("table_metadata", {})
-                    data.append(
-                        Data(
-                            text=table_metadata.get("table_content", ""),
-                            file_path=source_metadata.get("source_name", ""),
-                            document_type=document_type,
-                            description=content_metadata.get("description", ""),
-                        )
-                    )
-                else:
-                    # image is not yet supported; skip if encountered
-                    self.log(f"Unsupported document type: {document_type}", name="NVIDIAIngestComponent")
+        print(data)
 
         self.status = data if data else "No data"
-        return data
+        return data or Data()
