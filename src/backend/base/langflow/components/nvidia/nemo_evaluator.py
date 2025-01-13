@@ -14,16 +14,16 @@ class NVIDIANeMoEvaluatorComponent(Component):
     beta = True
 
     # Endpoint configuration
-    endpoint = os.getenv("NVIDIA_EVALUATOR_BASE_URL", "http://35.223.81.140:11000")
-    model_endpoint = os.getenv("NVIDIA_MODELS_BASE_URL", "http://35.223.81.140:10000")
-    datastore_base_url = os.getenv("NVIDIA_DATA_STORE_BASE_URL", "http://35.223.81.140:8000")
+    endpoint = os.getenv("NVIDIA_EVALUATOR_BASE_URL", "http://localhost:11000")
+    model_endpoint = os.getenv("NVIDIA_MODELS_BASE_URL", "http://localhost:10000")
+    datastore_base_url = os.getenv("NVIDIA_DATA_STORE_BASE_URL", "http://localhost:8000")
     url = f"{endpoint}/v1/evaluations"
     model_url = f"{model_endpoint}/v1/models"
     inference_url = "http://nemo-nim.default.svc.cluster.local:8000/v1"
 
     headers = {
-        'accept': 'application/json',
-        'Content-Type': 'application/json'
+        "accept": "application/json",
+        "Content-Type": "application/json"
     }
 
     # Define initial static inputs
@@ -393,8 +393,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
                 # Log the successful response
                 formatted_result = json.dumps(result, indent=2)
-                self.log(f"Received successful evaluation response: {formatted_result}",
-                         name="NeMoEvaluatorComponent")
+                msg = f"Received successful evaluation response: {formatted_result}"
+                self.log(msg)
                 return result
         except httpx.HTTPStatusError as exc:
             error_msg = f"HTTP error {exc.response.status_code} on URL {self.url}."
