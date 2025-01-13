@@ -110,7 +110,7 @@ class ArizeAIDatastoreComponent(Component):
                     input_message = row.get("attributes.input.value", None)
                     output_message = row.get("attributes.output.value", None)
 
-                new_data.append({"input": input_message, "completion": output_message})
+                new_data.append({"prompt": input_message, "completion": output_message})
 
             # Create new DataFrame with the mapped values
             new_df = pd.DataFrame(new_data)
@@ -118,7 +118,7 @@ class ArizeAIDatastoreComponent(Component):
             # Create a list of Data objects, one for each row
             data_objects = [
                 Data(
-                    data={"input": row["input"], "completion": row["completion"]},
+                    data={"prompt": row["prompt"], "completion": row["completion"]},
                     dataset_name=selected_dataset_name,
                     document_type="Arize dataset",
                     description="",

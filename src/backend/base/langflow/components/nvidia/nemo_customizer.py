@@ -289,14 +289,14 @@ class NVIDIANeMoCustomizerComponent(Component):
                     self.log(f"Skipping non-Data object in training data, but got: {data_obj}")
                     continue
 
-                # Extract only "input" and "completion" fields if present
+                # Extract only "prompt" and "completion" fields if present
                 filtered_data = {
-                    "input": getattr(data_obj, "input", None),
+                    "prompt": getattr(data_obj, "prompt", None),
                     "completion": getattr(data_obj, "completion", None),
                 }
 
                 # Check if both fields are present
-                if filtered_data["input"] is not None and filtered_data["completion"] is not None:
+                if filtered_data["prompt"] is not None and filtered_data["completion"] is not None:
                     chunk.append(filtered_data)
 
                 # Process the chunk when it reaches the specified size
