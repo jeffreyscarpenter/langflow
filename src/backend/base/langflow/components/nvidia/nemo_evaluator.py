@@ -14,12 +14,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
     beta = True
 
     # Endpoint configuration
-    endpoint = os.getenv("NVIDIA_EVALUATOR_BASE_URL", "http://localhost:11000")
-    model_endpoint = os.getenv("NVIDIA_MODELS_BASE_URL", "http://localhost:10000")
-    datastore_base_url = os.getenv("NVIDIA_DATA_STORE_BASE_URL", "http://localhost:8000")
-    url = f"{endpoint}/v1/evaluations"
-    model_url = f"{model_endpoint}/v1/models"
-    inference_url = "http://nemo-nim.default.svc.cluster.local:8000/v1"
+
+    inference_url = "http://nemo-nim.model-training.svc.cluster.local:8000/v1"
 
     headers = {
         "accept": "application/json",
@@ -28,17 +24,33 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     # Define initial static inputs
     inputs = [
+        StrInput(
+            name="evaluator_base_url",
+            display_name="NVIDIA NeMo Evaluator Base URL",
+            info="The base URL of the NVIDIA NeMo Evaluator API.",
+        ),
+        StrInput(
+            name="model_base_url",
+            display_name="NVIDIA NeMo Model URL",
+            info="The base URL of the NVIDIA NIM API to obtain models that can be evaluated.",
+        ),
+        StrInput(
+            name="datastore_base_url",
+            display_name="NVIDIA NeMo Datastore Base URL",
+            info="The nemo datastore base URL of the NVIDIA NeMo Datastore API.",
+            advanced=True,
+        ),
         DropdownInput(
             name="000_llm_name",
             display_name="LLM Name",
             info="Select the model for evaluation",
             options=[],  # Dynamically populated
-            refresh_button=True
+            refresh_button=True,
         ),
         StrInput(
             name="001_tag",
             display_name="Tag",
-            info="Any user-provided value. Generated results will be stored in the NeMo Data Store under this name."
+            info="Any user-provided value. Generated results will be stored in the NeMo Data Store under this name.",
         ),
         DropdownInput(
             name="002_evaluation_type",
@@ -46,7 +58,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Select the type of evaluation",
             options=["LM Evaluation Harness", "BigCode Evaluation Harness", "Custom Evaluation", "LLM-as-a-Judge"],
             value="LM Evaluation Harness",
-            real_time_refresh=True  # Ensure dropdown triggers update on change
+            real_time_refresh=True,  # Ensure dropdown triggers update on change
         ),
     ]
 
@@ -71,47 +83,47 @@ class NVIDIANeMoEvaluatorComponent(Component):
             display_name="Few-shot Examples",
             info="The number of few-shot examples before the input.",
             advanced=True,
-            value=5
+            value=5,
         ),
         IntInput(
             name="113_batch_size",
             display_name="Batch Size",
             info="The batch size used for evaluation.",
-            value=16
+            value=16,
         ),
         IntInput(
             name="114_bootstrap_iterations",
             display_name="Bootstrap Iterations",
             info="The number of iterations for bootstrap statistics.",
             advanced=True,
-            value=100000
+            value=100000,
         ),
         FloatInput(
             name="115_limit",
             display_name="Limit",
             info="Limits the number of documents to evaluate for debugging, or limits to X% of documents.",
             advanced=True,
-            value=-1
+            value=-1,
         ),
         BoolInput(
             name="150_greedy",
             display_name="Few-shot Examples",
             info="The number of few-shot examples before the input.",
             advanced=True,
-            value=True
+            value=True,
         ),
         FloatInput(
             name="151_top_p",
             display_name="Top_p",
             info="Threshold to select from most probable tokens until cumulative probability exceeds this value",
             advanced=True,
-            value=0.0
+            value=0.0,
         ),
         IntInput(
             name="152_top_k",
             display_name="Top_k",
             info="The top_k value to be used during generation sampling.",
-            value=1
+            value=1,
         ),
         SliderInput(
             name="153_temperature",
@@ -120,13 +132,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
             min_label="Precise",
             max_label="Creative",
             value=0.1,
-            info="The temperature to be used during generation sampling (0.0 to 2.0)."
+            info="The temperature to be used during generation sampling (0.0 to 2.0).",
         ),
         IntInput(
             name="155_tokens_to_generate",
             display_name="Tokens to Generate",
             info="Max number of tokens to generate during inference.",
-            value=1024
+            value=1024,
         ),
     ]
 
@@ -136,14 +148,14 @@ class NVIDIANeMoEvaluatorComponent(Component):
             name="350_num_of_samples",
             display_name="Number of Samples",
             info="Number of samples to run inference on from the input_file.",
-            value=-1
+            value=-1,
         ),
         MultiselectInput(
             name="351_scorers",
             display_name="Scorers",
             info="List of Scorers for evaluation.",
             options=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
-            value=["accuracy", "bleu", "rouge", "em", "bert", "f1"]
+            value=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
         ),
         DropdownInput(
             name="310_run_inference",
@@ -151,14 +163,14 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Select 'True' to run inference on the provided input_file or 'False' to use an output_file.",
             options=["True", "False"],
             value="True",
-            real_time_refresh=True
+            real_time_refresh=True,
         ),
         # Conditional inputs for run_inference = True
         IntInput(
             name="311_tokens_to_generate",
             display_name="Tokens to Generate",
             info="Max number of tokens to generate during inference.",
-            value=1024
+            value=1024,
         ),
         SliderInput(
             name="312_temperature",
@@ -167,13 +179,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
             min_label="Precise",
             max_label="Creative",
             value=0.1,
-            info="The temperature to be used during generation sampling (0.0 to 2.0)."
+            info="The temperature to be used during generation sampling (0.0 to 2.0).",
         ),
         IntInput(
             name="313_top_k",
             display_name="Top_k",
             info="Top_k value for generation sampling.",
-            value=1
+            value=1,
         ),
         MessageTextInput(
             name="dataset",
@@ -276,8 +288,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
         """
         Fetch models from the specified API endpoint and return a list of model names.
         """
+        model_url = f"{self.model_base_url}/v1/models"
         try:
-            response = httpx.get(self.model_url, headers=self.headers)
+            response = httpx.get(model_url, headers=self.headers)
             response.raise_for_status()
             models_data = response.json()
             models = [model['id'] for model in models_data.get("data", [])]
@@ -380,14 +393,14 @@ class NVIDIANeMoEvaluatorComponent(Component):
         self.log(f"data {data}")
 
         # Send the request and log the output
+        evaluator_url = f"{self.evaluator_base_url}/v1/evaluations"
         try:
             # Format the data as a JSON string for logging
             formatted_data = json.dumps(data, indent=2)
             self.log(f"Sending evaluation request to NeMo API with data: {formatted_data}",
                      name="NeMoEvaluatorComponent")
-
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(self.url, headers=self.headers, json=data)
+                response = await client.post(evaluator_url, headers=self.headers, json=data)
                 response.raise_for_status()
                 result = response.json()
 
@@ -397,11 +410,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 self.log(msg)
                 return result
         except httpx.HTTPStatusError as exc:
-            error_msg = f"HTTP error {exc.response.status_code} on URL {self.url}."
+            error_msg = f"HTTP error {exc.response.status_code} on URL {evaluator_url}."
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg)
         except Exception as exc:
-            error_msg = f"Unexpected error on URL {self.url}: {str(exc)}"
+            error_msg = f"Unexpected error on {str(exc)}"
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg)
 
@@ -443,7 +456,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def _generate_custom_evaluation_body(self) -> dict:
         dataset_path = await self.process_and_upload_dataset()
-        input_file = f"nds:{dataset_path}/input/input.json"
+        input_file = f"nds:{dataset_path}/input.json"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
         self.log(f"run_inference: {run_inference}, type: {type(run_inference)}")
@@ -451,7 +464,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         # Set output_file based on run_inference
         output_file = ""
         if not run_inference:  # Only set output_file if run_inference is False
-            output_file = f"nds:{dataset_path}/output/output.json"
+            output_file = f"nds:{dataset_path}/output.json"
 
         self.log(f"input_file: {input_file}, output_file: {output_file}")
         inference_params = {
@@ -500,7 +513,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def _generate_llm_as_judge_body(self) -> dict:
         dataset_path = await self.process_and_upload_dataset()
-        input_file = f"nds:{dataset_path}/input/input.json"
+        input_file = f"nds:{dataset_path}/input.json"
         # Handle run_inference as a boolean
         self.log(f"input_file: {input_file}")
         inference_params = {
@@ -663,8 +676,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
             file_name1 = "input.json"
 
-            filepath = f"input/{file_name1}"
-            url = f"{self.datastore_base_url}/datasets/{dataset_id}/eval/{filepath}"
+            filepath = f"{file_name1}"
+            url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/testing/{filepath}"
 
             files = {"file": (file_name1, file1_buffer.getvalue(), "application/json")}
             async with httpx.AsyncClient() as client:
@@ -685,8 +698,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     "file": (file_name2, file2_buffer.getvalue(), "application/json"),
                 }
 
-                filepath = f"output/{file_name2}"
-                url = f"{self.datastore_base_url}/datasets/{dataset_id}/eval/{filepath}"
+                filepath = f"{file_name2}"
+                url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/testing/{filepath}"
 
                 async with httpx.AsyncClient() as client:
                     response = await client.post(url, files=files)
@@ -699,10 +712,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     logger.warning(response.text)
 
             logger.info("All data has been processed and uploaded successfully.")
-        except (httpx.RequestError, ValueError) as exc:
+        except Exception as exc:
             exception_str = str(exc)
-            error_msg = f"An unexpected error occurred on URL : {exception_str}"
+            error_msg = f"An unexpected error : {exception_str}"
             self.log(error_msg)
-            return "An error occurred"
+            raise ValueError(error_msg) from exc
 
-        return f"{dataset_name}/eval"
+        return f"{dataset_name}"

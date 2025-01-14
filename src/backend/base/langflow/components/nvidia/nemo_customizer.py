@@ -317,9 +317,11 @@ class NVIDIANeMoCustomizerComponent(Component):
             await asyncio.gather(*tasks)
 
             logger.info("All data has been processed and uploaded successfully.")
-        except Exception:
-            logger.exception("An error occurred")
-            return "An error occurred"
+        except Exception as exc:
+            exception_str = str(exc)
+            error_msg = f"An unexpected error : {exception_str}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
         return dataset_name
 
