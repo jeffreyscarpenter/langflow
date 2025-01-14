@@ -76,7 +76,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
         StrInput(
             name="110_task_name",
             display_name="Task Name",
-            info="Task selected from https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.3/lm_eval/tasks#tasks",
+            info="Task from https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.3/lm_eval/tasks#tasks",
+            value="gsm8k",
+            required=True,
         ),
         IntInput(
             name="112_few_shot_examples",
@@ -165,7 +167,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
             value="True",
             real_time_refresh=True,
         ),
-        # Conditional inputs for run_inference = True
         IntInput(
             name="311_tokens_to_generate",
             display_name="Tokens to Generate",
@@ -208,7 +209,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
             options=["generation", "judgement"],
             value=["generation", "judgement"]
         ),
-        # Conditional inputs for run_inference = True
         IntInput(
             name="411_tokens_to_generate",
             display_name="Tokens to Generate",
@@ -236,7 +236,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Top_p value for generation sampling.",
             value=1.0
         ),
-        # Conditional inputs for run_inference = True
         DropdownInput(
             name="420_judge_llm_name",
             display_name="LLM Name for judge",
@@ -244,7 +243,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
             options=[],  # Dynamically populated
             refresh_button=True
         ),
-        # Conditional inputs for run_inference = True
         IntInput(
             name="421_judge_tokens_to_generate",
             display_name="Judge Tokens to Generate",
@@ -285,16 +283,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
     ]
 
     def fetch_models(self):
-        """
-        Fetch models from the specified API endpoint and return a list of model names.
-        """
+        """Fetch models from the specified API endpoint and return a list of model names."""
         model_url = f"{self.model_base_url}/v1/models"
         try:
             response = httpx.get(model_url, headers=self.headers)
             response.raise_for_status()
             models_data = response.json()
-            models = [model['id'] for model in models_data.get("data", [])]
-            return models
+            return [model["id"] for model in models_data.get("data", [])]
         except httpx.RequestError as exc:
             self.log(f"An error occurred while requesting models: {exc}")
             return []
@@ -303,11 +298,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
             return []
 
     def clear_dynamic_inputs(self, build_config, saved_values):
-        """
-        Clears dynamically added fields by referring to a special marker in build_config.
-        """
+        """Clears dynamically added fields by referring to a special marker in build_config."""
         dynamic_fields = build_config.get("_dynamic_fields", [])
-        print(f"Clearing dynamic inputs. Number of fields to remove: {len(dynamic_fields)}")
+        length_dynamic_fields = len(dynamic_fields)
+        message = f"Clearing dynamic inputs. Number of fields to remove: {length_dynamic_fields}"
+        logger.info(message)
 
         for field in dynamic_fields:
             if field in build_config:
@@ -318,9 +313,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         build_config["_dynamic_fields"] = []
 
     def add_inputs_with_saved_values(self, build_config, input_definitions, saved_values):
-        """
-        Adds inputs to build_config and restores any saved values.
-        """
+        """Adds inputs to build_config and restores any saved values."""
         for input_def in input_definitions:
             # Check if input_def is already a dict or needs conversion
             input_dict = input_def if isinstance(input_def, dict) else input_def.to_dict()
@@ -330,9 +323,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             build_config.setdefault("_dynamic_fields", []).append(input_name)
 
     def add_evaluation_inputs(self, build_config, saved_values, evaluation_type):
-        """
-        Adds inputs based on the evaluation type (LM Evaluation or Custom Evaluation).
-        """
+        """Adds inputs based on the evaluation type (LM Evaluation or Custom Evaluation)."""
         if evaluation_type == "LM Evaluation Harness":
             self.add_inputs_with_saved_values(build_config, self.lm_evaluation_inputs, saved_values)
         elif evaluation_type == "Custom Evaluation":
