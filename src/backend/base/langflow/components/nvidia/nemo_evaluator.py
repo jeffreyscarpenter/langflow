@@ -202,7 +202,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
     # Inputs for Custom Evaluation
     llm_as_judge = [
         MultiselectInput(
-            name="evaluation_stages",
+            name="401_evaluation_stages",
             display_name="Evaluation Stages",
             info="List of Evaluation Stages for evaluation.",
             options=["generation", "judgement"],
@@ -210,13 +210,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
         ),
         # Conditional inputs for run_inference = True
         IntInput(
-            name="tokens_to_generate",
+            name="411_tokens_to_generate",
             display_name="Tokens to Generate",
             info="Max number of tokens to generate during inference.",
             value=1024
         ),
         SliderInput(
-            name="temperature",
+            name="412_temperature",
             display_name="Temperature",
             range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
             min_label="Precise",
@@ -225,20 +225,20 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="The temperature to be used during generation sampling (0.0 to 2.0)."
         ),
         IntInput(
-            name="top_k",
+            name="413_top_k",
             display_name="Top_k",
             info="Top_k value for generation sampling.",
             value=1
         ),
         FloatInput(
-            name="top_p",
+            name="414_top_p",
             display_name="Top_p",
             info="Top_p value for generation sampling.",
             value=1.0
         ),
         # Conditional inputs for run_inference = True
         DropdownInput(
-            name="judge_llm_name",
+            name="420_judge_llm_name",
             display_name="LLM Name for judge",
             info="Select the model for evaluation judge",
             options=[],  # Dynamically populated
@@ -246,13 +246,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
         ),
         # Conditional inputs for run_inference = True
         IntInput(
-            name="judge_tokens_to_generate",
+            name="421_judge_tokens_to_generate",
             display_name="Judge Tokens to Generate",
             info="Max number of tokens to generate during inference for the judge.",
             value=1024
         ),
         SliderInput(
-            name="judge_temperature",
+            name="422_judge_temperature",
             display_name="Temperature for Judge",
             range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
             min_label="Precise",
@@ -261,13 +261,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="The temperature to be used during generation sampling (0.0 to 2.0) for the judge."
         ),
         IntInput(
-            name="judge_top_k",
+            name="423_judge_top_k",
             display_name="Top_k for Judge",
             info="Top_k value for generation sampling for the judge.",
             value=1
         ),
         FloatInput(
-            name="judge_top_p",
+            name="424_judge_top_p",
             display_name="Top_p for Judge",
             info="Threshold to select from most probable tokens until cumulative probability exceeds this value",
             value=1.0
@@ -354,10 +354,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 build_config["000_llm_name"]["options"] = self.fetch_models()
                 print("Updated LLM Name options:", build_config["000_llm_name"]["options"])
 
-            elif field_name == "judge_llm_name":
+            elif field_name == "420_judge_llm_name":
                 # Refresh model options for LLM Name dropdown
-                build_config["judge_llm_name"]["options"] = self.fetch_models()
-                print("Updated LLM Name options:", build_config["judge_llm_name"]["options"])
+                build_config["420_judge_llm_name"]["options"] = self.fetch_models()
+                print("Updated LLM Name options:", build_config["420_judge_llm_name"]["options"])
 
             elif field_name == "002_evaluation_type":
                 self.clear_dynamic_inputs(build_config, saved_values)
@@ -517,12 +517,12 @@ class NVIDIANeMoEvaluatorComponent(Component):
         # Handle run_inference as a boolean
         self.log(f"input_file: {input_file}")
         inference_params = {
-            "tokens_to_generate": getattr(self, "tokens_to_generate", 1024),
-            "temperature": getattr(self, "temperature", 0.0),
-            "top_k": getattr(self, "top_k", 1),
-            "top_p": getattr(self, "top_p", 1),
+            "tokens_to_generate": getattr(self, "411_tokens_to_generate", 1024),
+            "temperature": getattr(self, "412_temperature", 0.0),
+            "top_k": getattr(self, "413_top_k", 1),
+            "top_p": getattr(self, "414_top_p", 1),
         }
-        judge_llm_name = getattr(self, "judge_llm_name", "")
+        judge_llm_name = getattr(self, "420_judge_llm_name", "")
 
         judge_model = {
             "llm_type": "nvidia-nemo-nim",
@@ -532,10 +532,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
         }
 
         judge_inference_params = {
-            "tokens_to_generate": getattr(self, "judge_tokens_to_generate", 1024),
-            "temperature": getattr(self, "judge_temperature", 0.0),
-            "top_k": getattr(self, "judge_top_k", 1),
-            "top_p": getattr(self, "judge_top_p", 1),
+            "tokens_to_generate": getattr(self, "421_judge_tokens_to_generate", 1024),
+            "temperature": getattr(self, "422_judge_temperature", 0.0),
+            "top_k": getattr(self, "423_judge_top_k", 1),
+            "top_p": getattr(self, "424_judge_top_p", 1),
         }
 
         return {
@@ -550,7 +550,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     "eval_subtype": "mtbench",
                     "bench_name": "mt_bench",
                     "mode": "single",
-                    "evaluation_stages": getattr(self, "evaluation_stages", ["generation", "judgement"]),
+                    "evaluation_stages": getattr(self, "401_evaluation_stages", ["generation", "judgement"]),
                     "inference_params": inference_params,
                     "judge_model": judge_model,
                     "judge_inference_params": judge_inference_params,
@@ -644,7 +644,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 filtered_data = {
                     "prompt": getattr(data_obj, "prompt", None) or "",
                     "ideal_response": getattr(data_obj, "ideal_response", None) or "",
-                    "category": getattr(data_obj, "category", None) or "",
+                    "category": getattr(data_obj, "category", "Generation") or "Generation",
                     "source": getattr(data_obj, "source", None) or "",
                     "response": getattr(data_obj, "response", None) or "",
                     "llm_name": getattr(data_obj, "llm_name", None) or "",
@@ -677,7 +677,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             file_name1 = "input.json"
 
             filepath = f"{file_name1}"
-            url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/testing/{filepath}"
+            url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/{filepath}"
 
             files = {"file": (file_name1, file1_buffer.getvalue(), "application/json")}
             async with httpx.AsyncClient() as client:
@@ -699,7 +699,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 }
 
                 filepath = f"{file_name2}"
-                url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/testing/{filepath}"
+                url = f"{self.datastore_base_url}/v1/datasets/{dataset_id}/files/contents/{filepath}"
 
                 async with httpx.AsyncClient() as client:
                     response = await client.post(url, files=files)
