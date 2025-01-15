@@ -640,7 +640,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     "response": getattr(data_obj, "response", None) or "",
                     "llm_name": getattr(data_obj, "llm_name", None) or "",
                 }
-                self.log(f"filtered_data : {filtered_data}")
                 # Check if both fields are present
                 if filtered_data["prompt"] is not None and filtered_data["ideal_response"] is not None:
                     # Create data for the first file
