@@ -3,7 +3,6 @@ from langflow.io import DropdownInput, StrInput, IntInput, FloatInput, Multisele
     SliderInput, Output
 from langflow.field_typing.range_spec import RangeSpec
 import json
-import os
 
 
 class NVIDIANeMoEvaluatorComponent(Component):
@@ -127,12 +126,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="The top_k value to be used during generation sampling.",
             value=1,
         ),
-        SliderInput(
+        FloatInput(
             name="153_temperature",
             display_name="Temperature",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            min_label="Precise",
-            max_label="Creative",
             value=0.1,
             info="The temperature to be used during generation sampling (0.0 to 2.0).",
         ),
@@ -173,12 +169,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Max number of tokens to generate during inference.",
             value=1024,
         ),
-        SliderInput(
+        FloatInput(
             name="312_temperature",
             display_name="Temperature",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            min_label="Precise",
-            max_label="Creative",
             value=0.1,
             info="The temperature to be used during generation sampling (0.0 to 2.0).",
         ),
@@ -215,12 +208,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Max number of tokens to generate during inference.",
             value=1024
         ),
-        SliderInput(
+        FloatInput(
             name="412_temperature",
             display_name="Temperature",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            min_label="Precise",
-            max_label="Creative",
             value=0.1,
             info="The temperature to be used during generation sampling (0.0 to 2.0)."
         ),
@@ -249,12 +239,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
             info="Max number of tokens to generate during inference for the judge.",
             value=1024
         ),
-        SliderInput(
+        FloatInput(
             name="422_judge_temperature",
             display_name="Temperature for Judge",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            min_label="Precise",
-            max_label="Creative",
             value=0.1,
             info="The temperature to be used during generation sampling (0.0 to 2.0) for the judge."
         ),
@@ -450,7 +437,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
         input_file = f"nds:{dataset_path}/input.json"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
-        self.log(f"run_inference: {run_inference}, type: {type(run_inference)}")
 
         # Set output_file based on run_inference
         output_file = ""
@@ -580,7 +566,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
                         self.log(f"No more pages to fetch, page: {page}")
                         break
                     response.raise_for_status()
-                    self.log(f"returned data {response}")
                     datasets = response.json().get("datasets", [])
                     for dataset in datasets:
                         if dataset.get("name") == dataset_name:
@@ -597,9 +582,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 created_dataset = create_response.json()
                 return created_dataset.get("id")
 
-        except httpx.HTTPStatusError as e:
-            self.log(f"Error processing datasets: {e}")
-            return None
+        except httpx.HTTPStatusError as exc:
+            exception_str = str(exc)
+            error_msg = f"An error processing dataset: {exception_str}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
     async def process_and_upload_dataset(self) -> str:
         """Asynchronously processes and uploads the dataset to the API in chunks.
