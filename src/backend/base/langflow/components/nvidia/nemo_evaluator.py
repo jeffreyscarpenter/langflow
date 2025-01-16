@@ -1,8 +1,9 @@
 import json
 import logging
+from datetime import datetime, timezone
 
 import httpx
-
+from io import BytesIO
 from langflow.custom import Component
 from langflow.io import (
     BoolInput,
@@ -16,6 +17,7 @@ from langflow.io import (
     SecretStrInput,
     StrInput,
 )
+from langflow.schema import Data
 
 logger = logging.getLogger(__name__)
 
@@ -411,11 +413,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
         except httpx.HTTPStatusError as exc:
             error_msg = f"HTTP error {exc.response.status_code} on URL {evaluator_url}."
             self.log(error_msg, name="NeMoEvaluatorComponent")
-            raise ValueError(error_msg)
-        except Exception as exc:
+            raise ValueError(error_msg) from exc
+        except (httpx.RequestError, ValueError) as exc:
             error_msg = f"Unexpected error on {str(exc)}"
             self.log(error_msg, name="NeMoEvaluatorComponent")
-            raise ValueError(error_msg)
+            raise ValueError(error_msg) from exc
 
     def _generate_lm_evaluation_body(self) -> dict:
         hf_token = getattr(self, "100_huggingface_token", None)
@@ -565,7 +567,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def get_dataset_id(self, dataset_name: str) -> str:
         """Fetches the dataset ID by checking if a dataset with the constructed name exists.
-
         If the dataset does not exist, creates a new dataset and returns its ID.
 
         Args:
@@ -631,7 +632,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
             file1_data = []
             file2_data = []
 
-            file_name_appender = user_dataset_name if user_dataset_name else "dataset"
             # Ensure DataFrame is iterable correctly
             for data_obj in self.evaluation_data or []:
                 # Check if the object is an instance of Data
