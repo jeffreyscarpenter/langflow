@@ -153,7 +153,6 @@ class NVIDIANeMoCustomizerComponent(Component):
         if self.training_data is not None:
             dataset_name = await self.process_and_upload_dataset()
         self.log(f"dataset_name: {dataset_name}")
-
         data = {
             "parent_model_id": self.model_name,
             "dataset": dataset_name,
@@ -322,7 +321,6 @@ class NVIDIANeMoCustomizerComponent(Component):
             error_msg = f"An unexpected error : {exception_str}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
-
         return dataset_name
 
     async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, dataset_id, base_url):

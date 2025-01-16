@@ -1,8 +1,22 @@
-from langflow.custom import Component
-from langflow.io import DropdownInput, StrInput, IntInput, FloatInput, MultiselectInput, SecretStrInput, BoolInput, \
-    SliderInput, Output
-from langflow.field_typing.range_spec import RangeSpec
 import json
+import logging
+
+import httpx
+
+from langflow.custom import Component
+from langflow.io import (
+    BoolInput,
+    DropdownInput,
+    FloatInput,
+    IntInput,
+    MultiselectInput,
+    Output,
+    SecretStrInput,
+    SliderInput,
+    StrInput,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class NVIDIANeMoEvaluatorComponent(Component):
@@ -12,14 +26,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
     name = "NVIDIANeMoEvaluator"
     beta = True
 
-    # Endpoint configuration
 
+    # This assumes that the inference URL is a Kubernetes service in the same namespace as the evaluator
     inference_url = "http://nemo-nim.model-training.svc.cluster.local:8000/v1"
 
-    headers = {
-        "accept": "application/json",
-        "Content-Type": "application/json"
-    }
+    headers = {"accept": "application/json", "Content-Type": "application/json"}
 
     # Define initial static inputs
     inputs = [
@@ -50,6 +61,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
             name="001_tag",
             display_name="Tag",
             info="Any user-provided value. Generated results will be stored in the NeMo Data Store under this name.",
+            value="default",
+            required=True,
         ),
         DropdownInput(
             name="002_evaluation_type",
@@ -293,7 +306,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
         for field in dynamic_fields:
             if field in build_config:
-                print(f"Removing dynamic field: {field}")
+                message = f"Removing dynamic field: {field}"
+                logger.info(message)
                 saved_values[field] = build_config[field].get("value", None)
                 del build_config[field]
 
@@ -323,7 +337,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
         Updates the component's configuration based on the selected option.
         """
         try:
-            print(f"Updating build config: field_name={field_name}, field_value={field_value}")
+            message = f"Updating build config: field_name={field_name}, field_value={field_value}"
+            logger.info(message)
 
             saved_values = {}
 
@@ -350,10 +365,11 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 if run_inference:
                     conditional_inputs = self.custom_evaluation_inputs[3:6]
                     self.add_inputs_with_saved_values(build_config, conditional_inputs, saved_values)
-            print("Build config update completed successfully.")
-        except Exception as e:
-            print(f"Error occurred during build config update: {e}")
-
+            logger.info("Build config update completed successfully.")
+        except (httpx.RequestError, ValueError) as exc:
+            error_msg = f"Unexpected error on URL {self.evaluator_base_url}"
+            logger.exception(error_msg)
+            raise ValueError(error_msg) from exc
         return build_config
 
     async def evaluate(self) -> dict:
@@ -375,8 +391,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
         try:
             # Format the data as a JSON string for logging
             formatted_data = json.dumps(data, indent=2)
-            self.log(f"Sending evaluation request to NeMo API with data: {formatted_data}",
-                     name="NeMoEvaluatorComponent")
+            self.log(
+                f"Sending evaluation request to NeMo API with data: {formatted_data}"
+            )
+
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(evaluator_url, headers=self.headers, json=data)
                 response.raise_for_status()
