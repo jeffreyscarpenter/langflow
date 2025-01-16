@@ -6,13 +6,14 @@ import httpx
 from langflow.custom import Component
 from langflow.io import (
     BoolInput,
+    DataInput,
     DropdownInput,
     FloatInput,
     IntInput,
+    MessageTextInput,
     MultiselectInput,
     Output,
     SecretStrInput,
-    SliderInput,
     StrInput,
 )
 
@@ -333,9 +334,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             self.add_inputs_with_saved_values(build_config, self.llm_as_judge, saved_values)
 
     def update_build_config(self, build_config, field_value, field_name=None):
-        """
-        Updates the component's configuration based on the selected option.
-        """
+        """Updates the component's configuration based on the selected option."""
         try:
             message = f"Updating build config: field_name={field_name}, field_value={field_value}"
             logger.info(message)
@@ -345,12 +344,16 @@ class NVIDIANeMoEvaluatorComponent(Component):
             if field_name == "000_llm_name":
                 # Refresh model options for LLM Name dropdown
                 build_config["000_llm_name"]["options"] = self.fetch_models()
-                print("Updated LLM Name options:", build_config["000_llm_name"]["options"])
+                options = build_config["000_llm_name"]["options"]
+                msg = f"Updated LLM Name options: {options}"
+                logger.info(msg)
 
             elif field_name == "420_judge_llm_name":
                 # Refresh model options for LLM Name dropdown
                 build_config["420_judge_llm_name"]["options"] = self.fetch_models()
-                print("Updated LLM Name options:", build_config["420_judge_llm_name"]["options"])
+                options = build_config["420_judge_llm_name"]["options"]
+                msg = f"Updated LLM Name options: {options}"
+                logger.info(msg)
 
             elif field_name == "002_evaluation_type":
                 self.clear_dynamic_inputs(build_config, saved_values)
