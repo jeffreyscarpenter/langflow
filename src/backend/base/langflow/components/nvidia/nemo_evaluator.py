@@ -71,7 +71,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             name="002_evaluation_type",
             display_name="Evaluation Type",
             info="Select the type of evaluation",
-            options=["LM Evaluation Harness", "BigCode Evaluation Harness", "Custom Evaluation", "LLM-as-a-Judge"],
+            options=["LM Evaluation Harness", "Custom Evaluation"],
             value="LM Evaluation Harness",
             real_time_refresh=True,  # Ensure dropdown triggers update on change
         ),
