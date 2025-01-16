@@ -1,9 +1,9 @@
+import io
 import json
 import logging
 from datetime import datetime, timezone
 
 import httpx
-from io import BytesIO
 from langflow.custom import Component
 from langflow.io import (
     BoolInput,
@@ -388,8 +388,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
         elif evaluation_type == "LLM-as-a-Judge":
             data = await self._generate_llm_as_judge_body()
         else:
-            raise ValueError(f"Unsupported evaluation type: {evaluation_type}")
-        self.log(f"data {data}")
+            error_msg = f"Unsupported evaluation type: {evaluation_type}"
+            raise ValueError(error_msg)
+        msg = f"data {data}"
+        self.log(msg)
 
         # Send the request and log the output
         evaluator_url = f"{self.evaluator_base_url}/v1/evaluations"
@@ -415,7 +417,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg) from exc
         except (httpx.RequestError, ValueError) as exc:
-            error_msg = f"Unexpected error on {str(exc)}"
+            error_str = str(exc)
+            error_msg = f"Unexpected error on {error_str}"
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg) from exc
 
@@ -567,6 +570,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def get_dataset_id(self, dataset_name: str) -> str:
         """Fetches the dataset ID by checking if a dataset with the constructed name exists.
+
         If the dataset does not exist, creates a new dataset and returns its ID.
 
         Args:
@@ -575,7 +579,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
         Returns:
             str: The dataset ID if found or created, or None if an error occurs.
         """
-
         url = f"{self.datastore_base_url}/v1/datasets"
         page = 1
 
