@@ -111,7 +111,10 @@ dependencies = [
     "scrapegraph-py>=1.10.2",
     "pydantic-ai>=0.0.19",
     "arize[Datasets]>=1.0.0",
-    "nv-ingest-client @ git+https://github.com/NVIDIA/nv-ingest.git@04aa2802094a9ee563b45db35b7b11a453548363#egg=nv-ingest-client&subdirectory=client",
+    "llama-index",
+    "llama-index-embeddings-nvidia",
+    "pymilvus[model,bulk_writer]",
+    "nv-ingest-client @ git+https://github.com/NVIDIA/nv-ingest.git@8b1d50d4595d18c66bf9a573b4df336767452b64#egg=nv-ingest-client&subdirectory=client",
     "python-pptx==0.6.23",
 ]
 
