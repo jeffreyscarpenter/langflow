@@ -3,11 +3,10 @@ import json
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
+from huggingface_hub import HfApi
 
 import httpx
 import pandas as pd
-from huggingface_hub import HfApi
-
 
 from langflow.custom import Component
 from langflow.io import (
@@ -21,8 +20,6 @@ from langflow.io import (
 )
 from langflow.schema import Data
 
-from scripts.factory_restart_space import hf_api
-
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +32,6 @@ class NVIDIANeMoCustomizerComponent(Component):
 
     headers = {"accept": "application/json", "Content-Type": "application/json"}
     chunk_number = 1
-    hf_api = HfApi(endpoint=f"{self.datastore_base_url}/v1/hf", token="")
 
     inputs = [
         StrInput(
@@ -66,7 +62,7 @@ class NVIDIANeMoCustomizerComponent(Component):
             name="dataset",
             display_name="Dataset",
             info="Enter the dataset ID or name used to train the model",
-            value="dataset-RWZGSkCGdeP35SDAxqTtvy",
+            value="test-data",
         ),
         DataInput(
             name="training_data",
@@ -82,7 +78,8 @@ class NVIDIANeMoCustomizerComponent(Component):
         DropdownInput(
             name="training_type",
             display_name="Training Type",
-            info="Select the training type to use for fine tuning",
+            info="Select the type of training to use",
+            refresh_button=True,
         ),
         DropdownInput(
             name="fine_tuning_type",
@@ -123,7 +120,7 @@ class NVIDIANeMoCustomizerComponent(Component):
                     response.raise_for_status()
 
                     models_data = response.json()
-                    model_names = [model["base_model"] for model in models_data.get("models", [])]
+                    model_names = [model["base_model"] for model in models_data.get("data", [])]
 
                     build_config["model_name"]["options"] = model_names
 
@@ -142,7 +139,8 @@ class NVIDIANeMoCustomizerComponent(Component):
                     if selected_model_name:
                         # Find the selected model in the response
                         selected_model = next(
-                            (model for model in models_data.get("models", []) if model["base_model"] == selected_model_name),
+                            (model for model in models_data.get("data", []) if
+                             model["base_model"] == selected_model_name),
                             None
                         )
 
@@ -170,16 +168,16 @@ class NVIDIANeMoCustomizerComponent(Component):
     async def customize(self) -> dict:
         dataset_name = self.dataset
         if self.training_data is not None:
-            dataset_name = await self.process_and_upload_dataset()
-        output_model = dataset_name + "_" + self.model_name
-        self.log(f"dataset_name: {dataset_name}")
+            repo_id = await self.process_and_upload_dataset()
+        output_model = self.model_name + "_" + dataset_name
+        self.log(f"repo_id: {repo_id}")
         data = {
             "config": self.model_name,
             "dataset": {
                 "name": dataset_name,
-               "namespace": self.tenant_id if self.tenant_id else "tenant"
+                "namespace": self.tenant_id if self.tenant_id else "tenant"
             },
-            "description" : self.description,
+            "description": self.description,
             "hyperparameters": {
                 "training_type": self.training_type,
                 "finetuning_type": self.fine_tuning_type,
@@ -261,25 +259,19 @@ class NVIDIANeMoCustomizerComponent(Component):
                 response.raise_for_status()
                 self.log(f"returned data {response}")
 
-                namespace_from_ds = response.get("namespace", None)
-                # namespace not found, create it
-                if not namespace_from_ds:
+                if response.status_code == 404:
                     create_payload = {"namespace": namespace}
                     create_response = await client.post(url, json=create_payload)
                     create_response.raise_for_status()
                     created_namespace_response = create_response.json()
 
                 repo_id = f"{namespace}/{dataset_name}"
-                repo_type = "dataset"
-                self.hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
-
                 return repo_id
         except httpx.HTTPStatusError as e:
-            exception_str = str(exc)
+            exception_str = str(e)
             error_msg = f"Error processing namespace: {exception_str}"
             self.log(error_msg)
-            raise ValueError(error_msg) from exc
-
+            raise ValueError(error_msg) from e
 
     async def process_and_upload_dataset(self) -> str:
         """Asynchronously processes and uploads the dataset to the API in chunks.
@@ -289,7 +281,16 @@ class NVIDIANeMoCustomizerComponent(Component):
         try:
             # Inputs
             user_dataset_name = getattr(self, "dataset", None)
+            hf_api = HfApi(endpoint=f"{self.datastore_base_url}/v1/hf", token="")
             repo_id = await self.get_repo_id(self.tenant_id, user_dataset_name)
+            repo_type = "dataset"
+            hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
+        except Exception as exc:  # exc is defined here
+            exception_str = str(exc)
+            error_msg = f"An unexpected error occurred while creating repo: {exception_str}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+        try:
             chunk_size = 10000  # Ensure chunk_size is an integer
             self.log(f"repo_id : {repo_id}")
             if not repo_id:
@@ -322,7 +323,7 @@ class NVIDIANeMoCustomizerComponent(Component):
                 # Process the chunk when it reaches the specified size
                 if len(chunk) == chunk_size:
                     chunk_df = pd.DataFrame(chunk)
-                    task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url)
+                    task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url, hf_api)
                     tasks.append(task)
                     chunk = []  # Reset the chunk
                     self.chunk_number += 1
@@ -330,21 +331,29 @@ class NVIDIANeMoCustomizerComponent(Component):
             # Process the remaining rows in the last chunk
             if chunk:
                 chunk_df = pd.DataFrame(chunk)
-                task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url)
+                task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url, hf_api)
                 tasks.append(task)
 
             # Await all upload tasks
             await asyncio.gather(*tasks)
+        except Exception as exc:  # exc is defined here
+            exception_str = str(exc)
+            error_msg = f"An unexpected error occurred: {exception_str}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
+
+        try:
             file_url = f"hf://datasets/{repo_id}"
-
-            entity_registry_url = f"https://{self.entity_store_base_url}/v1/datasets"
+            description =f"Dataset loaded using the input data {user_dataset_name}"
+            entity_registry_url = f"{self.entity_store_base_url}/v1/datasets"
             create_payload = {
                 "name": user_dataset_name,
                 "namespace": self.tenant_id,
-                "description": f"Dataset loaded using the input data {user_dataset_name}",
+                "description": description,
                 "files_url": file_url,
-                "project": "user_dataset_name"
+                "format": "jsonl",
+                "project": user_dataset_name
             }
 
             async with httpx.AsyncClient() as client:
@@ -352,20 +361,21 @@ class NVIDIANeMoCustomizerComponent(Component):
 
             status_ok = 200
             if response.status_code == status_ok:
-                logger.info("Chunk %s uploaded successfully!", chunk_number)
+                logger.info("Chunk %s uploaded successfully!", self.chunk_number)
             else:
-                logger.warning("Failed to upload chunk %s. Status code: %s", chunk_number, response.status_code)
+                logger.warning("Failed to upload chunk %s. Status code: %s", self.chunk_number, response.status_code)
                 logger.warning(response.text)
 
             logger.info("All data has been processed and uploaded successfully.")
-        except Exception as exc:
+        except Exception as exc:  # exc is defined here
             exception_str = str(exc)
-            error_msg = f"An unexpected error : {exception_str}"
+            error_msg = f"An unexpected error occurred while posting to entity service: {exception_str}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+
         return repo_id
 
-    async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, base_url):
+    async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, base_url, hf_api):
         """Asynchronously uploads a chunk of data to the REST API."""
         try:
             # Serialize the chunk DataFrame to JSONL format
@@ -373,7 +383,7 @@ class NVIDIANeMoCustomizerComponent(Component):
             file_name = f"{file_name_prefix}_chunk_{chunk_number}.jsonl"
             file_in_memory = BytesIO(json_content.encode("utf-8"))
             try:
-                self.hf_api.upload_file(
+                hf_api.upload_file(
                     path_or_fileobj=file_in_memory,
                     path_in_repo=file_name,
                     repo_id=repo_id,
