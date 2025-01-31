@@ -169,13 +169,15 @@ class NVIDIANeMoCustomizerComponent(Component):
         dataset_name = self.dataset
         if self.training_data is not None:
             repo_id = await self.process_and_upload_dataset()
-        output_model = self.model_name + "_" + dataset_name
+        tenant = self.tenant_id if self.tenant_id else "tenant"
+        short_model_name = self.model_name.split("/")[-1]
+        output_model = tenant + "/" + short_model_name + "@" + dataset_name
         self.log(f"repo_id: {repo_id}")
         data = {
             "config": self.model_name,
             "dataset": {
                 "name": dataset_name,
-                "namespace": self.tenant_id if self.tenant_id else "tenant"
+                "namespace": tenant
             },
             "description": self.description,
             "hyperparameters": {

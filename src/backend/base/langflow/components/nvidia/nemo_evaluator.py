@@ -35,7 +35,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
     inference_url = "http://nemo-nim.model-training.svc.cluster.local:8000/v1"
 
     headers = {"accept": "application/json", "Content-Type": "application/json"}
-    hf_api = HfApi(endpoint=f"{self.datastore_base_url}/v1/hf", token="")
 
     # Define initial static inputs
     inputs = [
@@ -46,8 +45,8 @@ class NVIDIANeMoEvaluatorComponent(Component):
         ),
         StrInput(
             name="entity_service_base_url",
-            display_name="NVIDIA NeMo Model URL",
-            info="The base URL of the NVIDIA NIM API to obtain models that can be evaluated.",
+            display_name="NVIDIA entity service URL",
+            info="The base URL of the NVIDIA Entity service to obtain models that can be evaluated.",
         ),
         StrInput(
             name="nemo_model_base_url",
@@ -59,6 +58,13 @@ class NVIDIANeMoEvaluatorComponent(Component):
             display_name="NVIDIA NeMo Datastore Base URL",
             info="The nemo datastore base URL of the NVIDIA NeMo Datastore API.",
             advanced=True,
+        ),
+        StrInput(
+            name="tenant_id",
+            display_name="Tenant ID",
+            info="Tenant id for dataset creation, if not provided default value `tenant` is used.",
+            advanced=True,
+            value="tenant",
         ),
         DropdownInput(
             name="000_llm_name",
@@ -122,7 +128,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             advanced=True,
             value=100000,
         ),
-        FloatInput(
+        IntInput(
             name="115_limit",
             display_name="Limit",
             info="Limits the number of documents to evaluate for debugging, or limits to X% of documents.",
@@ -300,12 +306,17 @@ class NVIDIANeMoEvaluatorComponent(Component):
     def fetch_models(self):
         """Fetch models from the specified API endpoint and return a list of model names."""
         namespace = self.tenant_id if self.tenant_id else "tenant"
-        model_url = f"{self.entity_service_base_url}/v1/models?filter[namespace]={namespace}&page_size=100"
+        model_url = f"{self.entity_service_base_url}/v1/models"
+        params = {
+            "filter[namespace]": namespace,  # This ensures proper encoding
+            "page_size": 100
+        }
         try:
-            response = httpx.get(model_url, headers=self.headers)
+            response = httpx.get(model_url, headers=self.headers, params=params)
             response.raise_for_status()
             models_data = response.json()
             return [model["name"] for model in models_data.get("data", [])]
+
         except httpx.RequestError as exc:
             self.log(f"An error occurred while requesting models: {exc}")
             return []
@@ -395,7 +406,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
         # Generate the request data based on evaluation type
         if evaluation_type == "LM Evaluation Harness":
-            data = self._generate_lm_evaluation_body()
+            data = await self._generate_lm_evaluation_body()
         elif evaluation_type == "Custom Evaluation":
             data = await self._generate_custom_evaluation_body()
         elif evaluation_type == "LLM-as-a-Judge":
@@ -434,16 +445,22 @@ class NVIDIANeMoEvaluatorComponent(Component):
             error_msg = f"Unexpected error on {error_str}"
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg) from exc
+        except Exception as exc:
+            exception_str = str(exc)
+            error_msg = f"An unexpected error : {exception_str} {msg}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
     async def _generate_lm_evaluation_body(self) -> dict:
-        target_id = self.create_eval_target(None)
+        target_id = await self.create_eval_target(None)
         hf_token = getattr(self, "100_huggingface_token", None)
+
         config_data = {
             "type": "lm_eval_harness",
             "tasks": [
                 {
                     "type": getattr(self, "110_task_name", ""),
-                    "param" : {
+                    "params": {
                         "num_fewshot": getattr(self, "112_few_shot_examples", 5),
                         "batch_size": getattr(self, "113_batch_size", 16),
                         "bootstrap_iters": getattr(self, "114_bootstrap_iterations", 100000),
@@ -454,25 +471,30 @@ class NVIDIANeMoEvaluatorComponent(Component):
             "params": {
                 "hf_token": hf_token or None,
                 "use_greedy": getattr(self, "150_greedy", True),
-                "top_p":  getattr(self, "151_top_p", 0.0),
-                "top_k":  getattr(self, "152_top_k", 1),
+                "top_p": getattr(self, "151_top_p", 0.0),
+                "top_k": getattr(self, "152_top_k", 1),
                 "temperature": getattr(self, "153_temperature", 0.0),
                 "stop": [],  # not exposing this for now, would be 154_stop
                 "tokens_to_generate": getattr(self, "155_tokens_to_generate", 1024),
             }
         }
 
-        eval_config_url = f"{self.base_url}/v1/evaluation/configs"
+        eval_config_url = f"{self.evaluator_base_url}/v1/evaluation/configs"
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(eval_config_url, headers=self.headers, json=config_data)
                 response.raise_for_status()
 
-                result = response.json()
+                result = response.json()  # ✅ Convert response to a dictionary
+
                 formatted_result = json.dumps(result, indent=2)
                 self.log(f"Received successful response: {formatted_result}")
 
-                config_id = response['id']
+                config_id = result.get("id")  # ✅ Extract "id" safely
+                if not config_id:
+                    raise ValueError(f"Missing 'id' in response: {result}")  # Ensure "id" exists
+
                 return {
                     "target_id": target_id,
                     "config_id": config_id,
@@ -489,7 +511,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             response_content = exc.response.text
-            error_msg = f"HTTP error {status_code} on URL: {eval_config_url}. Response content: {response_content}"
+            error_msg = f"HTTP error {status_code} on URL: {eval_config_url}. Config: {config_data}, Response content: {response_content}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
@@ -511,7 +533,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             output_file = f"nds:{repo_id}/output.json"
         self.log(f"input_file: {input_file}, output_file: {output_file}")
 
-        target_id = self.create_eval_target(output_file)
+        target_id = await self.create_eval_target(output_file)
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
 
         # Transform the list into the desired format
@@ -535,7 +557,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             }
         }
 
-        eval_config_url = f"{self.base_url}/v1/evaluation/configs"
+        eval_config_url = f"{self.evaluator_base_url}/v1/evaluation/configs"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(eval_config_url, headers=self.headers, json=config_data)
@@ -545,7 +567,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 formatted_result = json.dumps(result, indent=2)
                 self.log(f"Received successful response: {formatted_result}")
 
-                config_id = response['id']
+                config_id = result.get("id")
                 return {
                     "target_id": target_id,
                     "config_id": config_id,
@@ -584,7 +606,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             self.log(f"input_file: {input_file}")
             custom_data = True
             task_type = "custom"
-        target_id = self.create_eval_target(None)
+        target_id = await self.create_eval_target(None)
         judge_llm_name = getattr(self, "420_judge_llm_name", "")
         judge_model_url = getattr(self, "425_judge_nemo_model_url", "")
         config_data = {
@@ -622,7 +644,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 "files_url": input_file
             }
 
-        eval_config_url = f"{self.base_url}/v1/evaluation/configs"
+        eval_config_url = f"{self.evaluator_base_url}/v1/evaluation/configs"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(eval_config_url, headers=self.headers, json=config_data)
@@ -632,7 +654,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 formatted_result = json.dumps(result, indent=2)
                 self.log(f"Received successful response: {formatted_result}")
 
-                config_id = response['id']
+                config_id = result.get("id")
                 return {
                     "target_id": target_id,
                     "config_id": config_id,
@@ -660,7 +682,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             raise ValueError(error_msg) from exc
 
     async def create_eval_target(self, output_file) -> str:
-        eval_target_url = f"{self.base_url}/v1/evaluation/targets"
+        eval_target_url = f"{self.evaluator_base_url}/v1/evaluation/targets"
         try:
             if output_file:
                 request_body = {
@@ -691,7 +713,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 formatted_result = json.dumps(result, indent=2)
                 self.log(f"Received successful response: {formatted_result}")
 
-                target_id = response['id']
+                target_id = result.get("id")
                 return target_id
 
         except httpx.TimeoutException as exc:
@@ -720,7 +742,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
         try:
             # Inputs
             user_dataset_name = getattr(self, "dataset", None)
-            repo_id = await self.get_repo_id(self.tenant_id, user_dataset_name)
+            hf_api = HfApi(endpoint=f"{self.datastore_base_url}/v1/hf", token="")
+            repo_id = await self.get_repo_id(self.tenant_id, user_dataset_name, hf_api)
+            repo_type = "dataset"
+            hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
             self.log(f"repo_id : {repo_id}")
             generate_output_file = getattr(self, "310_run_inference", None) == "False"
 
@@ -771,7 +796,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             input_file_buffer = io.BytesIO(json.dumps(input_file_data, indent=4).encode('utf-8'))
             input_file_name = "input.json"
             try:
-                self.hf_api.upload_file(
+                hf_api.upload_file(
                     path_or_fileobj=input_file_buffer,
                     path_in_repo=input_file_name,
                     repo_id=repo_id,
@@ -785,7 +810,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 output_file_buffer = io.BytesIO(json.dumps(output_file_data, indent=4).encode('utf-8'))
                 output_file_name = "input.json"
                 try:
-                    self.hf_api.upload_file(
+                    hf_api.upload_file(
                         path_or_fileobj=output_file_buffer,
                         path_in_repo=output_file_name,
                         repo_id=repo_id,
@@ -804,18 +829,18 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
         return repo_id
 
-    async def get_repo_id(self, tenant_id: str, user_dataset_name: str) -> str:
+    async def get_repo_id(self, tenant_id: str, user_dataset_name: str, hf_api: HfApi) -> str:
         """Fetches the repo id by checking if a dataset with the constructed name exists.
 
-        If the dataset does not exist, creates a new dataset and returns its ID.
+                If the dataset does not exist, creates a new dataset and returns its ID.
 
-        Args:
-            tenant_id (str): The tenant ID.
-            user_dataset_name (str): The user-provided dataset name.
+                Args:
+                    tenant_id (str): The tenant ID.
+                    user_dataset_name (str): The user-provided dataset name.
 
-        Returns:
-            str: The dataset ID if found or created, or None if an error occurs.
-        """
+                Returns:
+                    str: The dataset ID if found or created, or None if an error occurs.
+                """
         dataset_name = self.get_dataset_name(user_dataset_name)
         namespace = tenant_id if tenant_id else "tenant"
 
@@ -828,24 +853,19 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 response.raise_for_status()
                 self.log(f"returned data {response}")
 
-                namespace_from_ds = response.get("namespace", None)
-                # namespace not found, create it
-                if not namespace_from_ds:
+                if response.status_code == 404:
                     create_payload = {"namespace": namespace}
                     create_response = await client.post(url, json=create_payload)
                     create_response.raise_for_status()
                     created_namespace_response = create_response.json()
 
                 repo_id = f"{namespace}/{dataset_name}"
-                repo_type = "dataset"
-                self.hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
-
                 return repo_id
-        except httpx.HTTPStatusError as exc:
-            exception_str = str(exc)
+        except httpx.HTTPStatusError as e:
+            exception_str = str(e)
             error_msg = f"Error processing namespace: {exception_str}"
             self.log(error_msg)
-            raise ValueError(error_msg) from exc
+            raise ValueError(error_msg) from e
 
     def get_dataset_name(self, user_dataset_name=None):
         # Generate a default dataset name using the current date and time
