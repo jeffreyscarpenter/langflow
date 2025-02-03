@@ -258,7 +258,6 @@ class NVIDIANeMoCustomizerComponent(Component):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{url}/{namespace}")
-                response.raise_for_status()
                 self.log(f"returned data {response}")
 
                 if response.status_code == 404:
