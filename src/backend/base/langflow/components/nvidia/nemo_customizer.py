@@ -166,44 +166,72 @@ class NVIDIANeMoCustomizerComponent(Component):
         return build_config
 
     async def customize(self) -> dict:
+        # Start with attempt number 1
+        attempt = 1
         dataset_name = self.dataset
+
+        # Process and upload the dataset if training_data is provided
         if self.training_data is not None:
             repo_id = await self.process_and_upload_dataset()
+        else:
+            repo_id = None
+
         tenant = self.tenant_id if self.tenant_id else "tenant"
         short_model_name = self.model_name.split("/")[-1]
-        output_model = tenant + "/" + short_model_name + "@" + dataset_name
-        self.log(f"repo_id: {repo_id}")
-        data = {
-            "config": self.model_name,
-            "dataset": {
-                "name": dataset_name,
-                "namespace": tenant
-            },
-            "description": self.description,
-            "hyperparameters": {
-                "training_type": self.training_type,
-                "finetuning_type": self.fine_tuning_type,
-                "epochs": int(self.epochs),
-                "batch_size": int(self.batch_size),
-                "learning_rate": float(self.learning_rate),
-            },
-            "output_model": output_model,
-        }
-
-        # Add `adapter_dim` only if training_type is "lora"
-        if self.fine_tuning_type == "lora":
-            data["hyperparameters"]["lora"] = {"adapter_dim": 16}
-
         customizations_url = f"{self.base_url}/v1/customization/jobs"
-        try:
-            formatted_data = json.dumps(data, indent=2)
 
-            self.log(f"Sending customization request to endpoint {customizations_url} with data: {formatted_data}")
+        # Try up to 10 attempts
+        while attempt <= 10:
+            # Build the output_model string with the current attempt number
+            output_model = f"{tenant}/{short_model_name}@{dataset_name}-{attempt}"
 
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(customizations_url, headers=self.headers, json=data)
+            # Build the data payload
+            data = {
+                "config": self.model_name,
+                "dataset": {
+                    "name": dataset_name,
+                    "namespace": tenant
+                },
+                "description": self.description,
+                "hyperparameters": {
+                    "training_type": self.training_type,
+                    "finetuning_type": self.fine_tuning_type,
+                    "epochs": int(self.epochs),
+                    "batch_size": int(self.batch_size),
+                    "learning_rate": float(self.learning_rate),
+                },
+                "output_model": output_model,
+            }
+
+            # Add `adapter_dim` if fine tuning type is "lora"
+            if self.fine_tuning_type == "lora":
+                data["hyperparameters"]["lora"] = {"adapter_dim": 16}
+
+            try:
+                formatted_data = json.dumps(data, indent=2)
+                self.log(
+                    f"Attempt {attempt}: Sending customization request to endpoint {customizations_url} with data: {formatted_data}"
+                )
+
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.post(customizations_url, headers=self.headers, json=data)
+
+                # If a conflict is returned, try again with an incremented attempt counter
+                if response.status_code == 409:
+                    self.log(f"Received HTTP 409 Conflict on attempt {attempt}. Retrying with a new dataset name.")
+                    attempt += 1
+                    # If this was the 10th attempt, raise an error on the next iteration (attempt will be 11)
+                    if attempt > 10:
+                        error_msg = (
+                            "Received 409 conflict 10 times. Please choose a different dataset name or delete the model."
+                        )
+                        raise ValueError(error_msg)
+                    continue
+
+                # For non-409 responses, raise for any HTTP error status
                 response.raise_for_status()
 
+                # Process a successful response
                 result = response.json()
                 formatted_result = json.dumps(result, indent=2)
                 self.log(f"Received successful response: {formatted_result}")
@@ -213,23 +241,41 @@ class NVIDIANeMoCustomizerComponent(Component):
                 result_dict["url"] = f"{customizations_url}/{id_value}/status"
                 return result_dict
 
-        except httpx.TimeoutException as exc:
-            error_msg = f"Request to {customizations_url} timed out"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
+            except httpx.TimeoutException as exc:
+                error_msg = f"Request to {customizations_url} timed out"
+                self.log(error_msg)
+                raise ValueError(error_msg) from exc
 
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            response_content = exc.response.text
-            error_msg = f"HTTP error {status_code} on URL: {customizations_url}. Response content: {response_content}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
+            except httpx.HTTPStatusError as exc:
+                # Check if the error is due to a 409 Conflict
+                if exc.response.status_code == 409:
+                    self.log(f"Received HTTP 409 Conflict on attempt {attempt}. Retrying with a new dataset name.")
+                    attempt += 1
+                    if attempt > 10:
+                        error_msg = (
+                            "There are already 10 version for the model with the dataset.. Please choose a different dataset name or delete the models."
+                        )
+                        raise ValueError(error_msg) from exc
+                    continue
+                else:
+                    status_code = exc.response.status_code
+                    response_content = exc.response.text
+                    error_msg = (
+                        f"HTTP error {status_code} on URL: {customizations_url}. Response content: {response_content}"
+                    )
+                    self.log(error_msg)
+                    raise ValueError(error_msg) from exc
 
-        except (httpx.RequestError, ValueError) as exc:
-            exception_str = str(exc)
-            error_msg = f"An unexpected error occurred on URL {customizations_url}: {exception_str}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
+            except (httpx.RequestError, ValueError) as exc:
+                exception_str = str(exc)
+                error_msg = f"An unexpected error occurred on URL {customizations_url}: {exception_str}"
+                self.log(error_msg)
+                raise ValueError(error_msg) from exc
+
+        # If the loop completes without a successful call, raise an error.
+        error_msg = "Failed to customize the model after 10 attempts due to repeated 409 conflicts."
+        self.log(error_msg)
+        raise ValueError(error_msg)
 
     def get_dataset_name(self, user_dataset_name=None):
         # Generate a default dataset name using the current date and time
