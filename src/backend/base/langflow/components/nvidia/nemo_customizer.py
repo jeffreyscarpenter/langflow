@@ -321,38 +321,41 @@ class NVIDIANeMoCustomizerComponent(Component):
             raise ValueError(error_msg) from e
 
     async def process_and_upload_dataset(self) -> str:
-        """Asynchronously processes and uploads the dataset to the API in chunks.
+        """Asynchronously processes and uploads the dataset to the API in training chunks,
+        while holding out 10% of the data for validation (uploaded in one file at the end).
 
-        Returns the upload status.
+        If the total valid record count is less than 10, at least one record is added to validation.
         """
         try:
-            # Inputs
+            # Inputs and repo setup
             user_dataset_name = getattr(self, "dataset", None)
             hf_api = HfApi(endpoint=f"{self.datastore_base_url}/v1/hf", token="")
             repo_id = await self.get_repo_id(self.tenant_id, user_dataset_name)
             repo_type = "dataset"
             hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
-        except Exception as exc:  # exc is defined here
+        except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while creating repo: {exception_str}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+
         try:
-            chunk_size = 10000  # Ensure chunk_size is an integer
+            chunk_size = 100000  # Ensure chunk_size is an integer
             self.log(f"repo_id : {repo_id}")
             if not repo_id:
-                err_msg = "repo_id must be provided."
-                raise ValueError(err_msg)
+                raise ValueError("repo_id must be provided.")
 
             # Endpoint configuration
             url = f"{self.datastore_base_url}/v1"
             tasks = []
-
-            chunk = []
             file_name_appender = user_dataset_name if user_dataset_name else "dataset"
-            # Ensure DataFrame is iterable correctly
+
+            # =====================================================
+            # STEP 1: Build a list of valid records from training_data
+            # =====================================================
+            valid_records = []
             for data_obj in self.training_data or []:
-                # Check if the object is an instance of Data
+                # Skip non-Data objects
                 if not isinstance(data_obj, Data):
                     self.log(f"Skipping non-Data object in training data, but got: {data_obj}")
                     continue
@@ -362,12 +365,35 @@ class NVIDIANeMoCustomizerComponent(Component):
                     "prompt": getattr(data_obj, "prompt", None),
                     "completion": getattr(data_obj, "completion", None),
                 }
-
-                # Check if both fields are present
                 if filtered_data["prompt"] is not None and filtered_data["completion"] is not None:
-                    chunk.append(filtered_data)
+                    valid_records.append(filtered_data)
 
-                # Process the chunk when it reaches the specified size
+            total_records = len(valid_records)
+            if total_records < 2:
+                error_msg =f"Not enough records for processing. Record count : {total_records}"
+                raise ValueError(error_msg)
+
+            # =====================================================
+            # STEP 2: Split into validation (10%) and training (90%)
+            # =====================================================
+            # If the total size is less than 10, force at least one record into validation.
+            if total_records < 10:
+                validation_count = 1
+            else:
+                # Here we round to the nearest integer but ensure at least one record.
+                validation_count = max(1, int(round(total_records * 0.1)))
+
+            # For simplicity, we take the first validation_count records for validation.
+            # (You could also randomize the order if needed.)
+            validation_records = valid_records[:validation_count]
+            training_records = valid_records[validation_count:]
+
+            # =====================================================
+            # STEP 3: Process training data in chunks (90%)
+            # =====================================================
+            chunk = []
+            for record in training_records:
+                chunk.append(record)
                 if len(chunk) == chunk_size:
                     chunk_df = pd.DataFrame(chunk)
                     task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url, hf_api)
@@ -375,24 +401,36 @@ class NVIDIANeMoCustomizerComponent(Component):
                     chunk = []  # Reset the chunk
                     self.chunk_number += 1
 
-            # Process the remaining rows in the last chunk
+            # Process any remaining training records
             if chunk:
                 chunk_df = pd.DataFrame(chunk)
-                task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url, hf_api)
+                task = self.upload_chunk(chunk_df, self.chunk_number, file_name_appender, repo_id, url, hf_api, False)
                 tasks.append(task)
 
-            # Await all upload tasks
+            # Await all training upload tasks
             await asyncio.gather(*tasks)
-        except Exception as exc:  # exc is defined here
+
+            # =====================================================
+            # STEP 4: Upload validation data (without chunking)
+            # =====================================================
+            if validation_records:
+                validation_df = pd.DataFrame(validation_records)
+                # Note: You will need to implement upload_validation to handle the
+                # upload of the full validation DataFrame.
+                await self.upload_chunk(validation_df, 1, file_name_appender, repo_id, url, hf_api, True)
+
+        except Exception as exc:
             exception_str = str(exc)
-            error_msg = f"An unexpected error occurred: {exception_str}"
+            error_msg = f"An unexpected error occurred during processing/upload: {exception_str}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
-
+        # =====================================================
+        # STEP 5: Post dataset info to the entity registry
+        # =====================================================
         try:
             file_url = f"hf://datasets/{repo_id}"
-            description =f"Dataset loaded using the input data {user_dataset_name}"
+            description = f"Dataset loaded using the input data {user_dataset_name}"
             entity_registry_url = f"{self.entity_store_base_url}/v1/datasets"
             create_payload = {
                 "name": user_dataset_name,
@@ -406,15 +444,14 @@ class NVIDIANeMoCustomizerComponent(Component):
             async with httpx.AsyncClient() as client:
                 response = await client.post(entity_registry_url, json=create_payload)
 
-            status_ok = 200
-            if response.status_code == status_ok:
+            if response.status_code == 200:
                 logger.info("Chunk %s uploaded successfully!", self.chunk_number)
             else:
                 logger.warning("Failed to upload chunk %s. Status code: %s", self.chunk_number, response.status_code)
                 logger.warning(response.text)
 
             logger.info("All data has been processed and uploaded successfully.")
-        except Exception as exc:  # exc is defined here
+        except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while posting to entity service: {exception_str}"
             self.log(error_msg)
@@ -422,23 +459,26 @@ class NVIDIANeMoCustomizerComponent(Component):
 
         return repo_id
 
-    async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, base_url, hf_api):
+    async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, base_url, hf_api, is_validation):
         """Asynchronously uploads a chunk of data to the REST API."""
         try:
-            # Serialize the chunk DataFrame to JSONL format
-            json_content = chunk_df.to_json(orient="records", lines=True)
-            file_name = f"{file_name_prefix}_chunk_{chunk_number}.jsonl"
-            file_in_memory = BytesIO(json_content.encode("utf-8"))
+            json_data = chunk_df.to_json(orient="records", lines=True)
+
+            # Build file paths
+            file_name_training = f"validation/{file_name_prefix}_validation.jsonl" if is_validation else f"training/{file_name_prefix}_chunk_{chunk_number}.jsonl"
+
+            # Prepare BytesIO objects
+            training_file_obj = BytesIO(json_data.encode("utf-8"))
             try:
                 hf_api.upload_file(
-                    path_or_fileobj=file_in_memory,
-                    path_in_repo=file_name,
+                    path_or_fileobj=training_file_obj,
+                    path_in_repo=file_name_training,
                     repo_id=repo_id,
                     repo_type="dataset",
-                    commit_message=f"Updated file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+                    commit_message=f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
                 )
             finally:
-                file_in_memory.close()
+                training_file_obj.close()
 
         except Exception:
             logger.exception("An error occurred while uploading chunk %s", chunk_number)
