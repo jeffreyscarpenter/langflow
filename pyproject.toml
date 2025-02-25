@@ -70,7 +70,7 @@ dependencies = [
     "composio-core==0.7.1",
     "spider-client==0.1.24",
     "nltk==3.9.1",
-    "lark==1.2.2",
+    "lark>=1.1.7,<1.2.dev0",
     "jq==1.8.0",
     "pydantic-settings==2.4.0",
     "ragstack-ai-knowledge-store==0.2.1",
@@ -104,6 +104,7 @@ dependencies = [
     "aiofile>=3.9.0,<4.0.0",
     "sseclient-py==1.8.0",
     "arize-phoenix-otel>=0.6.1",
+    "arize[Datasets]>=1.0.0",
     "openinference-instrumentation-langchain>=0.1.29",
     "crewai==0.102.0",
     "mcp>=0.9.1",
@@ -200,6 +201,10 @@ nv-ingest = [
     "pymilvus[bulk_writer,model]==2.5.0",
     "llama-index-embeddings-nvidia==0.1.5",
 ]
+
+#nemo-guardrails = [
+#    "../NeMo-Guardrails/"
+#]
 
 [project.scripts]
 langflow = "langflow.__main__:main"
@@ -298,3 +303,6 @@ ignore_missing_imports = true
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
