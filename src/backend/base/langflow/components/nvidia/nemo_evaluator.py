@@ -30,7 +30,6 @@ class NVIDIANeMoEvaluatorComponent(Component):
     name = "NVIDIANeMoEvaluator"
     beta = True
 
-
     # This assumes that the inference URL is a Kubernetes service in the same namespace as the evaluator
     inference_url = "http://nemo-nim.model-training.svc.cluster.local:8000/v1"
 
@@ -442,7 +441,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
             raise ValueError(error_msg) from exc
         except (httpx.RequestError, ValueError) as exc:
             error_str = str(exc)
-            error_msg = f"Unexpected error on {error_str}"
+            error_msg = f"Unexpected error on {error_str} : {evaluator_url} {msg}"
             self.log(error_msg, name="NeMoEvaluatorComponent")
             raise ValueError(error_msg) from exc
         except Exception as exc:
@@ -454,9 +453,10 @@ class NVIDIANeMoEvaluatorComponent(Component):
     async def _generate_lm_evaluation_body(self) -> dict:
         target_id = await self.create_eval_target(None)
         hf_token = getattr(self, "100_huggingface_token", None)
-
+        namespace = self.tenant_id if self.tenant_id else "tenant"
         config_data = {
             "type": "lm_eval_harness",
+            "namespace": namespace,
             "tasks": [
                 {
                     "type": getattr(self, "110_task_name", ""),
@@ -496,11 +496,12 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     raise ValueError(f"Missing 'id' in response: {result}")  # Ensure "id" exists
 
                 return {
-                    "target_id": target_id,
-                    "config_id": config_id,
                     "tags": [
                         getattr(self, "001_tag", "")
-                    ]
+                    ],
+                    "namespace": namespace,
+                    "target": f"{namespace}/{target_id}",
+                    "config": f"{namespace}/{config_id}",
                 }
 
         except httpx.TimeoutException as exc:
@@ -526,7 +527,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         input_file = f"nds:{repo_id}/input.json"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
-
+        namespace = self.tenant_id if self.tenant_id else "tenant"
         # Set output_file based on run_inference
         output_file = None
         if not run_inference:  # Only set output_file if run_inference is False
@@ -540,21 +541,22 @@ class NVIDIANeMoEvaluatorComponent(Component):
         metrics_to_eval = [{"name": score} for score in scores]
         config_data = {
             "type": "similarity_metrics",
+            "namespace": namespace,
             "tasks": [
                 {
                     "type": "default",
-                    "metrics": metrics_to_eval
+                    "metrics": metrics_to_eval,
+                    "dataset": {
+                        "files_url": input_file
+                    },
+                    "params": {
+                        "tokens_to_generate": getattr(self, "311_tokens_to_generate", 1024),
+                        "temperature": getattr(self, "312_temperature", 0.0),
+                        "top_k": getattr(self, "313_top_k", 0.0),
+                        "n_samples": getattr(self, "350_num_of_samples", -1)
+                    }
                 }
-            ],
-            "dataset": {
-                "files_url": input_file
-            },
-            "params": {
-                "tokens_to_generate":  getattr(self, "311_tokens_to_generate", 1024),
-                "temperature": getattr(self, "312_temperature", 0.0),
-                "top_k": getattr(self, "313_top_k", 0.0),
-                "n_samples": getattr(self, "350_num_of_samples", -1)
-            }
+            ]
         }
 
         eval_config_url = f"{self.evaluator_base_url}/v1/evaluation/configs"
@@ -569,12 +571,14 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
                 config_id = result.get("id")
                 return {
-                    "target_id": target_id,
-                    "config_id": config_id,
+                    "namespace": namespace,
+                    "target": f"{namespace}/{target_id}",
+                    "config": f"{namespace}/{config_id}",
                     "tags": [
                         getattr(self, "001_tag", "")
                     ]
                 }
+
 
         except httpx.TimeoutException as exc:
             error_msg = f"Request to {eval_config_url} timed out"
@@ -584,7 +588,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             response_content = exc.response.text
-            error_msg = f"HTTP error {status_code} on URL: {eval_config_url}. Response content: {response_content}"
+            error_msg = f"HTTP error {status_code} on URL: {eval_config_url}. Response content: {response_content} Request: {config_data}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
@@ -596,6 +600,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def _generate_llm_as_judge_body(self) -> dict:
         user_dataset_name = getattr(self, "dataset", None)
+        namespace = self.tenant_id if self.tenant_id else "tenant"
         custom_data = False
         task_type = "mt_bench"
         input_file = None
@@ -611,6 +616,7 @@ class NVIDIANeMoEvaluatorComponent(Component):
         judge_model_url = getattr(self, "425_judge_nemo_model_url", "")
         config_data = {
             "type": "llm_as_a_judge",
+            "namespace": namespace,
             "tasks": [
                 {
                     "type": task_type,
@@ -656,8 +662,9 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
                 config_id = result.get("id")
                 return {
-                    "target_id": target_id,
-                    "config_id": config_id,
+                    "namespace": namespace,
+                    "target": f"{namespace}/{target_id}",
+                    "config": f"{namespace}/{config_id}",
                     "tags": [
                         getattr(self, "001_tag", "")
                     ]
@@ -683,10 +690,12 @@ class NVIDIANeMoEvaluatorComponent(Component):
 
     async def create_eval_target(self, output_file) -> str:
         eval_target_url = f"{self.evaluator_base_url}/v1/evaluation/targets"
+        namespace = self.tenant_id if self.tenant_id else "tenant"
         try:
             if output_file:
                 request_body = {
                     "type": "model",
+                    "namespace": namespace,
                     "model": {
                         "cached_outputs": {
                             "files_url": "nds:my-dataset/answers.jsonl"
@@ -694,11 +703,12 @@ class NVIDIANeMoEvaluatorComponent(Component):
                     }
                 }
             else:
-                request_body ={
+                request_body = {
                     "type": "model",
+                    "namespace": namespace,
                     "model": {
                         "api_endpoint": {
-                            "url": f"{self.nemo_model_base_url}/completions",
+                            "url": f"{self.nemo_model_base_url}/v1/completions",
                             "model_id": getattr(self, "000_llm_name", "")
                         }
                     }
@@ -717,20 +727,20 @@ class NVIDIANeMoEvaluatorComponent(Component):
                 return target_id
 
         except httpx.TimeoutException as exc:
-            error_msg = f"Request to {customizations_url} timed out"
+            error_msg = f"Request to {eval_target_url} timed out"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             response_content = exc.response.text
-            error_msg = f"HTTP error {status_code} on URL: {customizations_url}. Response content: {response_content}"
+            error_msg = f"HTTP error {status_code} on URL: {eval_target_url}. Response content: {response_content}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
         except (httpx.RequestError, ValueError) as exc:
             exception_str = str(exc)
-            error_msg = f"An unexpected error occurred on URL {customizations_url}: {exception_str}"
+            error_msg = f"An unexpected error occurred on URL {eval_target_url}: {exception_str}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
@@ -872,4 +882,3 @@ class NVIDIANeMoEvaluatorComponent(Component):
         default_name = f"dataset-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
         # Use the user-provided name if available, otherwise the default
         return user_dataset_name if user_dataset_name else default_name
-
