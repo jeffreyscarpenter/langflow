@@ -71,6 +71,9 @@ export default function CollectionPage(): JSX.Element {
             handleFilesClick={() => {
               navigate("files");
             }}
+            handleNeMoDataStoreClick={() => {
+              navigate("nemo-datastore");
+            }}
           />
         )}
       <main className="flex h-full w-full overflow-hidden">

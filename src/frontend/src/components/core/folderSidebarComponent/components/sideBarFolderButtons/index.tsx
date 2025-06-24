@@ -56,11 +56,13 @@ type SideBarFoldersButtonsComponentProps = {
   handleChangeFolder?: (id: string) => void;
   handleDeleteFolder?: (item: FolderType) => void;
   handleFilesClick?: () => void;
+  handleNeMoDataStoreClick?: () => void;
 };
 const SideBarFoldersButtonsComponent = ({
   handleChangeFolder,
   handleDeleteFolder,
   handleFilesClick,
+  handleNeMoDataStoreClick,
 }: SideBarFoldersButtonsComponentProps) => {
   const location = useLocation();
   const pathname = location.pathname;
@@ -74,6 +76,7 @@ const SideBarFoldersButtonsComponent = ({
   const urlWithoutPath =
     pathname.split("/").length < (ENABLE_CUSTOM_PARAM ? 5 : 4);
   const checkPathFiles = pathname.includes("files");
+  const checkPathNeMoDataStore = pathname.includes("nemo-datastore");
 
   const checkPathName = (itemId: string) => {
     if (urlWithoutPath && itemId === myCollectionId && !checkPathFiles) {
@@ -483,6 +486,15 @@ const SideBarFoldersButtonsComponent = ({
             >
               <ForwardedIconComponent name="File" className="h-4 w-4" />
               My Files
+            </SidebarMenuButton>
+            <SidebarMenuButton
+              isActive={checkPathNeMoDataStore}
+              onClick={() => handleNeMoDataStoreClick?.()}
+              size="md"
+              className="text-sm"
+            >
+              <ForwardedIconComponent name="Database" className="h-4 w-4" />
+              NeMo Data Store
             </SidebarMenuButton>
           </div>
         </SidebarFooter>
