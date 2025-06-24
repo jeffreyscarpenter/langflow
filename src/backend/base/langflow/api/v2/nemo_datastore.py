@@ -1,7 +1,25 @@
-"""NeMo Data Store API endpoints for Langflow.
+"""
+NeMo Data Store API endpoints for Langflow.
 
 This module provides API endpoints for managing NeMo Data Store datasets
 within Langflow, including CRUD operations and file uploads.
+
+The NeMo Data Store integration allows Langflow users to:
+- List and manage datasets from NeMo Data Store
+- Upload files to datasets for training/evaluation
+- Integrate with NeMo Customizer and Evaluator components
+- Work with datasets without requiring direct NeMo Data Store access
+
+API Endpoints:
+- GET /api/v2/nemo-datastore/datasets - List all datasets
+- POST /api/v2/nemo-datastore/datasets - Create new dataset
+- GET /api/v2/nemo-datastore/datasets/{id} - Get dataset details
+- DELETE /api/v2/nemo-datastore/datasets/{id} - Delete dataset
+- POST /api/v2/nemo-datastore/datasets/{id}/files - Upload files
+- GET /api/v2/nemo-datastore/datasets/{id}/files - List dataset files
+
+Note: This implementation uses a mock service for development/testing.
+In production, replace mock_nemo_service with actual NeMo Data Store client.
 """
 
 from typing import Annotated
