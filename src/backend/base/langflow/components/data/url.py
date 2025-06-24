@@ -18,12 +18,7 @@ DEFAULT_TIMEOUT = 30
 DEFAULT_MAX_DEPTH = 1
 DEFAULT_FORMAT = "Text"
 URL_REGEX = re.compile(
-    r"^(https?:\/\/)?"
-    r"(www\.)?"
-    r"([a-zA-Z0-9.-]+)"
-    r"(\.[a-zA-Z]{2,})?"
-    r"(:\d+)?"
-    r"(\/[^\s]*)?$",
+    r"^(https?:\/\/)?" r"(www\.)?" r"([a-zA-Z0-9.-]+)" r"(\.[a-zA-Z]{2,})?" r"(:\d+)?" r"(\/[^\s]*)?$",
     re.IGNORECASE,
 )
 
