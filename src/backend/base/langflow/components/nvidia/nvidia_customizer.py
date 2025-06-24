@@ -49,6 +49,14 @@ class NvidiaCustomizerComponent(Component):
             info="Enter the name to reference the output fine tuned model, ex: `imdb-data@v1`",
             required=True,
         ),
+        DropdownInput(
+            name="existing_dataset",
+            display_name="Use Existing Dataset",
+            info="Select an existing dataset from NeMo Data Store (optional)",
+            options=[],  # Will be populated dynamically
+            refresh_button=True,
+            advanced=True,
+        ),
         DataInput(
             name="training_data",
             display_name="Training Data",
@@ -105,6 +113,7 @@ class NvidiaCustomizerComponent(Component):
         """Updates the component's configuration based on the selected option or refresh button."""
         settings_service = get_settings_service()
         nemo_customizer_url = settings_service.settings.nemo_customizer_url
+        nemo_data_store_url = settings_service.settings.nemo_data_store_url
         models_url = f"{nemo_customizer_url}/v1/customization/configs"
         try:
             if field_name == "model_name" and nemo_customizer_url != "":
@@ -152,6 +161,13 @@ class NvidiaCustomizerComponent(Component):
                             build_config["fine_tuning_type"]["options"] = fine_tuning_type
                             self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_type}")
 
+            elif field_name == "existing_dataset" and nemo_data_store_url != "":
+                # Refresh existing datasets from NeMo Data Store
+                self.log("Refreshing existing datasets from NeMo Data Store")
+                existing_datasets = self.fetch_existing_datasets(nemo_data_store_url)
+                build_config["existing_dataset"]["options"] = existing_datasets
+                self.log(f"Updated existing_dataset dropdown options: {existing_datasets}")
+
         except httpx.HTTPStatusError as exc:
             error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
             self.log(error_msg)
@@ -163,6 +179,28 @@ class NvidiaCustomizerComponent(Component):
             raise ValueError(error_msg) from exc
 
         return build_config
+
+    def fetch_existing_datasets(self, nemo_data_store_url: str):
+        """Fetch existing datasets from NeMo Data Store."""
+        namespace = getattr(self, "namespace", "default")
+        datasets_url = f"{nemo_data_store_url}/v1/datastore/datasets"
+        params = {"namespace": namespace, "page_size": 100}
+
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(datasets_url, headers=self.headers, params=params)
+                response.raise_for_status()
+
+                datasets_data = response.json()
+                # Return dataset names for the dropdown
+                return [dataset["name"] for dataset in datasets_data.get("data", [])]
+
+        except httpx.RequestError as exc:
+            self.log(f"Error fetching existing datasets: {exc}")
+            return []
+        except httpx.HTTPStatusError as exc:
+            self.log(f"HTTP error {exc.response.status_code} while fetching datasets: {exc}")
+            return []
 
     async def customize(self) -> dict:
         settings_service = get_settings_service()
@@ -198,7 +236,16 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Training data is empty, cannot customize the model"
             raise ValueError(error_msg)
 
-        dataset_name = await self.process_dataset(nemo_data_store_url, nemo_entity_store_url)
+        # Check if user selected an existing dataset
+        existing_dataset = getattr(self, "existing_dataset", None)
+        if existing_dataset:
+            # Use existing dataset
+            self.log(f"Using existing dataset: {existing_dataset}")
+            dataset_name = existing_dataset
+        else:
+            # Process and upload new dataset
+            dataset_name = await self.process_dataset(nemo_data_store_url, nemo_entity_store_url)
+
         customizations_url = f"{nemo_customizer_url}/v1/customization/jobs"
         error_code_already_present = 409
         output_model = f"{namespace}/{fine_tuned_model_name}"

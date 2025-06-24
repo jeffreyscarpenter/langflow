@@ -76,7 +76,6 @@ const router = createBrowserRouter(
             }
           >
             <Route path="" element={<AppAuthenticatedPage />}>
-              <Route path="nemo-datastore" element={<NeMoDataStorePage />} />
               <Route path="" element={<CustomDashboardWrapperPage />}>
                 <Route path="" element={<CollectionPage />}>
                   <Route
@@ -86,6 +85,7 @@ const router = createBrowserRouter(
                   {ENABLE_FILE_MANAGEMENT && (
                     <Route path="files" element={<FilesPage />} />
                   )}
+                  <Route path="nemo-datastore" element={<NeMoDataStorePage />} />
                   <Route
                     path="flows/"
                     element={<HomePage key="flows" type="flows" />}

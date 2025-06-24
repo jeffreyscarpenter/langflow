@@ -74,6 +74,14 @@ class NvidiaEvaluatorComponent(Component):
             real_time_refresh=True,  # Ensure dropdown triggers update on change
             required=True,
         ),
+        DropdownInput(
+            name="existing_dataset",
+            display_name="Use Existing Dataset",
+            info="Select an existing dataset from NeMo Data Store for evaluation (optional)",
+            options=[],  # Will be populated dynamically
+            refresh_button=True,
+            advanced=True,
+        ),
     ]
 
     outputs = [
@@ -227,6 +235,28 @@ class NvidiaEvaluatorComponent(Component):
             self.log(f"Error response {exc.response.status_code} while requesting models: {exc}")
             return []
 
+    def fetch_existing_datasets(self, nemo_data_store_url: str):
+        """Fetch existing datasets from NeMo Data Store."""
+        namespace = getattr(self, "namespace", "default")
+        datasets_url = f"{nemo_data_store_url}/v1/datastore/datasets"
+        params = {"namespace": namespace, "page_size": 100}
+
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(datasets_url, headers=self.headers, params=params)
+                response.raise_for_status()
+
+                datasets_data = response.json()
+                # Return dataset names for the dropdown
+                return [dataset["name"] for dataset in datasets_data.get("data", [])]
+
+        except httpx.RequestError as exc:
+            self.log(f"Error fetching existing datasets: {exc}")
+            return []
+        except httpx.HTTPStatusError as exc:
+            self.log(f"HTTP error {exc.response.status_code} while fetching datasets: {exc}")
+            return []
+
     def clear_dynamic_inputs(self, build_config, saved_values):
         """Clears dynamically added fields by referring to a special marker in build_config."""
         dynamic_fields = build_config.get("_dynamic_fields", [])
@@ -289,6 +319,13 @@ class NvidiaEvaluatorComponent(Component):
                 if run_inference:
                     conditional_inputs = self.custom_evaluation_inputs[3:6]
                     self.add_inputs_with_saved_values(build_config, conditional_inputs, saved_values)
+            elif field_name == "existing_dataset":
+                nemo_data_store_url = settings_service.settings.nemo_data_store_url
+                # Refresh existing datasets from NeMo Data Store
+                self.log("Refreshing existing datasets from NeMo Data Store")
+                existing_datasets = self.fetch_existing_datasets(nemo_data_store_url)
+                build_config["existing_dataset"]["options"] = existing_datasets
+                self.log(f"Updated existing_dataset dropdown options: {existing_datasets}")
             logger.info("Build config update completed successfully.")
         except (httpx.RequestError, ValueError) as exc:
             error_msg = f"Unexpected error on URL {self.evaluator_base_url}"
@@ -432,12 +469,19 @@ class NvidiaEvaluatorComponent(Component):
             raise ValueError(error_msg) from exc
 
     async def _generate_custom_evaluation_body(self, nemo_evaluator_url: str, nemo_data_store_url: str) -> dict:
-        # Process and upload the dataset if training_data is provided
-        if self.evaluation_data is None:
-            error_msg = "Evaluation data is empty, cannot evaluate the model"
-            raise ValueError(error_msg)
+        # Check if user selected an existing dataset
+        existing_dataset = getattr(self, "existing_dataset", None)
+        if existing_dataset:
+            # Use existing dataset
+            self.log(f"Using existing dataset: {existing_dataset}")
+            repo_id = f"{self.namespace}/{existing_dataset}"
+        else:
+            # Process and upload the dataset if evaluation_data is provided
+            if self.evaluation_data is None:
+                error_msg = "Evaluation data is empty, cannot evaluate the model"
+                raise ValueError(error_msg)
+            repo_id = await self.process_eval_dataset(nemo_data_store_url)
 
-        repo_id = await self.process_eval_dataset(nemo_data_store_url)
         input_file = f"nds:{repo_id}/input.json"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
