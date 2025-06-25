@@ -52,16 +52,16 @@ class NvidiaCustomizerComponent(Component):
         ),
         DatasetInput(
             name="existing_dataset",
-            display_name="Use Existing Dataset",
-            info="Select an existing dataset from NeMo Data Store (optional)",
+            display_name="Existing Dataset",
+            info="Select an existing dataset from NeMo Data Store to use instead of uploading new training data",
             dataset_types=["fileset"],
-            advanced=True,
         ),
         DataInput(
             name="training_data",
             display_name="Training Data",
+            info="Provide training data to create a new dataset, or leave empty if using an existing dataset",
             is_list=True,
-            required=True,
+            required=False,
         ),
         DropdownInput(
             name="model_name",
@@ -222,20 +222,18 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Refresh and select the training type and fine tuning type"
             raise ValueError(error_msg)
 
-        # Process and upload the dataset if training_data is provided
-        if self.training_data is None:
-            error_msg = "Training data is empty, cannot customize the model"
-            raise ValueError(error_msg)
-
-        # Check if user selected an existing dataset
+        # Check if user selected an existing dataset or provided training data
         existing_dataset = getattr(self, "existing_dataset", None)
         if existing_dataset:
             # Use existing dataset
             self.log(f"Using existing dataset: {existing_dataset}")
             dataset_name = existing_dataset
-        else:
+        elif self.training_data is not None and len(self.training_data) > 0:
             # Process and upload new dataset
             dataset_name = await self.process_dataset(nemo_data_store_url, nemo_entity_store_url)
+        else:
+            error_msg = "Either select an existing dataset or provide training data to create a new dataset"
+            raise ValueError(error_msg)
 
         customizations_url = f"{nemo_customizer_url}/v1/customization/jobs"
         error_code_already_present = 409

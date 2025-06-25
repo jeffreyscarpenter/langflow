@@ -77,10 +77,9 @@ class NvidiaEvaluatorComponent(Component):
         ),
         DatasetInput(
             name="existing_dataset",
-            display_name="Use Existing Dataset",
-            info="Select an existing dataset from NeMo Data Store (optional)",
+            display_name="Existing Dataset",
+            info="Select an existing dataset from NeMo Data Store to use for evaluation",
             dataset_types=["fileset"],
-            advanced=True,
         ),
     ]
 
@@ -468,8 +467,8 @@ class NvidiaEvaluatorComponent(Component):
             repo_id = f"{self.namespace}/{existing_dataset}"
         else:
             # Process and upload the dataset if evaluation_data is provided
-            if self.evaluation_data is None:
-                error_msg = "Evaluation data is empty, cannot evaluate the model"
+            if self.evaluation_data is None or len(self.evaluation_data) == 0:
+                error_msg = "Either select an existing dataset or provide evaluation data to run evaluation"
                 raise ValueError(error_msg)
             repo_id = await self.process_eval_dataset(nemo_data_store_url)
 

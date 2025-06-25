@@ -43,6 +43,43 @@ export default function InputDatasetComponent({
 
   const isDisabled = disabled || isLoading;
 
+  // Update component state when datasets are loaded
+  useEffect(() => {
+    if (datasets !== undefined && ENABLE_NEMO_DATASTORE) {
+      if (isList) {
+        if (
+          Array.isArray(value) &&
+          value.every((v) => datasets?.find((d) => d.name === v)) &&
+          Array.isArray(dataset_path) &&
+          dataset_path.every((v) => datasets?.find((d) => d.id === v))
+        ) {
+          return;
+        }
+      } else {
+        if (
+          typeof value === "string" &&
+          datasets?.find((d) => d.name === value) &&
+          typeof dataset_path === "string" &&
+          datasets?.find((d) => d.id === dataset_path)
+        ) {
+          return;
+        }
+      }
+      handleOnNewValue({
+        value: isList
+          ? (datasets
+              ?.filter((d) => selectedDatasets.includes(d.id))
+              .map((d) => d.name) ?? [])
+          : (datasets?.find((d) => selectedDatasets.includes(d.id))?.name ?? ""),
+        dataset_path: isList
+          ? (datasets
+              ?.filter((d) => selectedDatasets.includes(d.id))
+              .map((d) => d.id) ?? [])
+          : (datasets?.find((d) => selectedDatasets.includes(d.id))?.id ?? ""),
+      });
+    }
+  }, [datasets, value, dataset_path]);
+
   return (
     <div className="w-full">
       <div className="flex flex-col gap-2.5">
@@ -92,7 +129,7 @@ export default function InputDatasetComponent({
                   types={datasetTypes}
                   isList={isList}
                 >
-                  {
+                  {(selectedDatasets.length === 0 || isList) && (
                     <div data-testid="input-dataset-component" className="w-full">
                       <Button
                         disabled={isDisabled}
@@ -106,7 +143,7 @@ export default function InputDatasetComponent({
                             : "w-full",
                           "font-semibold",
                         )}
-                        data-testid="button_open_dataset_management"
+                        data-testid="button_select_dataset"
                       >
                         {selectedDatasets.length !== 0 ? (
                           <ForwardedIconComponent
@@ -119,7 +156,7 @@ export default function InputDatasetComponent({
                         )}
                       </Button>
                     </div>
-                  }
+                  )}
                 </DatasetManagerModal>
               </div>
             )
