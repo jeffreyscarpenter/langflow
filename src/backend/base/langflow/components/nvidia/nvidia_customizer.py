@@ -113,7 +113,6 @@ class NvidiaCustomizerComponent(Component):
         """Updates the component's configuration based on the selected option or refresh button."""
         settings_service = get_settings_service()
         nemo_customizer_url = settings_service.settings.nemo_customizer_url
-        nemo_data_store_url = settings_service.settings.nemo_data_store_url
         models_url = f"{nemo_customizer_url}/v1/customization/configs"
         try:
             if field_name == "model_name" and nemo_customizer_url != "":
@@ -161,12 +160,8 @@ class NvidiaCustomizerComponent(Component):
                             build_config["fine_tuning_type"]["options"] = fine_tuning_type
                             self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_type}")
 
-            elif field_name == "existing_dataset":
-                # Refresh existing datasets from NeMo Data Store using our mock service
-                self.log("Refreshing existing datasets from NeMo Data Store")
-                existing_datasets = await self.fetch_existing_datasets(nemo_data_store_url)
-                build_config["existing_dataset"]["options"] = existing_datasets
-                self.log(f"Updated existing_dataset dropdown options: {existing_datasets}")
+            # Note: existing_dataset is a DatasetInput that uses the dataset manager modal,
+            # not a dropdown with options, so no update_build_config handling is needed
 
         except httpx.HTTPStatusError as exc:
             error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
@@ -179,19 +174,6 @@ class NvidiaCustomizerComponent(Component):
             raise ValueError(error_msg) from exc
 
         return build_config
-
-    async def fetch_existing_datasets(self, _nemo_data_store_url: str):
-        """Fetch existing datasets from NeMo Data Store via Langflow's internal mock service."""
-        try:
-            # Use our mock service directly
-            from langflow.services.nemo_datastore_mock import mock_nemo_service
-
-            datasets = await mock_nemo_service.list_datasets()
-            # Extract dataset names from the response
-            return [dataset.get("name", "") for dataset in datasets if dataset.get("name")] if datasets else []
-        except Exception as exc:  # noqa: BLE001
-            self.log(f"Error fetching existing datasets from mock service: {exc}")
-            return []
 
     async def customize(self) -> dict:
         settings_service = get_settings_service()

@@ -295,6 +295,9 @@ export function ParameterRenderComponent({
         return (
           <InputDatasetComponent
             {...baseInputProps}
+            datasetTypes={templateData.datasetTypes}
+            dataset_path={templateData.dataset_path}
+            isList={templateData.list ?? false}
             id={`inputdataset_${id}`}
           />
         );

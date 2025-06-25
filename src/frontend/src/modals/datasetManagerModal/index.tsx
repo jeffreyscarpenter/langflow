@@ -43,8 +43,11 @@ export default function DatasetManagerModal({
   );
 
   useEffect(() => {
-    setInternalSelectedDatasets(selectedDatasets || []);
-  }, [internalOpen]);
+    // Only update internal state when modal opens, not when it closes
+    if (internalOpen) {
+      setInternalSelectedDatasets(selectedDatasets || []);
+    }
+  }, [selectedDatasets, internalOpen]);
 
   const handleCreate = (datasetIds: string[]) => {
     setInternalSelectedDatasets(

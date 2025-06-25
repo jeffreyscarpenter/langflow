@@ -6,7 +6,6 @@ import DatasetsRendererComponent from "@/modals/datasetManagerModal/components/d
 import { cn } from "@/utils/utils";
 import { useEffect } from "react";
 import useAlertStore from "../../../../../stores/alertStore";
-import useFlowsManagerStore from "../../../../../stores/flowsManagerStore";
 import IconComponent, {
   ForwardedIconComponent,
 } from "../../../../common/genericIconComponent";
@@ -23,7 +22,6 @@ export default function InputDatasetComponent({
   editNode = false,
   id,
 }: InputProps<string, DatasetComponentType>): JSX.Element {
-  const currentFlowId = useFlowsManagerStore((state) => state.currentFlowId);
   const setErrorData = useAlertStore((state) => state.setErrorData);
 
   // Clear component state
@@ -42,43 +40,6 @@ export default function InputDatasetComponent({
     : [];
 
   const isDisabled = disabled || isLoading;
-
-  // Update component state when datasets are loaded
-  useEffect(() => {
-    if (datasets !== undefined && ENABLE_NEMO_DATASTORE) {
-      if (isList) {
-        if (
-          Array.isArray(value) &&
-          value.every((v) => datasets?.find((d) => d.name === v)) &&
-          Array.isArray(dataset_path) &&
-          dataset_path.every((v) => datasets?.find((d) => d.id === v))
-        ) {
-          return;
-        }
-      } else {
-        if (
-          typeof value === "string" &&
-          datasets?.find((d) => d.name === value) &&
-          typeof dataset_path === "string" &&
-          datasets?.find((d) => d.id === dataset_path)
-        ) {
-          return;
-        }
-      }
-      handleOnNewValue({
-        value: isList
-          ? (datasets
-              ?.filter((d) => selectedDatasets.includes(d.id))
-              .map((d) => d.name) ?? [])
-          : (datasets?.find((d) => selectedDatasets.includes(d.id))?.name ?? ""),
-        dataset_path: isList
-          ? (datasets
-              ?.filter((d) => selectedDatasets.includes(d.id))
-              .map((d) => d.id) ?? [])
-          : (datasets?.find((d) => selectedDatasets.includes(d.id))?.id ?? ""),
-      });
-    }
-  }, [datasets, value, dataset_path]);
 
   return (
     <div className="w-full">
@@ -114,15 +75,19 @@ export default function InputDatasetComponent({
                   datasets={datasets}
                   selectedDatasets={selectedDatasets}
                   handleSubmit={(selectedDatasets) => {
+                    const newValue = isList
+                      ? selectedDatasets.map(
+                          (id) => datasets.find((d) => d.id === id)?.name,
+                        )
+                      : (datasets.find((d) => d.id === selectedDatasets[0])?.name ?? "");
+
+                    const newDatasetPath = isList
+                      ? selectedDatasets
+                      : (selectedDatasets[0] ?? "");
+
                     handleOnNewValue({
-                      value: isList
-                        ? selectedDatasets.map(
-                            (id) => datasets.find((d) => d.id === id)?.name,
-                          )
-                        : (datasets.find((d) => d.id === selectedDatasets[0])?.name ?? ""),
-                      dataset_path: isList
-                        ? selectedDatasets
-                        : (selectedDatasets[0] ?? ""),
+                      value: newValue,
+                      dataset_path: newDatasetPath,
                     });
                   }}
                   disabled={isDisabled}

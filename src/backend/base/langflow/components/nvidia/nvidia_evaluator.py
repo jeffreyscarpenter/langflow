@@ -234,19 +234,6 @@ class NvidiaEvaluatorComponent(Component):
             self.log(f"Error response {exc.response.status_code} while requesting models: {exc}")
             return []
 
-    async def fetch_existing_datasets(self, _nemo_data_store_url: str):
-        """Fetch existing datasets from NeMo Data Store via Langflow's internal mock service."""
-        try:
-            # Use our mock service directly
-            from langflow.services.nemo_datastore_mock import mock_nemo_service
-
-            datasets = await mock_nemo_service.list_datasets()
-            # Extract dataset names from the response
-            return [dataset.get("name", "") for dataset in datasets if dataset.get("name")] if datasets else []
-        except Exception as exc:  # noqa: BLE001
-            self.log(f"Error fetching existing datasets from mock service: {exc}")
-            return []
-
     def clear_dynamic_inputs(self, build_config, saved_values):
         """Clears dynamically added fields by referring to a special marker in build_config."""
         dynamic_fields = build_config.get("_dynamic_fields", [])
@@ -309,13 +296,8 @@ class NvidiaEvaluatorComponent(Component):
                 if run_inference:
                     conditional_inputs = self.custom_evaluation_inputs[3:6]
                     self.add_inputs_with_saved_values(build_config, conditional_inputs, saved_values)
-            elif field_name == "existing_dataset":
-                nemo_data_store_url = settings_service.settings.nemo_data_store_url
-                # Refresh existing datasets from NeMo Data Store using our mock service
-                self.log("Refreshing existing datasets from NeMo Data Store")
-                existing_datasets = await self.fetch_existing_datasets(nemo_data_store_url)
-                build_config["existing_dataset"]["options"] = existing_datasets
-                self.log(f"Updated existing_dataset dropdown options: {existing_datasets}")
+            # Note: existing_dataset is a DatasetInput that uses the dataset manager modal,
+            # not a dropdown with options, so no update_build_config handling is needed
             logger.info("Build config update completed successfully.")
         except (httpx.RequestError, ValueError) as exc:
             error_msg = f"Unexpected error on URL {self.evaluator_base_url}"
