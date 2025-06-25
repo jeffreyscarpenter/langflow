@@ -248,6 +248,9 @@ class ParameterHandler:
                 else:
                     msg = f"Invalid value type {type(val)} for field {field_name}"
                     raise ValueError(msg)
+            case "dataset":
+                # Handle dataset field type - pass through the value as is
+                params[field_name] = val
             case _:
                 if val:
                     params[field_name] = val

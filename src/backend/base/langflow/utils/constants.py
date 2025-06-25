@@ -71,6 +71,7 @@ DIRECT_TYPES = [
     "query",
     "tools",
     "mcp",
+    "dataset",
 ]
 
 

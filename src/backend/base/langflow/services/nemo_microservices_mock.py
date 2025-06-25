@@ -215,7 +215,9 @@ class MockNeMoMicroservicesService:
                     "epochs": 10,
                     "learning_rate": 0.00005,
                 },
-                "output_model": "default/meta-llama-3.2-1b-instruct-fine-tuning-dataset-full@cust-YbmGLDpnZUPMGjqKZ2MaUy",
+                "output_model": (
+                    "default/meta-llama-3.2-1b-instruct-fine-tuning-dataset-full@cust-YbmGLDpnZUPMGjqKZ2MaUy"
+                ),
                 "status": "completed",
                 "status_details": {
                     "created_at": (now - timedelta(days=1)).isoformat(),
@@ -347,7 +349,11 @@ class MockNeMoMicroservicesService:
                         {
                             "updated_at": (now - timedelta(hours=3, minutes=30)).isoformat(),
                             "message": "DataLoader worker (pid 2266) is killed by signal: Terminated.",
-                            "detail": 'Traceback (most recent call last):\n  File "/usr/local/lib/python3.12/dist-packages/lightning/pytorch/trainer/call.py", line 46, in _call_and_handle_interrupt',
+                            "detail": (
+                                "Traceback (most recent call last):\n"
+                                '  File "/usr/local/lib/python3.12/dist-packages/lightning/pytorch/trainer/call.py", '
+                                "line 46, in _call_and_handle_interrupt"
+                            ),
                         },
                         {
                             "updated_at": (now - timedelta(hours=3)).isoformat(),
@@ -523,6 +529,206 @@ class MockNeMoMicroservicesService:
     # NeMo Customizer API (Real API Structure)
     # =============================================================================
 
+    async def get_customization_configs(self) -> dict[str, Any]:
+        """Mock implementation of GET /v1/customization/configs.
+
+        This endpoint provides available model configurations for customization.
+        Used by the NeMo Customizer component to populate dropdown options.
+
+        Returns:
+            Available model configurations with training and fine-tuning types
+        """
+        # No delay for maximum responsiveness
+        # await asyncio.sleep(0.01)
+
+        now = datetime.now(timezone.utc)
+
+        # Sample model configurations that can be customized
+        configs = [
+            {
+                "schema_version": "1.0",
+                "id": "58bee815-0473-45d7-a5e6-fc088f6142eb",
+                "namespace": "default",
+                "created_at": (now - timedelta(days=30)).isoformat(),
+                "updated_at": (now - timedelta(days=5)).isoformat(),
+                "custom_fields": {},
+                "name": "meta/llama-3.1-8b-instruct",
+                "base_model": "meta/llama-3.1-8b-instruct",
+                "model_path": "llama-3_1-8b-instruct",
+                "training_types": ["sft", "dpo", "rm"],
+                "finetuning_types": ["lora", "qlora", "full"],
+                "precision": "bf16",
+                "num_gpus": 4,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 1,
+                "max_seq_length": 4096,
+            },
+            {
+                "schema_version": "1.0",
+                "id": "99bee815-0473-45d7-a5e6-fc088f6142eb",
+                "namespace": "default",
+                "created_at": (now - timedelta(days=25)).isoformat(),
+                "updated_at": (now - timedelta(days=3)).isoformat(),
+                "custom_fields": {},
+                "name": "meta/llama-3.2-1b-instruct",
+                "base_model": "meta/llama-3.2-1b-instruct",
+                "model_path": "llama-3_2-1b-instruct",
+                "training_types": ["sft", "dpo"],
+                "finetuning_types": ["lora", "qlora", "full"],
+                "precision": "bf16",
+                "num_gpus": 2,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 1,
+                "max_seq_length": 4096,
+            },
+            {
+                "schema_version": "1.0",
+                "id": "77bee815-0473-45d7-a5e6-fc088f6142eb",
+                "namespace": "default",
+                "created_at": (now - timedelta(days=20)).isoformat(),
+                "updated_at": (now - timedelta(days=1)).isoformat(),
+                "custom_fields": {},
+                "name": "meta/llama-3.1-70b-instruct",
+                "base_model": "meta/llama-3.1-70b-instruct",
+                "model_path": "llama-3_1-70b-instruct",
+                "training_types": ["sft", "dpo", "rm"],
+                "finetuning_types": ["lora", "qlora"],
+                "precision": "bf16",
+                "num_gpus": 8,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 2,
+                "max_seq_length": 4096,
+            },
+            {
+                "schema_version": "1.0",
+                "id": "44bee815-0473-45d7-a5e6-fc088f6142eb",
+                "namespace": "default",
+                "created_at": (now - timedelta(days=15)).isoformat(),
+                "updated_at": (now - timedelta(hours=12)).isoformat(),
+                "custom_fields": {},
+                "name": "microsoft/DialoGPT-medium",
+                "base_model": "microsoft/DialoGPT-medium",
+                "model_path": "microsoft_DialoGPT-medium",
+                "training_types": ["sft"],
+                "finetuning_types": ["lora", "qlora", "full"],
+                "precision": "bf16",
+                "num_gpus": 2,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 1,
+                "max_seq_length": 1024,
+            },
+            {
+                "schema_version": "1.0",
+                "id": "55bee815-0473-45d7-a5e6-fc088f6142eb",
+                "namespace": "default",
+                "created_at": (now - timedelta(days=10)).isoformat(),
+                "updated_at": (now - timedelta(hours=6)).isoformat(),
+                "custom_fields": {},
+                "name": "gpt2",
+                "base_model": "gpt2",
+                "model_path": "gpt2",
+                "training_types": ["sft"],
+                "finetuning_types": ["lora", "qlora", "full"],
+                "precision": "bf16",
+                "num_gpus": 1,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 1,
+                "max_seq_length": 512,
+            },
+        ]
+
+        return {
+            "data": configs,
+            "total": len(configs),
+            "page": 1,
+            "size": len(configs),
+        }
+
+    async def create_customization_job(self, job_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/customization/jobs.
+
+        This matches the real NeMo Customizer API endpoint that creates
+        a new customization job.
+
+        Args:
+            job_data: Job configuration including model, dataset, hyperparameters, etc.
+
+        Returns:
+            Created job object with job ID and initial status
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.2)
+
+        # Generate a unique job ID
+        job_id = f"cust-{uuid.uuid4().hex[:24]}"
+        now = datetime.now(timezone.utc)
+
+        # Extract data from the request
+        config_name = job_data.get("config", "Unknown Model")
+        dataset_info = job_data.get("dataset", {})
+        dataset_name = dataset_info.get("name", "Unknown Dataset")
+        namespace = dataset_info.get("namespace", "default")
+        hyperparameters = job_data.get("hyperparameters", {})
+        output_model = job_data.get("output_model", f"{namespace}/{job_id}")
+
+        # Create the job entry
+        job_entry = {
+            "id": job_id,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "namespace": namespace,
+            "config": {
+                "schema_version": "1.0",
+                "id": str(uuid.uuid4()),
+                "namespace": namespace,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "custom_fields": {},
+                "name": config_name,
+                "base_model": config_name,
+                "model_path": config_name.replace("/", "_"),
+                "training_types": [hyperparameters.get("training_type", "sft")],
+                "finetuning_types": [hyperparameters.get("finetuning_type", "lora")],
+                "precision": "bf16",
+                "num_gpus": 4,
+                "num_nodes": 1,
+                "micro_batch_size": 1,
+                "tensor_parallel_size": 1,
+                "max_seq_length": 4096,
+            },
+            "dataset": f"{namespace}/{dataset_name}",
+            "hyperparameters": hyperparameters,
+            "output_model": output_model,
+            "status": "created",
+            "status_details": {
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "steps_completed": 0,
+                "epochs_completed": 0,
+                "percentage_done": 0,
+                "status_logs": [
+                    {
+                        "updated_at": now.isoformat(),
+                        "message": "created",
+                    },
+                ],
+                "training_loss": [],
+                "validation_loss": [],
+            },
+            "custom_fields": {},
+        }
+
+        # Store the job
+        self._customizer_jobs[job_id] = job_entry
+
+        # Return the created job
+        return job_entry
+
     async def get_customizer_job_status(self, job_id: str) -> dict[str, Any] | None:
         """Mock implementation of GET /v1/customization/jobs/{id}/status.
 
@@ -596,8 +802,72 @@ class MockNeMoMicroservicesService:
         # Simulate network delay
         await asyncio.sleep(0.1)
 
+        # Add to tracked jobs list
         if job_id not in self._tracked_jobs:
             self._tracked_jobs.append(job_id)
+
+        # Create a job entry if it doesn't exist
+        if job_id not in self._customizer_jobs:
+            now = datetime.now(timezone.utc)
+            job_entry = {
+                "id": job_id,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "namespace": metadata.get("namespace", "default") if metadata else "default",
+                "config": {
+                    "schema_version": "1.0",
+                    "id": str(uuid.uuid4()),
+                    "namespace": metadata.get("namespace", "default") if metadata else "default",
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                    "custom_fields": {},
+                    "name": metadata.get("config", "Unknown Model") if metadata else "Unknown Model",
+                    "base_model": metadata.get("config", "Unknown Model") if metadata else "Unknown Model",
+                    "model_path": (
+                        metadata.get("config", "unknown-model").replace("/", "_") if metadata else "unknown-model"
+                    ),
+                    "training_types": [metadata.get("training_type", "sft")] if metadata else ["sft"],
+                    "finetuning_types": [metadata.get("fine_tuning_type", "lora")] if metadata else ["lora"],
+                    "precision": "bf16",
+                    "num_gpus": 4,
+                    "num_nodes": 1,
+                    "micro_batch_size": 1,
+                    "tensor_parallel_size": 1,
+                    "max_seq_length": 4096,
+                },
+                "dataset": metadata.get("dataset", "Unknown Dataset") if metadata else "Unknown Dataset",
+                "hyperparameters": {
+                    "finetuning_type": metadata.get("fine_tuning_type", "lora") if metadata else "lora",
+                    "training_type": metadata.get("training_type", "sft") if metadata else "sft",
+                    "batch_size": metadata.get("batch_size", 16) if metadata else 16,
+                    "epochs": metadata.get("epochs", 5) if metadata else 5,
+                    "learning_rate": metadata.get("learning_rate", 0.0001) if metadata else 0.0001,
+                },
+                "output_model": metadata.get("output_model", f"default/{job_id}") if metadata else f"default/{job_id}",
+                "status": "created",
+                "status_details": {
+                    "created_at": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                    "steps_completed": 0,
+                    "epochs_completed": 0,
+                    "percentage_done": 0,
+                    "status_logs": [
+                        {
+                            "updated_at": now.isoformat(),
+                            "message": "created",
+                        },
+                    ],
+                    "training_loss": [],
+                    "validation_loss": [],
+                },
+                "custom_fields": {},
+            }
+
+            # Add LoRA config if applicable
+            if metadata and metadata.get("fine_tuning_type") == "lora":
+                job_entry["hyperparameters"]["lora"] = {"adapter_dim": 16}
+
+            self._customizer_jobs[job_id] = job_entry
 
         return {
             "job_id": job_id,

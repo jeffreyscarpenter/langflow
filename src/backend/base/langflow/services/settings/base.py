@@ -282,7 +282,7 @@ class Settings(BaseSettings):
     nemo_entity_store_url: str = "http://localhost:9002"
     """Base api url for NeMo Entity Store."""
 
-    nemo_customizer_url: str = "http:/localhost:9003"
+    nemo_customizer_url: str = "http://localhost:7860/api/v2/nemo"
     """Base api url for NeMo Customizer."""
 
     nemo_evaluator_url: str = "http://localhost:9005"

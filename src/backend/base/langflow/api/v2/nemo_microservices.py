@@ -88,11 +88,12 @@ async def get_dataset(dataset_id: str):
         dataset = await mock_nemo_service.get_dataset(dataset_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        return dataset
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e!s}") from e
+    else:
+        return dataset
 
 
 @router.delete("/datasets/{dataset_id}")
@@ -109,11 +110,12 @@ async def delete_dataset(dataset_id: str):
         deleted = await mock_nemo_service.delete_dataset(dataset_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        return {"message": "Dataset deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {e!s}") from e
+    else:
+        return {"message": "Dataset deleted successfully"}
 
 
 @router.post("/datasets/{dataset_id}/files", response_model=dict)
@@ -157,6 +159,25 @@ async def get_dataset_files(dataset_id: str):
 # =============================================================================
 
 
+@router.get("/v1/customization/configs", response_model=dict)
+async def get_customization_configs():
+    """Get available model configurations for customization.
+
+    This endpoint matches the real NeMo Customizer API:
+    GET /v1/customization/configs
+
+    Used by the NeMo Customizer component to populate dropdown options
+    for model selection, training types, and fine-tuning types.
+
+    Returns:
+        Available model configurations with training and fine-tuning types
+    """
+    try:
+        return await mock_nemo_service.get_customization_configs()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e!s}") from e
+
+
 @router.get("/v1/customization/jobs/{job_id}/status", response_model=dict)
 async def get_job_status(job_id: str):
     """Get customization job status with timestamped training/validation loss.
@@ -174,35 +195,56 @@ async def get_job_status(job_id: str):
         job_status = await mock_nemo_service.get_customizer_job_status(job_id)
         if not job_status:
             raise HTTPException(status_code=404, detail="Job not found")
-        return job_status
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get job status: {e!s}") from e
+    else:
+        return job_status
+
+
+@router.post("/v1/customization/jobs", response_model=dict)
+async def create_customization_job(job_data: dict):
+    """Create a new customization job.
+
+    This endpoint matches the real NeMo Customizer API:
+    POST /v1/customization/jobs
+
+    Args:
+        job_data: Job configuration including model, dataset, hyperparameters, etc.
+
+    Returns:
+        Created job object with job ID and status
+    """
+    try:
+        return await mock_nemo_service.create_customization_job(job_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create customization job: {e!s}") from e
 
 
 @router.get("/v1/customization/jobs/{job_id}", response_model=dict)
 async def get_job_details(job_id: str):
-    """Get comprehensive customization job details.
+    """Get detailed information about a specific customization job.
 
     This endpoint matches the real NeMo Customizer API:
-    GET /v1/customization/jobs/{id}
+    GET /v1/customization/jobs/{customizationID}
 
     Args:
         job_id: NeMo Customizer job ID
 
     Returns:
-        Complete job details including configuration, status logs, and metrics
+        Complete job details including configuration and status logs
     """
     try:
         job_details = await mock_nemo_service.get_customizer_job_details(job_id)
         if not job_details:
             raise HTTPException(status_code=404, detail="Job not found")
-        return job_details
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get job details: {e!s}") from e
+    else:
+        return job_details
 
 
 @router.get("/v1/customization/jobs", response_model=list[dict])
@@ -316,22 +358,21 @@ async def list_customizer_jobs_legacy():
 
 @router.get("/jobs/{job_id}", response_model=dict)
 async def get_customizer_job_legacy(job_id: str):
-    """Legacy endpoint: Get detailed information about a specific customizer job.
-
-    DEPRECATED: Use GET /v1/customization/jobs/{job_id}
+    """Get customizer job details (legacy endpoint).
 
     Args:
         job_id: NeMo Customizer job ID
 
     Returns:
-        Job details including status, progress, and metrics
+        Job details
     """
     try:
         job = await mock_nemo_service.get_customizer_job_details(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        return job
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get job: {e!s}") from e
+    else:
+        return job

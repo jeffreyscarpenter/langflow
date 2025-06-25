@@ -21,6 +21,7 @@ from langflow.io import (
 )
 from langflow.schema import Data
 from langflow.services.deps import get_settings_service
+from langflow.services.nemo_microservices_mock import mock_nemo_service
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +77,14 @@ class NvidiaCustomizerComponent(Component):
             info="Select the type of training to use",
             refresh_button=True,
             required=True,
+            options=["sft", "dpo", "rm"],
         ),
         DropdownInput(
             name="fine_tuning_type",
             display_name="Fine Tuning Type",
             info="Select the fine tuning type to use",
             required=True,
+            options=["lora", "qlora", "full"],
         ),
         IntInput(
             name="epochs",
@@ -118,9 +121,9 @@ class NvidiaCustomizerComponent(Component):
             if field_name == "model_name" and nemo_customizer_url != "":
                 self.log(f"Refreshing model names from endpoint {models_url}, value: {field_value}")
 
-                # Use a synchronous HTTP client
-                with httpx.Client(timeout=5.0) as client:
-                    response = client.get(models_url, headers=self.headers)
+                # Use an async HTTP client for better compatibility
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(models_url, headers=self.headers)
                     response.raise_for_status()
 
                     models_data = response.json()
@@ -130,10 +133,25 @@ class NvidiaCustomizerComponent(Component):
 
                 self.log("Updated model_name dropdown options.")
 
+                # Also update training_type and fine_tuning_type options if a model is selected
+                if field_value:
+                    selected_model = next(
+                        (model for model in models_data.get("data", []) if model["base_model"] == field_value),
+                        None,
+                    )
+                    if selected_model:
+                        training_types = selected_model.get("training_types", [])
+                        build_config["training_type"]["options"] = training_types
+                        self.log(f"Updated training_type dropdown options: {training_types}")
+
+                        fine_tuning_types = selected_model.get("finetuning_types", [])
+                        build_config["fine_tuning_type"]["options"] = fine_tuning_types
+                        self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_types}")
+
             elif field_name == "training_type" and nemo_customizer_url != "":
-                # Use a synchronous HTTP client
-                with httpx.Client(timeout=5.0) as client:
-                    response = client.get(models_url, headers=self.headers)
+                # Use an async HTTP client for better compatibility
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(models_url, headers=self.headers)
                     response.raise_for_status()
 
                     models_data = response.json()
@@ -258,6 +276,34 @@ class NvidiaCustomizerComponent(Component):
             result_dict = {**result}
             id_value = result_dict["id"]
             result_dict["url"] = f"{customizations_url}/{id_value}/status"
+
+            # Track the job for monitoring in Langflow dashboard
+            try:
+                job_metadata = {
+                    "source": "nvidia_customizer_component",
+                    "config": self.model_name,
+                    "dataset": dataset_name,
+                    "training_type": self.training_type,
+                    "fine_tuning_type": self.fine_tuning_type,
+                    "epochs": int(self.epochs),
+                    "batch_size": int(self.batch_size),
+                    "learning_rate": float(self.learning_rate),
+                    "output_model": output_model,
+                    "namespace": namespace,
+                    "description": description,
+                }
+
+                await mock_nemo_service.track_customizer_job(id_value, job_metadata)
+                self.log(f"Successfully tracked job {id_value} for monitoring")
+
+                # Add tracking info to the result
+                result_dict["tracking_enabled"] = True
+                result_dict["monitoring_url"] = "/nemo?tab=jobs"
+
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as tracking_error:
+                # Don't fail the job creation if tracking fails
+                self.log(f"Warning: Failed to track job for monitoring: {tracking_error}")
+                result_dict["tracking_enabled"] = False
 
         except httpx.TimeoutException as exc:
             error_msg = f"Request to {customizations_url} timed out"
