@@ -187,9 +187,8 @@ class NvidiaCustomizerComponent(Component):
             from langflow.services.nemo_datastore_mock import mock_nemo_service
 
             datasets = await mock_nemo_service.list_datasets()
-            if datasets:
-                return [dataset.get("name", "") for dataset in datasets if dataset.get("name")]
-            return []
+            # Extract dataset names from the response
+            return [dataset.get("name", "") for dataset in datasets if dataset.get("name")] if datasets else []
         except Exception as exc:  # noqa: BLE001
             self.log(f"Error fetching existing datasets from mock service: {exc}")
             return []
