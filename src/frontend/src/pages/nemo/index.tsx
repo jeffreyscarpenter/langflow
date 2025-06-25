@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { NeMoDataset } from "@/types/nemo";
 import DatasetList from "@/components/nemo/DatasetList";
 import DatasetFiles from "@/components/nemo/DatasetFiles";
+import JobList from "@/components/nemo/JobList";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Database, Wrench, Activity } from "lucide-react";
@@ -67,13 +68,7 @@ const NeMoMicroservicesPage: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="jobs">
-            <div className="text-center py-12">
-              <Wrench className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Job Tracking Coming Soon</h3>
-              <p className="text-muted-foreground">
-                Monitor your NeMo Customizer jobs with real-time progress and metrics.
-              </p>
-            </div>
+            <JobList />
           </TabsContent>
         </Tabs>
       )}
