@@ -11,6 +11,7 @@ from langflow.custom import Component
 from langflow.field_typing.range_spec import RangeSpec
 from langflow.io import (
     DataInput,
+    DatasetInput,
     DropdownInput,
     FloatInput,
     IntInput,
@@ -74,12 +75,11 @@ class NvidiaEvaluatorComponent(Component):
             real_time_refresh=True,  # Ensure dropdown triggers update on change
             required=True,
         ),
-        DropdownInput(
+        DatasetInput(
             name="existing_dataset",
             display_name="Use Existing Dataset",
-            info="Select an existing dataset from NeMo Data Store for evaluation (optional)",
-            options=[],  # Will be populated dynamically
-            refresh_button=True,
+            info="Select an existing dataset from NeMo Data Store (optional)",
+            dataset_types=["fileset"],
             advanced=True,
         ),
     ]
@@ -240,15 +240,10 @@ class NvidiaEvaluatorComponent(Component):
         try:
             # Use our mock service directly
             from langflow.services.nemo_datastore_mock import mock_nemo_service
-            
+
             datasets = await mock_nemo_service.list_datasets()
-            
             # Extract dataset names from the response
-            if datasets:
-                return [dataset.get("name", "") for dataset in datasets if dataset.get("name")]
-            
-            return []
-                
+            return [dataset.get("name", "") for dataset in datasets if dataset.get("name")] if datasets else []
         except Exception as exc:  # noqa: BLE001
             self.log(f"Error fetching existing datasets from mock service: {exc}")
             return []

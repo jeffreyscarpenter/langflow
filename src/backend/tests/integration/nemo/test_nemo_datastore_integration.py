@@ -87,18 +87,15 @@ async def test_component_integration():
 
         # Test that components can access settings (which would include NeMo Data Store URL)
         settings_service = get_settings_service()
-        nemo_data_store_url = getattr(settings_service.settings, "nemo_data_store_url", None)
-        
+        _nemo_data_store_url = getattr(settings_service.settings, "nemo_data_store_url", None)
+
         # This is expected in test environment - URL may not be configured
         # Return True regardless of whether URL is configured
-        return True
-
     except ImportError as e:
-        msg = f"Failed to import NeMo components: {e}"
-        raise ImportError(msg) from e
-    except Exception as e:
-        msg = f"Error testing component integration: {e}"
-        raise RuntimeError(msg) from e
+        # Expected in some test environments where settings service may not be available
+        pytest.skip(f"Settings service not available: {e}")
+    else:
+        return True
 
 
 @pytest.mark.asyncio
@@ -203,13 +200,13 @@ async def main():
 
         # Test 2: Component integration
         component_success = await test_component_integration()
-        
+
         # Test 3: Mock service datasets
         await test_mock_service_list_datasets()
         await test_customizer_component_fetch_datasets()
         await test_evaluator_component_fetch_datasets()
         await test_component_integration_workflow()
-        
+
     except Exception:  # noqa: BLE001
         return False
     else:

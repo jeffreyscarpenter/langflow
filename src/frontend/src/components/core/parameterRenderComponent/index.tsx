@@ -12,6 +12,7 @@ import ToolsComponent from "./components/ToolsComponent";
 import DictComponent from "./components/dictComponent";
 import { EmptyParameterComponent } from "./components/emptyParameterComponent";
 import FloatComponent from "./components/floatComponent";
+import InputDatasetComponent from "./components/inputDatasetComponent";
 import InputFileComponent from "./components/inputFileComponent";
 import InputListComponent from "./components/inputListComponent";
 import IntComponent from "./components/intComponent";
@@ -288,6 +289,13 @@ export function ParameterRenderComponent({
             editNode={editNode}
             disabled={disabled}
             value={templateValue}
+          />
+        );
+      case "dataset":
+        return (
+          <InputDatasetComponent
+            {...baseInputProps}
+            id={`inputdataset_${id}`}
           />
         );
       default:

@@ -657,6 +657,52 @@ class DefaultPromptField(Input):
     value: Any = ""  # Set the value to empty string
 
 
+class DatasetInput(BaseInputMixin, ListableInputMixin, MetadataTraceMixin):
+    """Represents a dataset field for NeMo Data Store datasets.
+
+    This class represents a dataset input and provides functionality for handling dataset values.
+    It inherits from the `BaseInputMixin`, `ListableInputMixin`, and `MetadataTraceMixin` classes.
+
+    Attributes:
+        field_type (SerializableFieldTypes): The field type of the input. Defaults to FieldTypes.DATASET.
+        dataset_types (list[str]): List of supported dataset types. Defaults to ["fileset"].
+    """
+
+    field_type: SerializableFieldTypes = FieldTypes.DATASET
+    dataset_types: list[str] = Field(default=["fileset"], alias="datasetTypes")
+    dataset_path: list[str] | str | None = Field(default="")
+
+    @field_validator("dataset_path")
+    @classmethod
+    def validate_dataset_path(cls, v):
+        if v is None or v == "":
+            return v
+        # If it's already a list, validate each element is a string
+        if isinstance(v, list):
+            for item in v:
+                if not isinstance(item, str):
+                    msg = "All dataset paths must be strings"
+                    raise TypeError(msg)
+            return v
+        # If it's a single string, that's also valid
+        if isinstance(v, str):
+            return v
+        msg = "dataset_path must be a string, list of strings, or None"
+        raise ValueError(msg)
+
+    @field_validator("dataset_types")
+    @classmethod
+    def validate_dataset_types(cls, v):
+        if not isinstance(v, list):
+            msg = "dataset_types must be a list"
+            raise ValueError(msg)  # noqa: TRY004
+        for dataset_type in v:
+            if not isinstance(dataset_type, str):
+                msg = "dataset_types must be a list of strings"
+                raise ValueError(msg)  # noqa: TRY004
+        return v
+
+
 InputTypes: TypeAlias = (
     Input
     | AuthInput
@@ -689,6 +735,7 @@ InputTypes: TypeAlias = (
     | SliderInput
     | DataFrameInput
     | TabInput
+    | DatasetInput
 )
 
 InputTypesMap: dict[str, type[InputTypes]] = {t.__name__: t for t in get_args(InputTypes)}

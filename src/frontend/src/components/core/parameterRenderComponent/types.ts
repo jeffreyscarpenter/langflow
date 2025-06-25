@@ -153,3 +153,9 @@ export type NodeInfoType = {
   isAuth: boolean;
   variableName: string;
 };
+
+export type DatasetComponentType = {
+  datasetTypes: Array<string>;
+  dataset_path?: string | string[];
+  isList?: boolean;
+};
