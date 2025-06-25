@@ -15,7 +15,7 @@ import pytest
 from langflow.components.nvidia.nvidia_customizer import NvidiaCustomizerComponent
 from langflow.components.nvidia.nvidia_evaluator import NvidiaEvaluatorComponent
 from langflow.services.deps import get_settings_service
-from langflow.services.nemo_datastore_mock import mock_nemo_service
+from langflow.services.nemo_microservices_mock import mock_nemo_service
 
 # Mock NeMo Data Store API endpoints
 BASE_URL = "http://localhost:7861/api/v2/nemo-datastore"

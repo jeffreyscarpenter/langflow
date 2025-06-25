@@ -1,34 +1,42 @@
-"""
-NeMo Data Store API endpoints for Langflow.
+"""NeMo Microservices API endpoints for Langflow.
 
-This module provides API endpoints for managing NeMo Data Store datasets
-within Langflow, including CRUD operations and file uploads.
+This module provides API endpoints for managing NeMo Microservices integration
+within Langflow, including Data Store, Customizer, and Evaluator operations.
 
-The NeMo Data Store integration allows Langflow users to:
+The NeMo Microservices integration allows Langflow users to:
 - List and manage datasets from NeMo Data Store
 - Upload files to datasets for training/evaluation
-- Integrate with NeMo Customizer and Evaluator components
-- Work with datasets without requiring direct NeMo Data Store access
+- Track and monitor Customizer jobs
+- View Evaluator results and metrics
+- Integrate with NeMo components without requiring direct NeMo service access
 
 API Endpoints:
-- GET /api/v2/nemo-datastore/datasets - List all datasets
-- POST /api/v2/nemo-datastore/datasets - Create new dataset
-- GET /api/v2/nemo-datastore/datasets/{id} - Get dataset details
-- DELETE /api/v2/nemo-datastore/datasets/{id} - Delete dataset
-- POST /api/v2/nemo-datastore/datasets/{id}/files - Upload files
-- GET /api/v2/nemo-datastore/datasets/{id}/files - List dataset files
+- GET /api/v2/nemo/datasets - List all datasets
+- POST /api/v2/nemo/datasets - Create new dataset
+- GET /api/v2/nemo/datasets/{id} - Get dataset details
+- DELETE /api/v2/nemo/datasets/{id} - Delete dataset
+- POST /api/v2/nemo/datasets/{id}/files - Upload files
+- GET /api/v2/nemo/datasets/{id}/files - List dataset files
+- GET /api/v2/nemo/jobs - List customizer jobs
+- GET /api/v2/nemo/jobs/{id} - Get job details
+- POST /api/v2/nemo/jobs - Store job for tracking
 
 Note: This implementation uses a mock service for development/testing.
-In production, replace mock_nemo_service with actual NeMo Data Store client.
+In production, replace mock_nemo_service with actual NeMo Microservices clients.
 """
 
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from langflow.services.nemo_datastore_mock import mock_nemo_service
+from langflow.services.nemo_microservices_mock import mock_nemo_service
 
-router = APIRouter(prefix="/nemo-datastore", tags=["NeMo Data Store"])
+router = APIRouter(prefix="/nemo", tags=["NeMo Microservices"])
+
+
+# =============================================================================
+# Dataset Management (Data Store)
+# =============================================================================
 
 
 @router.get("/datasets", response_model=list[dict])
@@ -80,8 +88,7 @@ async def get_dataset(dataset_id: str):
         dataset = await mock_nemo_service.get_dataset(dataset_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        else:
-            return dataset
+        return dataset
     except HTTPException:
         raise
     except Exception as e:
@@ -102,8 +109,7 @@ async def delete_dataset(dataset_id: str):
         deleted = await mock_nemo_service.delete_dataset(dataset_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        else:
-            return {"message": "Dataset deleted successfully"}
+        return {"message": "Dataset deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -144,3 +150,58 @@ async def get_dataset_files(dataset_id: str):
         return await mock_nemo_service.get_dataset_files(dataset_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get dataset files: {e!s}") from e
+
+
+# =============================================================================
+# Job Management (Customizer)
+# =============================================================================
+
+
+@router.post("/jobs", response_model=dict)
+async def store_job_for_tracking(job_data: dict):
+    """Store job info from NeMo component for tracking.
+
+    Args:
+        job_data: Job information from NeMo Customizer component
+
+    Returns:
+        Stored job data
+    """
+    try:
+        return await mock_nemo_service.store_customizer_job(job_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store job: {e!s}") from e
+
+
+@router.get("/jobs", response_model=list[dict])
+async def list_customizer_jobs():
+    """List all tracked customizer jobs.
+
+    Returns:
+        List of job objects with status and metadata
+    """
+    try:
+        return await mock_nemo_service.get_customizer_jobs()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e!s}") from e
+
+
+@router.get("/jobs/{job_id}", response_model=dict)
+async def get_customizer_job(job_id: str):
+    """Get detailed information about a specific customizer job.
+
+    Args:
+        job_id: NeMo Customizer job ID
+
+    Returns:
+        Job details including status, progress, and metrics
+    """
+    try:
+        job = await mock_nemo_service.get_customizer_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return job
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get job: {e!s}") from e

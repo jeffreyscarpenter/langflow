@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Integration test for NeMo Data Store integration with existing NeMo components."""
 
 import asyncio
@@ -24,9 +23,9 @@ async def test_nemo_component_integration():
         sys.path.insert(0, base_path)
 
         # Test file existence
-        customizer_path = "base/langflow/components/nvidia/nvidia_customizer.py"
-        evaluator_path = "base/langflow/components/nvidia/nvidia_evaluator.py"
-        dataset_creator_path = "base/langflow/components/nvidia/nvidia_dataset_creator.py"
+        customizer_path = "src/backend/base/langflow/components/nvidia/nvidia_customizer.py"
+        evaluator_path = "src/backend/base/langflow/components/nvidia/nvidia_evaluator.py"
+        dataset_creator_path = "src/backend/base/langflow/components/nvidia/nvidia_dataset_creator.py"
 
         if os.path.exists(customizer_path):
             print("✅ NeMo Customizer component file exists")
@@ -51,10 +50,10 @@ async def test_nemo_component_integration():
             else:
                 print("❌ NeMo Customizer missing existing_dataset field")
 
-            if "fetch_existing_datasets" in customizer_content:
-                print("✅ NeMo Customizer has fetch_existing_datasets method")
+            if "DatasetInput" in customizer_content:
+                print("✅ NeMo Customizer has DatasetInput field")
             else:
-                print("❌ NeMo Customizer missing fetch_existing_datasets method")
+                print("❌ NeMo Customizer missing DatasetInput field")
 
         with open(evaluator_path) as f:
             evaluator_content = f.read()
@@ -63,10 +62,10 @@ async def test_nemo_component_integration():
             else:
                 print("❌ NeMo Evaluator missing existing_dataset field")
 
-            if "fetch_existing_datasets" in evaluator_content:
-                print("✅ NeMo Evaluator has fetch_existing_datasets method")
+            if "DatasetInput" in evaluator_content:
+                print("✅ NeMo Evaluator has DatasetInput field")
             else:
-                print("❌ NeMo Evaluator missing fetch_existing_datasets method")
+                print("❌ NeMo Evaluator missing DatasetInput field")
 
         with open(dataset_creator_path) as f:
             dataset_creator_content = f.read()

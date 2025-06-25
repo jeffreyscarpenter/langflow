@@ -1,5 +1,5 @@
 import useAlertStore from "@/stores/alertStore";
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { NeMoDataset } from "@/types/nemo";
 import { useQueryClient } from "@tanstack/react-query";
 import { ReactNode, useEffect, useState } from "react";
 import { ForwardedIconComponent } from "../../components/common/genericIconComponent";

@@ -27,7 +27,7 @@ import LoginPage from "./pages/LoginPage";
 import FilesPage from "./pages/MainPage/pages/filesPage";
 import HomePage from "./pages/MainPage/pages/homePage";
 import CollectionPage from "./pages/MainPage/pages/main-page";
-import NeMoDataStorePage from "./pages/nemo-datastore";
+import NeMoMicroservicesPage from "./pages/nemo";
 import SettingsPage from "./pages/SettingsPage";
 import ApiKeysPage from "./pages/SettingsPage/pages/ApiKeysPage";
 import GeneralPage from "./pages/SettingsPage/pages/GeneralPage";
@@ -85,7 +85,7 @@ const router = createBrowserRouter(
                   {ENABLE_FILE_MANAGEMENT && (
                     <Route path="files" element={<FilesPage />} />
                   )}
-                  <Route path="nemo-datastore" element={<NeMoDataStorePage />} />
+                  <Route path="nemo" element={<NeMoMicroservicesPage />} />
                   <Route
                     path="flows/"
                     element={<HomePage key="flows" type="flows" />}

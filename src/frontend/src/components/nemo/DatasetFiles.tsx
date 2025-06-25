@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
-import { useGetDatasetFiles, useUploadFiles } from "@/controllers/API/queries/nemo-datastore";
-import { NeMoFile } from "@/types/nemo-datastore";
+import { useGetDatasetFiles, useUploadFiles } from "@/controllers/API/queries/nemo";
+import { NeMoFile } from "@/types/nemo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

@@ -1,6 +1,6 @@
 import { ICON_STROKE_WIDTH } from "@/constants/constants";
-import { useGetDatasets } from "@/controllers/API/queries/nemo-datastore";
-import { ENABLE_NEMO_DATASTORE } from "@/customization/feature-flags";
+import { useGetDatasets } from "@/controllers/API/queries/nemo";
+import { ENABLE_NEMO_MICROSERVICES } from "@/customization/feature-flags";
 import DatasetManagerModal from "@/modals/datasetManagerModal";
 import DatasetsRendererComponent from "@/modals/datasetManagerModal/components/datasetsRendererComponent";
 import { cn } from "@/utils/utils";
@@ -45,7 +45,7 @@ export default function InputDatasetComponent({
     <div className="w-full">
       <div className="flex flex-col gap-2.5">
         <div className="flex items-center gap-2.5">
-          {ENABLE_NEMO_DATASTORE ? (
+          {ENABLE_NEMO_MICROSERVICES ? (
             datasets && (
               <div className="relative flex w-full flex-col gap-2">
                 <div className="nopan nowheel flex max-h-44 flex-col overflow-y-auto">

@@ -1,4 +1,4 @@
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { NeMoDataset } from "@/types/nemo";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 

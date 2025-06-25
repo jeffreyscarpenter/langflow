@@ -1,29 +1,29 @@
 import { useQueryFunctionType } from "@/types/api";
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { NeMoFile } from "@/types/nemo";
 import { api } from "../../api";
 import { getURL } from "../../helpers/constants";
 import { UseRequestProcessor } from "../../services/request-processor";
 
-interface GetDatasetParams {
+interface GetDatasetFilesParams {
   datasetId: string;
 }
 
-export const useGetDataset: useQueryFunctionType<
-  GetDatasetParams,
-  NeMoDataset
+export const useGetDatasetFiles: useQueryFunctionType<
+  GetDatasetFilesParams,
+  NeMoFile[]
 > = (params, options) => {
   const { query } = UseRequestProcessor();
 
-  const getDatasetFn = async () => {
-    const response = await api.get<NeMoDataset>(
-      `${getURL("NEMO_DATASTORE", undefined, true)}/datasets/${params.datasetId}`
+  const getDatasetFilesFn = async () => {
+    const response = await api.get<NeMoFile[]>(
+      `${getURL("NEMO", undefined, true)}/datasets/${params.datasetId}/files`
     );
     return response.data;
   };
 
   const queryResult = query(
-    ["useGetDataset", params.datasetId],
-    getDatasetFn,
+    ["useGetDatasetFiles", params.datasetId],
+    getDatasetFilesFn,
     {
       refetchOnWindowFocus: false,
       ...options,

@@ -1,5 +1,5 @@
 import { useMutationFunctionType } from "@/types/api";
-import { CreateDatasetRequest, CreateDatasetResponse } from "@/types/nemo-datastore";
+import { CreateDatasetRequest, CreateDatasetResponse } from "@/types/nemo";
 import { UseMutationResult } from "@tanstack/react-query";
 import { api } from "../../api";
 import { getURL } from "../../helpers/constants";
@@ -23,7 +23,7 @@ export const useCreateDataset: useMutationFunctionType<
     }
 
     const response = await api.post<CreateDatasetResponse>(
-      `${getURL("NEMO_DATASTORE", undefined, true)}/datasets?${params.toString()}`
+      `${getURL("NEMO", undefined, true)}/datasets?${params.toString()}`
     );
     return response.data;
   }

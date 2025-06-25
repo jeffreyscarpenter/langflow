@@ -1,5 +1,5 @@
 import { useMutationFunctionType } from "@/types/api";
-import { UploadFilesResponse } from "@/types/nemo-datastore";
+import { UploadFilesResponse } from "@/types/nemo";
 import { UseMutationResult } from "@tanstack/react-query";
 import { api } from "../../api";
 import { getURL } from "../../helpers/constants";
@@ -24,7 +24,7 @@ export const useUploadFiles: useMutationFunctionType<
     });
 
     const response = await api.post<UploadFilesResponse>(
-      `${getURL("NEMO_DATASTORE", undefined, true)}/datasets/${data.datasetId}/files`,
+      `${getURL("NEMO", undefined, true)}/datasets/${data.datasetId}/files`,
       formData,
       {
         headers: {

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { useCreateDataset } from "@/controllers/API/queries/nemo-datastore";
-import { CreateDatasetRequest } from "@/types/nemo-datastore";
+import { useCreateDataset } from "@/controllers/API/queries/nemo";
+import { CreateDatasetRequest } from "@/types/nemo";
 import {
   Dialog,
   DialogContent,

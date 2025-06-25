@@ -1,5 +1,5 @@
 import { useQueryFunctionType } from "@/types/api";
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { NeMoDataset } from "@/types/nemo";
 import { api } from "../../api";
 import { getURL } from "../../helpers/constants";
 import { UseRequestProcessor } from "../../services/request-processor";
@@ -12,7 +12,7 @@ export const useGetDatasets: useQueryFunctionType<
 
   const getDatasetsFn = async () => {
     const response = await api.get<NeMoDataset[]>(
-      `${getURL("NEMO_DATASTORE", undefined, true)}/datasets`
+      `${getURL("NEMO", undefined, true)}/datasets`
     );
     return response.data;
   };

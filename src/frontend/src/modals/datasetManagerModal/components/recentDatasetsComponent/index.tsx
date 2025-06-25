@@ -1,4 +1,4 @@
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { NeMoDataset } from "@/types/nemo";
 
 interface RecentDatasetsComponentProps {
   datasets: NeMoDataset[];

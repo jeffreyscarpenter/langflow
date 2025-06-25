@@ -5,9 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Database, Plus, Eye, Trash2, Calendar, FileText } from "lucide-react";
-import { useGetDatasets } from "@/controllers/API/queries/nemo-datastore/use-get-datasets";
-import { useDeleteDataset } from "@/controllers/API/queries/nemo-datastore/use-delete-dataset";
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { useGetDatasets } from "@/controllers/API/queries/nemo/use-get-datasets";
+import { useDeleteDataset } from "@/controllers/API/queries/nemo/use-delete-dataset";
+import { NeMoDataset } from "@/types/nemo";
 import CreateDatasetDialog from "./CreateDatasetDialog";
 import DatasetPreview from "./DatasetPreview";
 

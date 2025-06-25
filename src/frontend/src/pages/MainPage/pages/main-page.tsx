@@ -72,7 +72,7 @@ export default function CollectionPage(): JSX.Element {
               navigate("files");
             }}
             handleNeMoDataStoreClick={() => {
-              navigate("nemo-datastore");
+              navigate("nemo");
             }}
           />
         )}

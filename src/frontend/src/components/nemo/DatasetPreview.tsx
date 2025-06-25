@@ -7,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, FileText, Database, Eye, Download } from "lucide-react";
-import { useGetDatasetFiles } from "@/controllers/API/queries/nemo-datastore/use-get-dataset-files";
-import { NeMoDataset } from "@/types/nemo-datastore";
+import { useGetDatasetFiles } from "@/controllers/API/queries/nemo/use-get-dataset-files";
+import { NeMoDataset } from "@/types/nemo";
 
 interface DatasetPreviewProps {
   dataset: NeMoDataset;

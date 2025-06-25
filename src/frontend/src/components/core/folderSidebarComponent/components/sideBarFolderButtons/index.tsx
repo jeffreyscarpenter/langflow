@@ -76,7 +76,7 @@ const SideBarFoldersButtonsComponent = ({
   const urlWithoutPath =
     pathname.split("/").length < (ENABLE_CUSTOM_PARAM ? 5 : 4);
   const checkPathFiles = pathname.includes("files");
-  const checkPathNeMoDataStore = pathname.includes("nemo-datastore");
+  const checkPathNeMoDataStore = pathname.includes("nemo");
 
   const checkPathName = (itemId: string) => {
     if (urlWithoutPath && itemId === myCollectionId && !checkPathFiles) {
@@ -493,8 +493,8 @@ const SideBarFoldersButtonsComponent = ({
               size="md"
               className="text-sm"
             >
-              <ForwardedIconComponent name="Database" className="h-4 w-4" />
-              NeMo Data Store
+              <ForwardedIconComponent name="Activity" className="h-4 w-4" />
+              NeMo Microservices
             </SidebarMenuButton>
           </div>
         </SidebarFooter>
