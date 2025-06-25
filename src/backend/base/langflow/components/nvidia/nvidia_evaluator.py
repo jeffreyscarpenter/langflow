@@ -235,26 +235,22 @@ class NvidiaEvaluatorComponent(Component):
             self.log(f"Error response {exc.response.status_code} while requesting models: {exc}")
             return []
 
-    def fetch_existing_datasets(self, nemo_data_store_url: str):
-        """Fetch existing datasets from NeMo Data Store."""
-        namespace = getattr(self, "namespace", "default")
-        datasets_url = f"{nemo_data_store_url}/v1/datastore/datasets"
-        params = {"namespace": namespace, "page_size": 100}
-
+    async def fetch_existing_datasets(self, _nemo_data_store_url: str):
+        """Fetch existing datasets from NeMo Data Store via Langflow's internal mock service."""
         try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(datasets_url, headers=self.headers, params=params)
-                response.raise_for_status()
-
-                datasets_data = response.json()
-                # Return dataset names for the dropdown
-                return [dataset["name"] for dataset in datasets_data.get("data", [])]
-
-        except httpx.RequestError as exc:
-            self.log(f"Error fetching existing datasets: {exc}")
+            # Use our mock service directly
+            from langflow.services.nemo_datastore_mock import mock_nemo_service
+            
+            datasets = await mock_nemo_service.list_datasets()
+            
+            # Extract dataset names from the response
+            if datasets:
+                return [dataset.get("name", "") for dataset in datasets if dataset.get("name")]
+            
             return []
-        except httpx.HTTPStatusError as exc:
-            self.log(f"HTTP error {exc.response.status_code} while fetching datasets: {exc}")
+                
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"Error fetching existing datasets from mock service: {exc}")
             return []
 
     def clear_dynamic_inputs(self, build_config, saved_values):
@@ -290,7 +286,7 @@ class NvidiaEvaluatorComponent(Component):
         elif evaluation_type == "Similarity Metrics":
             self.add_inputs_with_saved_values(build_config, self.custom_evaluation_inputs, saved_values)
 
-    def update_build_config(self, build_config, field_value, field_name=None):
+    async def update_build_config(self, build_config, field_value, field_name=None):
         """Updates the component's configuration based on the selected option."""
         try:
             message = f"Updating build config: field_name={field_name}, field_value={field_value}"
@@ -321,9 +317,9 @@ class NvidiaEvaluatorComponent(Component):
                     self.add_inputs_with_saved_values(build_config, conditional_inputs, saved_values)
             elif field_name == "existing_dataset":
                 nemo_data_store_url = settings_service.settings.nemo_data_store_url
-                # Refresh existing datasets from NeMo Data Store
+                # Refresh existing datasets from NeMo Data Store using our mock service
                 self.log("Refreshing existing datasets from NeMo Data Store")
-                existing_datasets = self.fetch_existing_datasets(nemo_data_store_url)
+                existing_datasets = await self.fetch_existing_datasets(nemo_data_store_url)
                 build_config["existing_dataset"]["options"] = existing_datasets
                 self.log(f"Updated existing_dataset dropdown options: {existing_datasets}")
             logger.info("Build config update completed successfully.")
