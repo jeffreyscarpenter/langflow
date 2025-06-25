@@ -153,13 +153,132 @@ async def get_dataset_files(dataset_id: str):
 
 
 # =============================================================================
-# Job Management (Customizer)
+# Job Management (Customizer) - Real NeMo API Structure
+# =============================================================================
+
+
+@router.get("/v1/customization/jobs/{job_id}/status", response_model=dict)
+async def get_job_status(job_id: str):
+    """Get customization job status with timestamped training/validation loss.
+
+    This endpoint matches the real NeMo Customizer API:
+    GET /v1/customization/jobs/{customizationID}/status
+
+    Args:
+        job_id: NeMo Customizer job ID
+
+    Returns:
+        Job status with timestamped training and validation loss values
+    """
+    try:
+        job_status = await mock_nemo_service.get_customizer_job_status(job_id)
+        if not job_status:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return job_status
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get job status: {e!s}") from e
+
+
+@router.get("/v1/customization/jobs/{job_id}", response_model=dict)
+async def get_job_details(job_id: str):
+    """Get comprehensive customization job details.
+
+    This endpoint matches the real NeMo Customizer API:
+    GET /v1/customization/jobs/{id}
+
+    Args:
+        job_id: NeMo Customizer job ID
+
+    Returns:
+        Complete job details including configuration, status logs, and metrics
+    """
+    try:
+        job_details = await mock_nemo_service.get_customizer_job_details(job_id)
+        if not job_details:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return job_details
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get job details: {e!s}") from e
+
+
+@router.get("/v1/customization/jobs", response_model=list[dict])
+async def list_all_customizer_jobs():
+    """List all NeMo Customizer jobs.
+
+    Returns:
+        List of all customizer jobs with their current status
+    """
+    try:
+        return await mock_nemo_service.list_customizer_jobs()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list customizer jobs: {e!s}") from e
+
+
+# =============================================================================
+# Job Tracking for Langflow Dashboard
+# =============================================================================
+
+
+@router.post("/jobs/track", response_model=dict)
+async def track_job(job_id: str, metadata: dict | None = None):
+    """Start tracking a NeMo Customizer job for dashboard monitoring.
+
+    Args:
+        job_id: NeMo Customizer job ID to track
+        metadata: Optional metadata for tracking
+
+    Returns:
+        Tracking confirmation
+    """
+    try:
+        return await mock_nemo_service.track_customizer_job(job_id, metadata)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to track job: {e!s}") from e
+
+
+@router.get("/jobs/tracked", response_model=list[dict])
+async def get_tracked_jobs():
+    """Get all jobs being tracked for dashboard monitoring.
+
+    Returns:
+        List of tracked job IDs with their current status
+    """
+    try:
+        return await mock_nemo_service.get_tracked_jobs()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get tracked jobs: {e!s}") from e
+
+
+@router.delete("/jobs/track/{job_id}")
+async def stop_tracking_job(job_id: str):
+    """Stop tracking a job for dashboard monitoring.
+
+    Args:
+        job_id: Job ID to stop tracking
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        return await mock_nemo_service.stop_tracking_job(job_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stop tracking job: {e!s}") from e
+
+
+# =============================================================================
+# Legacy Endpoints (Deprecated - Use Real NeMo API Endpoints Above)
 # =============================================================================
 
 
 @router.post("/jobs", response_model=dict)
-async def store_job_for_tracking(job_data: dict):
-    """Store job info from NeMo component for tracking.
+async def store_job_for_tracking_legacy(job_data: dict):
+    """Legacy endpoint: Store job info from NeMo component for tracking.
+
+    DEPRECATED: Use POST /jobs/track instead
 
     Args:
         job_data: Job information from NeMo Customizer component
@@ -168,27 +287,38 @@ async def store_job_for_tracking(job_data: dict):
         Stored job data
     """
     try:
-        return await mock_nemo_service.store_customizer_job(job_data)
+        job_id = job_data.get("job_info", {}).get("id")
+        if not job_id:
+            raise HTTPException(status_code=400, detail="Missing job ID in job_data")
+
+        metadata = {"legacy_data": job_data, "source": "legacy_endpoint"}
+        return await mock_nemo_service.track_customizer_job(job_id, metadata)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store job: {e!s}") from e
 
 
 @router.get("/jobs", response_model=list[dict])
-async def list_customizer_jobs():
-    """List all tracked customizer jobs.
+async def list_customizer_jobs_legacy():
+    """Legacy endpoint: List all tracked customizer jobs.
+
+    DEPRECATED: Use GET /jobs/tracked or GET /v1/customization/jobs
 
     Returns:
-        List of job objects with status and metadata
+        List of tracked jobs
     """
     try:
-        return await mock_nemo_service.get_customizer_jobs()
+        return await mock_nemo_service.get_tracked_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e!s}") from e
 
 
 @router.get("/jobs/{job_id}", response_model=dict)
-async def get_customizer_job(job_id: str):
-    """Get detailed information about a specific customizer job.
+async def get_customizer_job_legacy(job_id: str):
+    """Legacy endpoint: Get detailed information about a specific customizer job.
+
+    DEPRECATED: Use GET /v1/customization/jobs/{job_id}
 
     Args:
         job_id: NeMo Customizer job ID
@@ -197,7 +327,7 @@ async def get_customizer_job(job_id: str):
         Job details including status, progress, and metrics
     """
     try:
-        job = await mock_nemo_service.get_customizer_job(job_id)
+        job = await mock_nemo_service.get_customizer_job_details(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         return job

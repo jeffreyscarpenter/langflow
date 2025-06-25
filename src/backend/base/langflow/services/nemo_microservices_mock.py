@@ -5,7 +5,7 @@ to allow development and testing without requiring the actual NeMo services.
 
 Includes mock implementations for:
 - NeMo Data Store (datasets and files)
-- NeMo Customizer (job tracking and status)
+- NeMo Customizer (job tracking and status) - matches real API structure
 - NeMo Evaluator (evaluation results)
 """
 
@@ -26,7 +26,7 @@ class MockNeMoMicroservicesService:
 
     Simulates the behavior of:
     - NeMo Data Store API endpoints
-    - NeMo Customizer job tracking
+    - NeMo Customizer API endpoints (matching real API structure)
     - NeMo Evaluator results (future)
     """
 
@@ -34,7 +34,8 @@ class MockNeMoMicroservicesService:
         # In-memory storage for mock data
         self._datasets: dict[str, dict] = {}
         self._files: dict[str, list[dict]] = {}
-        self._jobs: dict[str, dict] = {}  # NEW: Job tracking
+        self._customizer_jobs: dict[str, dict] = {}  # Jobs from NeMo Customizer API format
+        self._tracked_jobs: list[str] = []  # Job IDs we're tracking for monitoring
         self._temp_dir = Path(tempfile.mkdtemp(prefix="nemo_mock_"))
 
         # Initialize with some sample data
@@ -94,91 +95,281 @@ class MockNeMoMicroservicesService:
             self._datasets[dataset["id"]] = dataset
             self._files[dataset["id"]] = []
 
-        # Sample customizer jobs
+        # Sample NeMo Customizer jobs (matching real API structure)
         sample_jobs = [
             {
-                "id": "cust-ABC123XYZ789",
+                "id": "cust-Pi95UoDbNcqwgkruAB8LY6",
                 "created_at": (now - timedelta(hours=2)).isoformat(),
-                "updated_at": (now - timedelta(minutes=30)).isoformat(),
+                "updated_at": (now - timedelta(minutes=15)).isoformat(),
                 "namespace": "default",
                 "config": {
+                    "schema_version": "1.0",
+                    "id": "58bee815-0473-45d7-a5e6-fc088f6142eb",
+                    "namespace": "default",
+                    "created_at": (now - timedelta(hours=2)).isoformat(),
+                    "updated_at": (now - timedelta(hours=2)).isoformat(),
+                    "custom_fields": {},
                     "name": "meta/llama-3.1-8b-instruct",
                     "base_model": "meta/llama-3.1-8b-instruct",
+                    "model_path": "llama-3_1-8b-instruct",
                     "training_types": ["sft"],
                     "finetuning_types": ["lora"],
                     "precision": "bf16",
                     "num_gpus": 4,
+                    "num_nodes": 1,
+                    "micro_batch_size": 1,
+                    "tensor_parallel_size": 1,
+                    "max_seq_length": 4096,
                 },
-                "dataset": "default/Sample Training Data",
+                "dataset": "default/test-dataset",
                 "hyperparameters": {
-                    "training_type": "sft",
                     "finetuning_type": "lora",
-                    "epochs": 10,
-                    "batch_size": 16,
+                    "training_type": "sft",
+                    "batch_size": 8,
+                    "epochs": 50,
                     "learning_rate": 0.0001,
                     "lora": {"adapter_dim": 8, "adapter_dropout": 0.1},
                 },
-                "output_model": "default/my-fine-tuned-model@v1",
+                "output_model": "default/meta-llama-3.1-8b-instruct-test-dataset-lora@cust-Pi95UoDbNcqwgkruAB8LY6",
                 "status": "running",
-                "progress": {
-                    "current_epoch": 6,
-                    "total_epochs": 10,
-                    "percentage": 60,
+                "status_details": {
+                    "created_at": (now - timedelta(hours=2)).isoformat(),
+                    "updated_at": (now - timedelta(minutes=15)).isoformat(),
+                    "steps_completed": 1250,
+                    "epochs_completed": 25,
+                    "percentage_done": 50,
+                    "status_logs": [
+                        {
+                            "updated_at": (now - timedelta(hours=2)).isoformat(),
+                            "message": "created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=2, minutes=-2)).isoformat(),
+                            "message": "PVCCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=2, minutes=-2)).isoformat(),
+                            "message": "EntityHandler_0_Created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=2, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Pending",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=2, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Completed",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=2, minutes=-1)).isoformat(),
+                            "message": "TrainingJobCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=1, minutes=58)).isoformat(),
+                            "message": "TrainingJobRunning",
+                        },
+                    ],
                     "training_loss": [
-                        {"step": 10, "loss": 2.45, "timestamp": (now - timedelta(hours=1, minutes=45)).isoformat()},
-                        {"step": 20, "loss": 2.32, "timestamp": (now - timedelta(hours=1, minutes=30)).isoformat()},
-                        {"step": 30, "loss": 2.18, "timestamp": (now - timedelta(hours=1, minutes=15)).isoformat()},
+                        {"step": 10, "value": 2.45, "timestamp": (now - timedelta(hours=1, minutes=50)).isoformat()},
+                        {"step": 20, "value": 2.32, "timestamp": (now - timedelta(hours=1, minutes=45)).isoformat()},
+                        {"step": 30, "value": 2.18, "timestamp": (now - timedelta(hours=1, minutes=40)).isoformat()},
+                        {"step": 40, "value": 2.05, "timestamp": (now - timedelta(hours=1, minutes=35)).isoformat()},
+                        {"step": 50, "value": 1.95, "timestamp": (now - timedelta(hours=1, minutes=30)).isoformat()},
                     ],
                     "validation_loss": [
-                        {"epoch": 1, "loss": 2.18, "timestamp": (now - timedelta(hours=1, minutes=40)).isoformat()},
-                        {"epoch": 2, "loss": 2.05, "timestamp": (now - timedelta(hours=1, minutes=20)).isoformat()},
+                        {"epoch": 1, "value": 2.12, "timestamp": (now - timedelta(hours=1, minutes=45)).isoformat()},
+                        {"epoch": 2, "value": 1.98, "timestamp": (now - timedelta(hours=1, minutes=30)).isoformat()},
+                        {"epoch": 3, "value": 1.85, "timestamp": (now - timedelta(hours=1, minutes=15)).isoformat()},
                     ],
                 },
-                "component_id": "component-123",
-                "created_by_component": "NVIDIANeMoCustomizer",
+                "custom_fields": {},
             },
             {
-                "id": "cust-DEF456UVW012",
+                "id": "cust-YbmGLDpnZUPMGjqKZ2MaUy",
                 "created_at": (now - timedelta(days=1)).isoformat(),
                 "updated_at": (now - timedelta(hours=8)).isoformat(),
                 "namespace": "default",
                 "config": {
+                    "schema_version": "1.0",
+                    "id": "99bee815-0473-45d7-a5e6-fc088f6142eb",
+                    "namespace": "default",
+                    "created_at": (now - timedelta(days=1)).isoformat(),
+                    "updated_at": (now - timedelta(days=1)).isoformat(),
+                    "custom_fields": {},
                     "name": "meta/llama-3.2-1b-instruct",
                     "base_model": "meta/llama-3.2-1b-instruct",
+                    "model_path": "llama-3_2-1b-instruct",
                     "training_types": ["sft"],
                     "finetuning_types": ["full"],
                     "precision": "bf16",
                     "num_gpus": 8,
+                    "num_nodes": 1,
+                    "micro_batch_size": 1,
+                    "tensor_parallel_size": 1,
+                    "max_seq_length": 4096,
                 },
-                "dataset": "default/Fine-tuning Data",
+                "dataset": "default/fine-tuning-dataset",
                 "hyperparameters": {
-                    "training_type": "sft",
                     "finetuning_type": "full",
-                    "epochs": 5,
-                    "batch_size": 32,
+                    "training_type": "sft",
+                    "batch_size": 16,
+                    "epochs": 10,
                     "learning_rate": 0.00005,
                 },
-                "output_model": "default/completed-model@v2",
+                "output_model": "default/meta-llama-3.2-1b-instruct-fine-tuning-dataset-full@cust-YbmGLDpnZUPMGjqKZ2MaUy",
                 "status": "completed",
-                "progress": {
-                    "current_epoch": 5,
-                    "total_epochs": 5,
-                    "percentage": 100,
+                "status_details": {
+                    "created_at": (now - timedelta(days=1)).isoformat(),
+                    "updated_at": (now - timedelta(hours=8)).isoformat(),
+                    "steps_completed": 1000,
+                    "epochs_completed": 10,
+                    "percentage_done": 100,
+                    "status_logs": [
+                        {
+                            "updated_at": (now - timedelta(days=1)).isoformat(),
+                            "message": "created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(days=1, minutes=-2)).isoformat(),
+                            "message": "PVCCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(days=1, minutes=-2)).isoformat(),
+                            "message": "EntityHandler_0_Created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(days=1, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Pending",
+                        },
+                        {
+                            "updated_at": (now - timedelta(days=1, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Completed",
+                        },
+                        {
+                            "updated_at": (now - timedelta(days=1, minutes=-1)).isoformat(),
+                            "message": "TrainingJobCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=23, minutes=58)).isoformat(),
+                            "message": "TrainingJobRunning",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=8)).isoformat(),
+                            "message": "completed",
+                        },
+                    ],
                     "training_loss": [
-                        {"step": 50, "loss": 1.89, "timestamp": (now - timedelta(hours=10)).isoformat()},
-                        {"step": 100, "loss": 1.65, "timestamp": (now - timedelta(hours=9)).isoformat()},
+                        {"step": 100, "value": 1.85, "timestamp": (now - timedelta(hours=12)).isoformat()},
+                        {"step": 200, "value": 1.62, "timestamp": (now - timedelta(hours=10)).isoformat()},
+                        {"step": 300, "value": 1.45, "timestamp": (now - timedelta(hours=9)).isoformat()},
+                        {"step": 400, "value": 1.32, "timestamp": (now - timedelta(hours=8, minutes=30)).isoformat()},
+                        {"step": 500, "value": 1.28, "timestamp": (now - timedelta(hours=8)).isoformat()},
                     ],
                     "validation_loss": [
-                        {"epoch": 5, "loss": 1.42, "timestamp": (now - timedelta(hours=8)).isoformat()},
+                        {"epoch": 2, "value": 1.68, "timestamp": (now - timedelta(hours=11)).isoformat()},
+                        {"epoch": 4, "value": 1.52, "timestamp": (now - timedelta(hours=9, minutes=30)).isoformat()},
+                        {"epoch": 6, "value": 1.41, "timestamp": (now - timedelta(hours=8, minutes=45)).isoformat()},
+                        {"epoch": 8, "value": 1.35, "timestamp": (now - timedelta(hours=8, minutes=15)).isoformat()},
+                        {"epoch": 10, "value": 1.31, "timestamp": (now - timedelta(hours=8)).isoformat()},
                     ],
                 },
-                "component_id": "component-456",
-                "created_by_component": "NVIDIANeMoCustomizer",
+                "custom_fields": {},
+            },
+            {
+                "id": "cust-FailedJobExample123",
+                "created_at": (now - timedelta(hours=4)).isoformat(),
+                "updated_at": (now - timedelta(hours=3)).isoformat(),
+                "namespace": "default",
+                "config": {
+                    "schema_version": "1.0",
+                    "id": "77bee815-0473-45d7-a5e6-fc088f6142eb",
+                    "namespace": "default",
+                    "created_at": (now - timedelta(hours=4)).isoformat(),
+                    "updated_at": (now - timedelta(hours=4)).isoformat(),
+                    "custom_fields": {},
+                    "name": "meta/llama-3.1-8b-instruct",
+                    "base_model": "meta/llama-3.1-8b-instruct",
+                    "model_path": "llama-3_1-8b-instruct",
+                    "training_types": ["sft"],
+                    "finetuning_types": ["lora"],
+                    "precision": "bf16",
+                    "num_gpus": 4,
+                    "num_nodes": 1,
+                    "micro_batch_size": 1,
+                    "tensor_parallel_size": 1,
+                    "max_seq_length": 4096,
+                },
+                "dataset": "default/problematic-dataset",
+                "hyperparameters": {
+                    "finetuning_type": "lora",
+                    "training_type": "sft",
+                    "batch_size": 8,
+                    "epochs": 20,
+                    "learning_rate": 0.0001,
+                    "lora": {"adapter_dim": 8, "adapter_dropout": 0.1},
+                },
+                "output_model": "default/meta-llama-3.1-8b-instruct-problematic-dataset-lora@cust-FailedJobExample123",
+                "status": "failed",
+                "status_details": {
+                    "created_at": (now - timedelta(hours=4)).isoformat(),
+                    "updated_at": (now - timedelta(hours=3)).isoformat(),
+                    "steps_completed": 242,
+                    "epochs_completed": 1,
+                    "percentage_done": 25,
+                    "status_logs": [
+                        {
+                            "updated_at": (now - timedelta(hours=4)).isoformat(),
+                            "message": "created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=4, minutes=-2)).isoformat(),
+                            "message": "PVCCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=4, minutes=-2)).isoformat(),
+                            "message": "EntityHandler_0_Created",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=4, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Pending",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=4, minutes=-1)).isoformat(),
+                            "message": "EntityHandler_0_Completed",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=4, minutes=-1)).isoformat(),
+                            "message": "TrainingJobCreated",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=3, minutes=58)).isoformat(),
+                            "message": "TrainingJobRunning",
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=3, minutes=30)).isoformat(),
+                            "message": "DataLoader worker (pid 2266) is killed by signal: Terminated.",
+                            "detail": 'Traceback (most recent call last):\n  File "/usr/local/lib/python3.12/dist-packages/lightning/pytorch/trainer/call.py", line 46, in _call_and_handle_interrupt',
+                        },
+                        {
+                            "updated_at": (now - timedelta(hours=3)).isoformat(),
+                            "message": "failed",
+                        },
+                    ],
+                    "training_loss": [
+                        {"step": 10, "value": 2.85, "timestamp": (now - timedelta(hours=3, minutes=45)).isoformat()},
+                        {"step": 20, "value": 2.92, "timestamp": (now - timedelta(hours=3, minutes=40)).isoformat()},
+                        {"step": 30, "value": 2.88, "timestamp": (now - timedelta(hours=3, minutes=35)).isoformat()},
+                    ],
+                    "validation_loss": [
+                        {"epoch": 1, "value": 2.89, "timestamp": (now - timedelta(hours=3, minutes=40)).isoformat()},
+                    ],
+                },
+                "custom_fields": {},
             },
         ]
 
         for job in sample_jobs:
-            self._jobs[job["id"]] = job
+            self._customizer_jobs[job["id"]] = job
+            self._tracked_jobs.append(job["id"])
 
     # =============================================================================
     # Dataset Management (Data Store)
@@ -329,51 +520,135 @@ class MockNeMoMicroservicesService:
         return self._files.get(dataset_id, [])
 
     # =============================================================================
-    # Job Management (Customizer)
+    # NeMo Customizer API (Real API Structure)
     # =============================================================================
 
-    async def store_customizer_job(self, job_data: dict) -> dict[str, Any]:
-        """Store job info from NeMo component for tracking.
+    async def get_customizer_job_status(self, job_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/customization/jobs/{id}/status.
 
-        Args:
-            job_data: Job information from NeMo Customizer component
-
-        Returns:
-            Stored job data
-        """
-        # Simulate network delay
-        await asyncio.sleep(0.1)
-
-        job_id = job_data["job_info"]["id"]
-        stored_job = {"stored_at": datetime.now(timezone.utc).isoformat(), **job_data}
-
-        self._jobs[job_id] = stored_job
-        return stored_job
-
-    async def get_customizer_jobs(self) -> list[dict[str, Any]]:
-        """Get all tracked customizer jobs.
-
-        Returns:
-            List of job objects with status and metadata
-        """
-        # Simulate network delay
-        await asyncio.sleep(0.1)
-
-        return list(self._jobs.values())
-
-    async def get_customizer_job(self, job_id: str) -> dict[str, Any] | None:
-        """Get detailed information about a specific customizer job.
+        This matches the real NeMo Customizer API endpoint that returns
+        timestamped training and validation loss values.
 
         Args:
             job_id: NeMo Customizer job ID
 
         Returns:
-            Job details or None if not found
+            Job status with timestamped loss values or None if not found
         """
         # Simulate network delay
         await asyncio.sleep(0.1)
 
-        return self._jobs.get(job_id)
+        job = self._customizer_jobs.get(job_id)
+        if not job:
+            return None
+
+        # Return status-focused response with timestamped loss values
+        return {
+            "id": job["id"],
+            "status": job["status"],
+            "status_details": job["status_details"],
+            "created_at": job["created_at"],
+            "updated_at": job["updated_at"],
+        }
+
+    async def get_customizer_job_details(self, job_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/customization/jobs/{id}.
+
+        This matches the real NeMo Customizer API endpoint that returns
+        comprehensive job information including configuration and status logs.
+
+        Args:
+            job_id: NeMo Customizer job ID
+
+        Returns:
+            Complete job details or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return self._customizer_jobs.get(job_id)
+
+    async def list_customizer_jobs(self) -> list[dict[str, Any]]:
+        """Mock implementation for listing all NeMo Customizer jobs.
+
+        Returns:
+            List of all customizer jobs
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return list(self._customizer_jobs.values())
+
+    # =============================================================================
+    # Job Tracking for Langflow Dashboard
+    # =============================================================================
+
+    async def track_customizer_job(self, job_id: str, metadata: dict | None = None) -> dict[str, Any]:
+        """Start tracking a NeMo Customizer job for dashboard monitoring.
+
+        Args:
+            job_id: NeMo Customizer job ID to track
+            metadata: Optional metadata for tracking (e.g., user-friendly name)
+
+        Returns:
+            Tracking confirmation
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        if job_id not in self._tracked_jobs:
+            self._tracked_jobs.append(job_id)
+
+        return {
+            "job_id": job_id,
+            "tracked_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": metadata or {},
+            "message": f"Now tracking job {job_id}",
+        }
+
+    async def get_tracked_jobs(self) -> list[dict[str, Any]]:
+        """Get all jobs being tracked for dashboard monitoring.
+
+        Returns:
+            List of tracked job IDs with their current status
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        tracked_jobs = []
+        for job_id in self._tracked_jobs:
+            job = self._customizer_jobs.get(job_id)
+            if job:
+                tracked_jobs.append(
+                    {
+                        "job_id": job_id,
+                        "status": job["status"],
+                        "created_at": job["created_at"],
+                        "updated_at": job["updated_at"],
+                        "config": job.get("config", {}).get("name", "Unknown Model"),
+                        "dataset": job.get("dataset", "Unknown Dataset"),
+                        "progress": job.get("status_details", {}).get("percentage_done", 0),
+                    }
+                )
+
+        return tracked_jobs
+
+    async def stop_tracking_job(self, job_id: str) -> dict[str, Any]:
+        """Stop tracking a job for dashboard monitoring.
+
+        Args:
+            job_id: Job ID to stop tracking
+
+        Returns:
+            Confirmation message
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        if job_id in self._tracked_jobs:
+            self._tracked_jobs.remove(job_id)
+            return {"message": f"Stopped tracking job {job_id}"}
+        return {"message": f"Job {job_id} was not being tracked"}
 
     def cleanup(self):
         """Clean up temporary files and directories."""

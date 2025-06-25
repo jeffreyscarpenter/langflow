@@ -65,10 +65,146 @@ export interface DeleteDatasetResponse {
 }
 
 // =============================================================================
-// Job Types (Customizer)
+// Job Types (Customizer) - Real NeMo API Structure
 // =============================================================================
 
+export interface NeMoJobConfig {
+  schema_version: string;
+  id: string;
+  namespace: string;
+  created_at: string;
+  updated_at: string;
+  custom_fields: Record<string, any>;
+  name: string;
+  base_model: string;
+  model_path: string;
+  training_types: string[];
+  finetuning_types: string[];
+  precision: string;
+  num_gpus: number;
+  num_nodes: number;
+  micro_batch_size: number;
+  tensor_parallel_size: number;
+  max_seq_length: number;
+}
+
+export interface NeMoJobHyperparameters {
+  finetuning_type: string;
+  training_type: string;
+  batch_size: number;
+  epochs: number;
+  learning_rate: number;
+  lora?: {
+    adapter_dim: number;
+    adapter_dropout?: number;
+  };
+}
+
+export interface NeMoTrainingLossEntry {
+  step: number;
+  value: number;
+  timestamp: string;
+}
+
+export interface NeMoValidationLossEntry {
+  epoch: number;
+  value: number;
+  timestamp: string;
+}
+
+export interface NeMoJobStatusLog {
+  updated_at: string;
+  message: string;
+  detail?: string;
+}
+
+export interface NeMoJobStatusDetails {
+  created_at: string;
+  updated_at: string;
+  steps_completed: number;
+  epochs_completed: number;
+  percentage_done: number;
+  status_logs: NeMoJobStatusLog[];
+  training_loss: NeMoTrainingLossEntry[];
+  validation_loss: NeMoValidationLossEntry[];
+}
+
+export type NeMoJobStatus = "created" | "running" | "completed" | "failed" | "cancelled";
+
 export interface NeMoCustomizerJob {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  namespace: string;
+  config: NeMoJobConfig;
+  dataset: string;
+  hyperparameters: NeMoJobHyperparameters;
+  output_model: string;
+  status: NeMoJobStatus;
+  status_details: NeMoJobStatusDetails;
+  custom_fields: Record<string, any>;
+}
+
+export interface NeMoJobStatusResponse {
+  id: string;
+  status: NeMoJobStatus;
+  status_details: NeMoJobStatusDetails;
+  created_at: string;
+  updated_at: string;
+}
+
+// =============================================================================
+// Job Tracking for Langflow Dashboard
+// =============================================================================
+
+export interface TrackedJob {
+  job_id: string;
+  status: NeMoJobStatus;
+  created_at: string;
+  updated_at: string;
+  config: string;
+  dataset: string;
+  progress: number;
+}
+
+export interface TrackJobRequest {
+  job_id: string;
+  metadata?: Record<string, any>;
+}
+
+export interface TrackJobResponse {
+  job_id: string;
+  tracked_at: string;
+  metadata: Record<string, any>;
+  message: string;
+}
+
+export interface StopTrackingResponse {
+  message: string;
+}
+
+// =============================================================================
+// Legacy Support (for backward compatibility)
+// =============================================================================
+
+export interface DatasetType {
+  id: string;
+  name: string;
+  description?: string;
+  type: string;
+  created_at: string;
+  updated_at: string;
+  metadata?: {
+    file_count?: number;
+    total_size?: string;
+    format?: string;
+    tags?: string[];
+  };
+  disabled?: boolean;
+}
+
+// Legacy job types for backward compatibility
+export interface LegacyNeMoCustomizerJob {
   id: string;
   created_at: string;
   updated_at: string;
@@ -86,19 +222,9 @@ export interface NeMoCustomizerJob {
     max_seq_length?: number;
   };
   dataset: string;
-  hyperparameters: {
-    training_type: string;
-    finetuning_type: string;
-    epochs: number;
-    batch_size: number;
-    learning_rate: number;
-    lora?: {
-      adapter_dim: number;
-      adapter_dropout?: number;
-    };
-  };
+  hyperparameters: NeMoJobHyperparameters;
   output_model: string;
-  status: "created" | "running" | "completed" | "failed" | "cancelled";
+  status: NeMoJobStatus;
   progress?: {
     current_epoch: number;
     total_epochs: number;
@@ -121,34 +247,14 @@ export interface NeMoCustomizerJob {
 }
 
 export interface StoreJobRequest {
-  job_info: Partial<NeMoCustomizerJob>;
+  job_info: Partial<LegacyNeMoCustomizerJob>;
   component_id?: string;
   created_by_component?: string;
 }
 
 export interface StoreJobResponse {
-  job_info: NeMoCustomizerJob;
+  job_info: LegacyNeMoCustomizerJob;
   component_id?: string;
   created_by_component?: string;
   stored_at: string;
-}
-
-// =============================================================================
-// Legacy Support (for backward compatibility)
-// =============================================================================
-
-export interface DatasetType {
-  id: string;
-  name: string;
-  description?: string;
-  type: string;
-  created_at: string;
-  updated_at: string;
-  metadata?: {
-    file_count?: number;
-    total_size?: string;
-    format?: string;
-    tags?: string[];
-  };
-  disabled?: boolean;
 }
