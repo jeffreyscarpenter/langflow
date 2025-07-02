@@ -540,3 +540,36 @@ class NvidiaCustomizerComponent(Component):
 
         except Exception:
             logger.exception("An error occurred while uploading chunk %s", chunk_number)
+
+    async def fetch_existing_datasets(self, nemo_data_store_url: str) -> list[str]:
+        """Fetch existing datasets from the NeMo Data Store.
+
+        Args:
+            nemo_data_store_url (str): Base URL for the NeMo Data Store API
+
+        Returns:
+            List of dataset names available for training
+        """
+        try:
+            # If this is a mock URL, use the mock service directly
+            if "mock-url" in nemo_data_store_url:
+                from langflow.services.nemo_microservices_mock import mock_nemo_service
+
+                datasets_data = await mock_nemo_service.list_datasets()
+                return [dataset["name"] for dataset in datasets_data if "name" in dataset]
+
+            # Otherwise, make HTTP request to the actual API
+            datasets_url = f"{nemo_data_store_url}/datasets"
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(datasets_url, headers=self.headers)
+                response.raise_for_status()
+
+                datasets_data = response.json()
+                return [dataset["name"] for dataset in datasets_data if "name" in dataset]
+
+        except httpx.RequestError as exc:
+            self.log(f"An error occurred while requesting datasets: {exc}")
+            return []
+        except httpx.HTTPStatusError as exc:
+            self.log(f"Error response {exc.response.status_code} while requesting datasets: {exc}")
+            return []
