@@ -3,6 +3,7 @@ import { NeMoDataset } from "@/types/nemo";
 import DatasetList from "@/components/nemo/DatasetList";
 import DatasetFiles from "@/components/nemo/DatasetFiles";
 import JobList from "@/components/nemo/JobList";
+import EvaluatorJobList from "@/components/nemo/EvaluatorJobList";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Database, Wrench, Activity } from "lucide-react";
@@ -52,7 +53,7 @@ const NeMoMicroservicesPage: React.FC = () => {
         </div>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="datasets" className="flex items-center space-x-2">
               <Database className="h-4 w-4" />
               <span>Datasets</span>
@@ -60,6 +61,10 @@ const NeMoMicroservicesPage: React.FC = () => {
             <TabsTrigger value="jobs" className="flex items-center space-x-2">
               <Wrench className="h-4 w-4" />
               <span>Customizer Jobs</span>
+            </TabsTrigger>
+            <TabsTrigger value="evaluator" className="flex items-center space-x-2">
+              <Activity className="h-4 w-4" />
+              <span>Evaluator Jobs</span>
             </TabsTrigger>
           </TabsList>
 
@@ -69,6 +74,10 @@ const NeMoMicroservicesPage: React.FC = () => {
 
           <TabsContent value="jobs">
             <JobList />
+          </TabsContent>
+
+          <TabsContent value="evaluator">
+            <EvaluatorJobList />
           </TabsContent>
         </Tabs>
       )}

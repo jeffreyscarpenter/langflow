@@ -211,10 +211,10 @@ async def create_customization_job(job_data: dict):
     POST /v1/customization/jobs
 
     Args:
-        job_data: Job configuration including model, dataset, hyperparameters, etc.
+        job_data: Job configuration data
 
     Returns:
-        Created job object with job ID and status
+        Created job information
     """
     try:
         return await mock_nemo_service.create_customization_job(job_data)
@@ -224,7 +224,7 @@ async def create_customization_job(job_data: dict):
 
 @router.get("/v1/customization/jobs/{job_id}", response_model=dict)
 async def get_job_details(job_id: str):
-    """Get detailed information about a specific customization job.
+    """Get detailed information about a customization job.
 
     This endpoint matches the real NeMo Customizer API:
     GET /v1/customization/jobs/{customizationID}
@@ -233,7 +233,7 @@ async def get_job_details(job_id: str):
         job_id: NeMo Customizer job ID
 
     Returns:
-        Complete job details including configuration and status logs
+        Detailed job information
     """
     try:
         job_details = await mock_nemo_service.get_customizer_job_details(job_id)
@@ -249,15 +249,121 @@ async def get_job_details(job_id: str):
 
 @router.get("/v1/customization/jobs", response_model=list[dict])
 async def list_all_customizer_jobs():
-    """List all NeMo Customizer jobs.
+    """List all customization jobs.
+
+    This endpoint matches the real NeMo Customizer API:
+    GET /v1/customization/jobs
 
     Returns:
-        List of all customizer jobs with their current status
+        List of all customization jobs
     """
     try:
         return await mock_nemo_service.list_customizer_jobs()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list customizer jobs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e!s}") from e
+
+
+# =============================================================================
+# Evaluation Management (Evaluator) - Real NeMo API Structure
+# =============================================================================
+
+
+@router.post("/v1/evaluation/jobs", response_model=dict)
+async def create_evaluation_job(job_data: dict):
+    """Create a new evaluation job.
+
+    This endpoint matches the real NeMo Evaluator API:
+    POST /v1/evaluation/jobs
+
+    Args:
+        job_data: Evaluation job configuration data
+
+    Returns:
+        Created evaluation job information
+    """
+    try:
+        return await mock_nemo_service.create_evaluation_job(job_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation job: {e!s}") from e
+
+
+@router.post("/v1/evaluation/configs", response_model=dict)
+async def create_evaluation_config(config_data: dict):
+    """Create an evaluation configuration.
+
+    This endpoint matches the real NeMo Evaluator API:
+    POST /v1/evaluation/configs
+
+    Args:
+        config_data: Evaluation configuration data
+
+    Returns:
+        Created evaluation configuration information
+    """
+    try:
+        return await mock_nemo_service.create_evaluation_config(config_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation config: {e!s}") from e
+
+
+@router.post("/v1/evaluation/targets", response_model=dict)
+async def create_evaluation_target(target_data: dict):
+    """Create an evaluation target.
+
+    This endpoint matches the real NeMo Evaluator API:
+    POST /v1/evaluation/targets
+
+    Args:
+        target_data: Evaluation target configuration data
+
+    Returns:
+        Created evaluation target information
+    """
+    try:
+        return await mock_nemo_service.create_evaluation_target(target_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation target: {e!s}") from e
+
+
+@router.get("/v1/evaluation/jobs/{job_id}", response_model=dict)
+async def get_evaluation_job(job_id: str):
+    """Get evaluation job details.
+
+    This endpoint matches the real NeMo Evaluator API:
+    GET /v1/evaluation/jobs/{job_id}
+
+    Args:
+        job_id: NeMo Evaluator job ID
+
+    Returns:
+        Evaluation job details
+    """
+    try:
+        job_details = await mock_nemo_service.get_evaluation_job(job_id)
+        if not job_details:
+            raise HTTPException(status_code=404, detail="Evaluation job not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job: {e!s}") from e
+    else:
+        return job_details
+
+
+@router.get("/v1/evaluation/jobs", response_model=list[dict])
+async def list_evaluation_jobs():
+    """List all evaluation jobs.
+
+    This endpoint matches the real NeMo Evaluator API:
+    GET /v1/evaluation/jobs
+
+    Returns:
+        List of all evaluation jobs
+    """
+    try:
+        return await mock_nemo_service.list_evaluation_jobs()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e!s}") from e
 
 
 # =============================================================================

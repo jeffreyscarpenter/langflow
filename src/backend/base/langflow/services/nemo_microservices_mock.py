@@ -36,6 +36,9 @@ class MockNeMoMicroservicesService:
         self._files: dict[str, list[dict]] = {}
         self._customizer_jobs: dict[str, dict] = {}  # Jobs from NeMo Customizer API format
         self._tracked_jobs: list[str] = []  # Job IDs we're tracking for monitoring
+        self._evaluation_jobs: dict[str, dict] = {}  # Jobs from NeMo Evaluator API format
+        self._evaluation_configs: dict[str, dict] = {}  # Evaluation configurations
+        self._evaluation_targets: dict[str, dict] = {}  # Evaluation targets
         self._temp_dir = Path(tempfile.mkdtemp(prefix="nemo_mock_"))
 
         # Initialize with some sample data
@@ -251,27 +254,25 @@ class MockNeMoMicroservicesService:
                             "message": "TrainingJobCreated",
                         },
                         {
-                            "updated_at": (now - timedelta(hours=23, minutes=58)).isoformat(),
+                            "updated_at": (now - timedelta(days=1, minutes=-1)).isoformat(),
                             "message": "TrainingJobRunning",
                         },
                         {
                             "updated_at": (now - timedelta(hours=8)).isoformat(),
-                            "message": "completed",
+                            "message": "TrainingJobCompleted",
                         },
                     ],
                     "training_loss": [
-                        {"step": 100, "value": 1.85, "timestamp": (now - timedelta(hours=12)).isoformat()},
-                        {"step": 200, "value": 1.62, "timestamp": (now - timedelta(hours=10)).isoformat()},
-                        {"step": 300, "value": 1.45, "timestamp": (now - timedelta(hours=9)).isoformat()},
-                        {"step": 400, "value": 1.32, "timestamp": (now - timedelta(hours=8, minutes=30)).isoformat()},
-                        {"step": 500, "value": 1.28, "timestamp": (now - timedelta(hours=8)).isoformat()},
+                        {"step": 10, "value": 2.45, "timestamp": (now - timedelta(days=1, minutes=-50)).isoformat()},
+                        {"step": 20, "value": 2.32, "timestamp": (now - timedelta(days=1, minutes=-45)).isoformat()},
+                        {"step": 30, "value": 2.18, "timestamp": (now - timedelta(days=1, minutes=-40)).isoformat()},
+                        {"step": 40, "value": 2.05, "timestamp": (now - timedelta(days=1, minutes=-35)).isoformat()},
+                        {"step": 50, "value": 1.95, "timestamp": (now - timedelta(days=1, minutes=-30)).isoformat()},
                     ],
                     "validation_loss": [
-                        {"epoch": 2, "value": 1.68, "timestamp": (now - timedelta(hours=11)).isoformat()},
-                        {"epoch": 4, "value": 1.52, "timestamp": (now - timedelta(hours=9, minutes=30)).isoformat()},
-                        {"epoch": 6, "value": 1.41, "timestamp": (now - timedelta(hours=8, minutes=45)).isoformat()},
-                        {"epoch": 8, "value": 1.35, "timestamp": (now - timedelta(hours=8, minutes=15)).isoformat()},
-                        {"epoch": 10, "value": 1.31, "timestamp": (now - timedelta(hours=8)).isoformat()},
+                        {"epoch": 1, "value": 2.12, "timestamp": (now - timedelta(days=1, minutes=-45)).isoformat()},
+                        {"epoch": 2, "value": 1.98, "timestamp": (now - timedelta(days=1, minutes=-30)).isoformat()},
+                        {"epoch": 3, "value": 1.85, "timestamp": (now - timedelta(days=1, minutes=-15)).isoformat()},
                     ],
                 },
                 "custom_fields": {},
@@ -376,6 +377,61 @@ class MockNeMoMicroservicesService:
         for job in sample_jobs:
             self._customizer_jobs[job["id"]] = job
             self._tracked_jobs.append(job["id"])
+
+        # Sample NeMo Evaluator jobs (matching real API structure)
+        sample_evaluator_jobs = [
+            {
+                "id": "eval-123456789abc",
+                "created_at": (now - timedelta(hours=1)).isoformat(),
+                "updated_at": (now - timedelta(minutes=30)).isoformat(),
+                "namespace": "default",
+                "target": "default/target-123",
+                "config": "default/config-456",
+                "tags": ["gsm8k", "math-evaluation"],
+                "status": "running",
+                "status_details": {
+                    "created_at": (now - timedelta(hours=1)).isoformat(),
+                    "updated_at": (now - timedelta(minutes=30)).isoformat(),
+                    "message": "Evaluation job is running on GSM8K dataset",
+                    "percentage_done": 60,
+                },
+            },
+            {
+                "id": "eval-987654321def",
+                "created_at": (now - timedelta(days=1)).isoformat(),
+                "updated_at": (now - timedelta(hours=6)).isoformat(),
+                "namespace": "default",
+                "target": "default/target-789",
+                "config": "default/config-012",
+                "tags": ["similarity-metrics", "accuracy", "bleu"],
+                "status": "completed",
+                "status_details": {
+                    "created_at": (now - timedelta(days=1)).isoformat(),
+                    "updated_at": (now - timedelta(hours=6)).isoformat(),
+                    "message": "Similarity metrics evaluation completed successfully",
+                    "percentage_done": 100,
+                },
+            },
+            {
+                "id": "eval-555666777ghi",
+                "created_at": (now - timedelta(hours=3)).isoformat(),
+                "updated_at": (now - timedelta(hours=2, minutes=45)).isoformat(),
+                "namespace": "default",
+                "target": "default/target-345",
+                "config": "default/config-678",
+                "tags": ["lm-eval-harness", "mmlu"],
+                "status": "failed",
+                "status_details": {
+                    "created_at": (now - timedelta(hours=3)).isoformat(),
+                    "updated_at": (now - timedelta(hours=2, minutes=45)).isoformat(),
+                    "message": "Evaluation failed due to model endpoint timeout",
+                    "percentage_done": 20,
+                },
+            },
+        ]
+
+        for job in sample_evaluator_jobs:
+            self._evaluation_jobs[job["id"]] = job
 
     # =============================================================================
     # Dataset Management (Data Store)
@@ -919,6 +975,140 @@ class MockNeMoMicroservicesService:
             self._tracked_jobs.remove(job_id)
             return {"message": f"Stopped tracking job {job_id}"}
         return {"message": f"Job {job_id} was not being tracked"}
+
+    # =============================================================================
+    # Evaluation Management (Evaluator) - Real NeMo API Structure
+    # =============================================================================
+
+    async def create_evaluation_job(self, job_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/evaluation/jobs.
+
+        This matches the real NeMo Evaluator API endpoint for creating evaluation jobs.
+
+        Args:
+            job_data: Evaluation job configuration data
+
+        Returns:
+            Created evaluation job information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        job_id = f"eval-{uuid.uuid4().hex[:12]}"
+
+        # Create evaluation job entry
+        evaluation_job = {
+            "id": job_id,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "namespace": job_data.get("namespace", "default"),
+            "target": job_data.get("target", ""),
+            "config": job_data.get("config", ""),
+            "tags": job_data.get("tags", []),
+            "status": "created",
+            "status_details": {
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "message": "Evaluation job created successfully",
+            },
+        }
+
+        self._evaluation_jobs[job_id] = evaluation_job
+
+        return evaluation_job
+
+    async def create_evaluation_config(self, config_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/evaluation/configs.
+
+        This matches the real NeMo Evaluator API endpoint for creating evaluation configurations.
+
+        Args:
+            config_data: Evaluation configuration data
+
+        Returns:
+            Created evaluation configuration information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        config_id = str(uuid.uuid4())
+
+        # Create evaluation config entry
+        evaluation_config = {
+            "id": config_id,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "namespace": config_data.get("namespace", "default"),
+            "type": config_data.get("type", "lm_eval_harness"),
+            "tasks": config_data.get("tasks", []),
+            "params": config_data.get("params", {}),
+        }
+
+        self._evaluation_configs[config_id] = evaluation_config
+
+        return evaluation_config
+
+    async def create_evaluation_target(self, target_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/evaluation/targets.
+
+        This matches the real NeMo Evaluator API endpoint for creating evaluation targets.
+
+        Args:
+            target_data: Evaluation target configuration data
+
+        Returns:
+            Created evaluation target information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        target_id = str(uuid.uuid4())
+
+        # Create evaluation target entry
+        evaluation_target = {
+            "id": target_id,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "namespace": target_data.get("namespace", "default"),
+            "type": target_data.get("type", "model"),
+            "model": target_data.get("model", {}),
+        }
+
+        self._evaluation_targets[target_id] = evaluation_target
+
+        return evaluation_target
+
+    async def get_evaluation_job(self, job_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/evaluation/jobs/{job_id}.
+
+        This matches the real NeMo Evaluator API endpoint for getting evaluation job details.
+
+        Args:
+            job_id: NeMo Evaluator job ID
+
+        Returns:
+            Evaluation job details or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return self._evaluation_jobs.get(job_id)
+
+    async def list_evaluation_jobs(self) -> list[dict[str, Any]]:
+        """Mock implementation of GET /v1/evaluation/jobs.
+
+        This matches the real NeMo Evaluator API endpoint for listing evaluation jobs.
+
+        Returns:
+            List of all evaluation jobs
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return list(self._evaluation_jobs.values())
 
     def cleanup(self):
         """Clean up temporary files and directories."""

@@ -258,3 +258,30 @@ export interface StoreJobResponse {
   created_by_component?: string;
   stored_at: string;
 }
+
+// =============================================================================
+// Evaluator Job Types (Evaluator) - Real NeMo API Structure
+// =============================================================================
+
+export type NeMoEvaluatorJobStatus = "created" | "running" | "completed" | "failed" | "cancelled";
+
+export interface NeMoEvaluatorJobStatusDetails {
+  created_at: string;
+  updated_at: string;
+  message?: string;
+  percentage_done?: number;
+}
+
+export interface NeMoEvaluatorJob {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  namespace: string;
+  target: string;
+  config: string;
+  tags: string[];
+  status: NeMoEvaluatorJobStatus;
+  status_details: NeMoEvaluatorJobStatusDetails;
+}
+
+export type NeMoEvaluatorJobList = NeMoEvaluatorJob[];
