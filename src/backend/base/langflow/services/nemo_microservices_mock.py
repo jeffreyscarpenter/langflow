@@ -5,6 +5,7 @@ to allow development and testing without requiring the actual NeMo services.
 
 Includes mock implementations for:
 - NeMo Data Store (datasets and files)
+- NeMo Entity Store (entities, projects, models)
 - NeMo Customizer (job tracking and status) - matches real API structure
 - NeMo Evaluator (evaluation results)
 """
@@ -26,6 +27,7 @@ class MockNeMoMicroservicesService:
 
     Simulates the behavior of:
     - NeMo Data Store API endpoints
+    - NeMo Entity Store API endpoints
     - NeMo Customizer API endpoints (matching real API structure)
     - NeMo Evaluator results (future)
     """
@@ -39,14 +41,96 @@ class MockNeMoMicroservicesService:
         self._evaluation_jobs: dict[str, dict] = {}  # Jobs from NeMo Evaluator API format
         self._evaluation_configs: dict[str, dict] = {}  # Evaluation configurations
         self._evaluation_targets: dict[str, dict] = {}  # Evaluation targets
+
+        # Entity Store mock data
+        self._namespaces: dict[str, dict] = {}
+        self._projects: dict[str, dict] = {}
+        self._models: dict[str, dict] = {}
+        self._entities: dict[str, dict] = {}  # Generic entity storage
+
         self._temp_dir = Path(tempfile.mkdtemp(prefix="nemo_mock_"))
 
         # Initialize with some sample data
         self._initialize_sample_data()
 
     def _initialize_sample_data(self):
-        """Initialize with sample datasets and jobs for testing."""
+        """Initialize with sample datasets, jobs, and entities for testing."""
         now = datetime.now(timezone.utc)
+
+        # Sample namespaces
+        sample_namespaces = [
+            {
+                "id": "default",
+                "name": "default",
+                "description": "Default namespace for development",
+                "created_at": (now - timedelta(days=30)).isoformat(),
+                "updated_at": (now - timedelta(days=1)).isoformat(),
+            },
+            {
+                "id": "my-company",
+                "name": "my-company",
+                "description": "Company namespace for production",
+                "created_at": (now - timedelta(days=15)).isoformat(),
+                "updated_at": (now - timedelta(hours=6)).isoformat(),
+            },
+        ]
+
+        for namespace in sample_namespaces:
+            self._namespaces[namespace["id"]] = namespace
+
+        # Sample projects
+        sample_projects = [
+            {
+                "id": "project-001",
+                "name": "Customer Support AI",
+                "description": "AI models for customer support automation",
+                "namespace": "my-company",
+                "created_at": (now - timedelta(days=10)).isoformat(),
+                "updated_at": (now - timedelta(days=2)).isoformat(),
+            },
+            {
+                "id": "project-002",
+                "name": "Content Generation",
+                "description": "Models for automated content generation",
+                "namespace": "my-company",
+                "created_at": (now - timedelta(days=8)).isoformat(),
+                "updated_at": (now - timedelta(hours=12)).isoformat(),
+            },
+        ]
+
+        for project in sample_projects:
+            self._projects[project["id"]] = project
+
+        # Sample models
+        sample_models = [
+            {
+                "id": "model-001",
+                "name": "llama-3.1-8b-instruct",
+                "description": "Base Llama 3.1 8B instruction-tuned model",
+                "namespace": "default",
+                "type": "base_model",
+                "format": "nemo",
+                "files_url": "hf://models/default/llama-3.1-8b-instruct",
+                "created_at": (now - timedelta(days=20)).isoformat(),
+                "updated_at": (now - timedelta(days=5)).isoformat(),
+            },
+            {
+                "id": "model-002",
+                "name": "customer-support-finetuned",
+                "description": "Fine-tuned model for customer support",
+                "namespace": "my-company",
+                "type": "fine_tuned_model",
+                "format": "nemo",
+                "base_model": "default/llama-3.1-8b-instruct",
+                "training_dataset": "my-company/customer-support-dataset",
+                "files_url": "hf://models/my-company/customer-support-finetuned",
+                "created_at": (now - timedelta(days=3)).isoformat(),
+                "updated_at": (now - timedelta(hours=2)).isoformat(),
+            },
+        ]
+
+        for model in sample_models:
+            self._models[model["id"]] = model
 
         # Sample datasets
         sample_datasets = [
@@ -55,6 +139,10 @@ class MockNeMoMicroservicesService:
                 "name": "Sample Training Data",
                 "description": "A sample dataset for model training",
                 "type": "fileset",
+                "namespace": "default",
+                "files_url": "hf://datasets/default/sample-training-data",
+                "format": "jsonl",
+                "project": "default",
                 "created_at": (now - timedelta(days=7)).isoformat(),
                 "updated_at": (now - timedelta(days=1)).isoformat(),
                 "metadata": {
@@ -69,6 +157,10 @@ class MockNeMoMicroservicesService:
                 "name": "Evaluation Dataset",
                 "description": "Dataset for model evaluation and testing",
                 "type": "fileset",
+                "namespace": "default",
+                "files_url": "hf://datasets/default/evaluation-dataset",
+                "format": "jsonl",
+                "project": "default",
                 "created_at": (now - timedelta(days=5)).isoformat(),
                 "updated_at": (now - timedelta(hours=6)).isoformat(),
                 "metadata": {
@@ -83,6 +175,10 @@ class MockNeMoMicroservicesService:
                 "name": "Fine-tuning Data",
                 "description": "Specialized dataset for fine-tuning models",
                 "type": "fileset",
+                "namespace": "default",
+                "files_url": "hf://datasets/default/fine-tuning-data",
+                "format": "jsonl",
+                "project": "default",
                 "created_at": (now - timedelta(days=2)).isoformat(),
                 "updated_at": now.isoformat(),
                 "metadata": {
@@ -262,18 +358,6 @@ class MockNeMoMicroservicesService:
                             "message": "TrainingJobCompleted",
                         },
                     ],
-                    "training_loss": [
-                        {"step": 10, "value": 2.45, "timestamp": (now - timedelta(days=1, minutes=-50)).isoformat()},
-                        {"step": 20, "value": 2.32, "timestamp": (now - timedelta(days=1, minutes=-45)).isoformat()},
-                        {"step": 30, "value": 2.18, "timestamp": (now - timedelta(days=1, minutes=-40)).isoformat()},
-                        {"step": 40, "value": 2.05, "timestamp": (now - timedelta(days=1, minutes=-35)).isoformat()},
-                        {"step": 50, "value": 1.95, "timestamp": (now - timedelta(days=1, minutes=-30)).isoformat()},
-                    ],
-                    "validation_loss": [
-                        {"epoch": 1, "value": 2.12, "timestamp": (now - timedelta(days=1, minutes=-45)).isoformat()},
-                        {"epoch": 2, "value": 1.98, "timestamp": (now - timedelta(days=1, minutes=-30)).isoformat()},
-                        {"epoch": 3, "value": 1.85, "timestamp": (now - timedelta(days=1, minutes=-15)).isoformat()},
-                    ],
                 },
                 "custom_fields": {},
             },
@@ -348,26 +432,9 @@ class MockNeMoMicroservicesService:
                             "message": "TrainingJobRunning",
                         },
                         {
-                            "updated_at": (now - timedelta(hours=3, minutes=30)).isoformat(),
-                            "message": "DataLoader worker (pid 2266) is killed by signal: Terminated.",
-                            "detail": (
-                                "Traceback (most recent call last):\n"
-                                '  File "/usr/local/lib/python3.12/dist-packages/lightning/pytorch/trainer/call.py", '
-                                "line 46, in _call_and_handle_interrupt"
-                            ),
-                        },
-                        {
                             "updated_at": (now - timedelta(hours=3)).isoformat(),
-                            "message": "failed",
+                            "message": "TrainingJobFailed",
                         },
-                    ],
-                    "training_loss": [
-                        {"step": 10, "value": 2.85, "timestamp": (now - timedelta(hours=3, minutes=45)).isoformat()},
-                        {"step": 20, "value": 2.92, "timestamp": (now - timedelta(hours=3, minutes=40)).isoformat()},
-                        {"step": 30, "value": 2.88, "timestamp": (now - timedelta(hours=3, minutes=35)).isoformat()},
-                    ],
-                    "validation_loss": [
-                        {"epoch": 1, "value": 2.89, "timestamp": (now - timedelta(hours=3, minutes=40)).isoformat()},
                     ],
                 },
                 "custom_fields": {},
@@ -376,7 +443,6 @@ class MockNeMoMicroservicesService:
 
         for job in sample_jobs:
             self._customizer_jobs[job["id"]] = job
-            self._tracked_jobs.append(job["id"])
 
         # Sample NeMo Evaluator jobs (matching real API structure)
         sample_evaluator_jobs = [
@@ -434,6 +500,297 @@ class MockNeMoMicroservicesService:
             self._evaluation_jobs[job["id"]] = job
 
     # =============================================================================
+    # Entity Store Management
+    # =============================================================================
+
+    async def create_namespace(self, namespace_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/namespaces.
+
+        Args:
+            namespace_data: Namespace creation data
+
+        Returns:
+            Created namespace information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        namespace_id = namespace_data.get("namespace", str(uuid.uuid4()))
+
+        namespace = {
+            "id": namespace_id,
+            "name": namespace_data.get("namespace", namespace_id),
+            "description": namespace_data.get("description", ""),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        self._namespaces[namespace_id] = namespace
+        return namespace
+
+    async def get_namespace(self, namespace_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/namespaces/{namespace_id}.
+
+        Args:
+            namespace_id: Namespace ID
+
+        Returns:
+            Namespace information or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return self._namespaces.get(namespace_id)
+
+    async def list_namespaces(self) -> list[dict[str, Any]]:
+        """Mock implementation of GET /v1/namespaces.
+
+        Returns:
+            List of all namespaces
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return list(self._namespaces.values())
+
+    async def create_project(self, project_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/projects.
+
+        Args:
+            project_data: Project creation data
+
+        Returns:
+            Created project information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        project_id = f"project-{str(uuid.uuid4())[:8]}"
+
+        project = {
+            "id": project_id,
+            "name": project_data.get("name", ""),
+            "description": project_data.get("description", ""),
+            "namespace": project_data.get("namespace", "default"),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        self._projects[project_id] = project
+        return project
+
+    async def get_project(self, project_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/projects/{project_id}.
+
+        Args:
+            project_id: Project ID
+
+        Returns:
+            Project information or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return self._projects.get(project_id)
+
+    async def list_projects(self) -> list[dict[str, Any]]:
+        """Mock implementation of GET /v1/projects.
+
+        Returns:
+            List of all projects
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        return list(self._projects.values())
+
+    async def create_entity(self, entity_type: str, entity_data: dict) -> dict[str, Any]:
+        """Mock implementation of POST /v1/{entity_type}.
+
+        Generic entity creation for datasets, models, etc.
+
+        Args:
+            entity_type: Type of entity (datasets, models, etc.)
+            entity_data: Entity creation data
+
+        Returns:
+            Created entity information
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        now = datetime.now(timezone.utc)
+        entity_id = f"{entity_type}-{str(uuid.uuid4())[:8]}"
+
+        # Base entity structure
+        entity = {
+            "id": entity_id,
+            "name": entity_data.get("name", ""),
+            "description": entity_data.get("description", ""),
+            "namespace": entity_data.get("namespace", "default"),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        # Add entity-specific fields
+        if entity_type == "datasets":
+            entity.update(
+                {
+                    "type": "fileset",
+                    "files_url": entity_data.get("files_url", ""),
+                    "format": entity_data.get("format", "jsonl"),
+                    "project": entity_data.get("project", ""),
+                }
+            )
+        elif entity_type == "models":
+            # Generate files_url if not provided
+            files_url = entity_data.get("files_url", "")
+            if not files_url:
+                files_url = f"hf://models/{entity_data.get('namespace', 'default')}/{entity_data.get('name', '')}"
+
+            entity.update(
+                {
+                    "type": entity_data.get("type", "base_model"),
+                    "format": entity_data.get("format", "nemo"),
+                    "files_url": files_url,
+                    "base_model": entity_data.get("base_model", ""),
+                    "training_dataset": entity_data.get("training_dataset", ""),
+                }
+            )
+
+        # Add any additional fields from entity_data
+        additional_fields = {
+            key: value
+            for key, value in entity_data.items()
+            if key not in ["name", "description", "namespace"]  # Already handled above
+        }
+        entity.update(additional_fields)
+
+        # Store in appropriate collection
+        if entity_type == "datasets":
+            self._datasets[entity_id] = entity
+            self._files[entity_id] = []  # Initialize files list for datasets
+        elif entity_type == "models":
+            self._models[entity_id] = entity
+        else:
+            self._entities[entity_id] = entity
+
+        return entity
+
+    async def get_entity(self, entity_type: str, entity_id: str) -> dict[str, Any] | None:
+        """Mock implementation of GET /v1/{entity_type}/{entity_id}.
+
+        Generic entity retrieval.
+
+        Args:
+            entity_type: Type of entity (datasets, models, etc.)
+            entity_id: Entity ID
+
+        Returns:
+            Entity information or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        if entity_type == "datasets":
+            return self._datasets.get(entity_id)
+        if entity_type == "models":
+            return self._models.get(entity_id)
+        return self._entities.get(entity_id)
+
+    async def list_entities(self, entity_type: str) -> list[dict[str, Any]]:
+        """Mock implementation of GET /v1/{entity_type}.
+
+        Generic entity listing.
+
+        Args:
+            entity_type: Type of entity (datasets, models, etc.)
+
+        Returns:
+            List of entities of the specified type
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        if entity_type == "datasets":
+            return list(self._datasets.values())
+        if entity_type == "models":
+            return list(self._models.values())
+        return list(self._entities.values())
+
+    async def update_entity(self, entity_type: str, entity_id: str, updates: dict) -> dict[str, Any] | None:
+        """Mock implementation of PUT /v1/{entity_type}/{entity_id}.
+
+        Generic entity update.
+
+        Args:
+            entity_type: Type of entity (datasets, models, etc.)
+            entity_id: Entity ID
+            updates: Update data
+
+        Returns:
+            Updated entity information or None if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        # Add a small delay to ensure timestamp difference
+        await asyncio.sleep(0.01)
+        now = datetime.now(timezone.utc)
+
+        if entity_type == "datasets":
+            entity = self._datasets.get(entity_id)
+            if entity:
+                entity.update(updates)
+                entity["updated_at"] = now.isoformat()
+                return entity
+        elif entity_type == "models":
+            entity = self._models.get(entity_id)
+            if entity:
+                entity.update(updates)
+                entity["updated_at"] = now.isoformat()
+                return entity
+        else:
+            entity = self._entities.get(entity_id)
+            if entity:
+                entity.update(updates)
+                entity["updated_at"] = now.isoformat()
+                return entity
+
+        return None
+
+    async def delete_entity(self, entity_type: str, entity_id: str) -> bool:
+        """Mock implementation of DELETE /v1/{entity_type}/{entity_id}.
+
+        Generic entity deletion.
+
+        Args:
+            entity_type: Type of entity (datasets, models, etc.)
+            entity_id: Entity ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        # Simulate network delay
+        await asyncio.sleep(0.1)
+
+        if entity_type == "datasets":
+            if entity_id in self._datasets:
+                del self._datasets[entity_id]
+                return True
+        elif entity_type == "models":
+            if entity_id in self._models:
+                del self._models[entity_id]
+                return True
+        elif entity_id in self._entities:
+            del self._entities[entity_id]
+            return True
+
+        return False
+
+    # =============================================================================
     # Dataset Management (Data Store)
     # =============================================================================
 
@@ -449,14 +806,15 @@ class MockNeMoMicroservicesService:
         return list(self._datasets.values())
 
     async def create_dataset(
-        self, name: str, description: str | None = None, dataset_type: str = "fileset"
+        self, name: str, description: str | None = None, namespace: str = "default", project: str | None = None
     ) -> dict[str, Any]:
-        """Mock implementation of POST /api/v1/datasets.
+        """Mock implementation of POST /api/v1/datasets with Entity Store integration.
 
         Args:
             name: Dataset name.
             description: Optional description.
-            dataset_type: Type of dataset (default: fileset).
+            namespace: Namespace for the dataset.
+            project: Project ID (optional).
 
         Returns:
             Created dataset object.
@@ -467,20 +825,31 @@ class MockNeMoMicroservicesService:
         dataset_id = f"dataset-{str(uuid.uuid4())[:8]}"
         now = datetime.now(timezone.utc).isoformat()
 
-        dataset = {
+        # Create files_url for Data Store reference
+        files_url = f"hf://datasets/{namespace}/{name}"
+
+        # Create the entity with the same ID we'll use for the dataset
+        entity = {
             "id": dataset_id,
             "name": name,
-            "description": description,
-            "type": dataset_type,
+            "description": description or "",
+            "namespace": namespace,
             "created_at": now,
             "updated_at": now,
-            "metadata": {"file_count": 0, "total_size": "0B", "format": "jsonl", "tags": []},
+            "type": "fileset",
+            "files_url": files_url,
+            "format": "jsonl",
+            "project": project or "",
         }
 
-        self._datasets[dataset_id] = dataset
+        # Store in both Entity Store and Data Store
+        self._datasets[dataset_id] = entity
         self._files[dataset_id] = []
 
-        return dataset
+        # Add additional metadata for Data Store compatibility
+        entity["metadata"] = {"file_count": 0, "total_size": "0B", "format": "jsonl", "tags": []}
+
+        return entity
 
     async def get_dataset(self, dataset_id: str) -> dict[str, Any] | None:
         """Mock implementation of GET /api/v1/datasets/{dataset_id}.
@@ -560,6 +929,13 @@ class MockNeMoMicroservicesService:
             self._datasets[dataset_id]["metadata"]["file_count"] = len(self._files[dataset_id])
             self._datasets[dataset_id]["metadata"]["total_size"] = f"{sum(f['size'] for f in self._files[dataset_id])}B"
             self._datasets[dataset_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+            # Update entity in Entity Store
+            if dataset_id in self._datasets:
+                dataset = self._datasets[dataset_id]
+                await self.update_entity(
+                    "datasets", dataset_id, {"updated_at": dataset["updated_at"], "metadata": dataset["metadata"]}
+                )
 
             logger.info("Successfully uploaded %d files to dataset %s", len(uploaded_files), dataset_id)
             return {"message": f"Successfully uploaded {len(uploaded_files)} files", "files": uploaded_files}
