@@ -280,7 +280,9 @@ class MockNeMoMicroservicesService:
                         {"epoch": 3, "value": 1.85, "timestamp": (now - timedelta(hours=1, minutes=15)).isoformat()},
                     ],
                 },
-                "custom_fields": {},
+                "custom_fields": {
+                    "job_name": "customization-llama-3.1-8b-test-dataset",
+                },
             },
             {
                 "id": "cust-YbmGLDpnZUPMGjqKZ2MaUy",
@@ -359,7 +361,9 @@ class MockNeMoMicroservicesService:
                         },
                     ],
                 },
-                "custom_fields": {},
+                "custom_fields": {
+                    "job_name": "customization-llama-3.2-1b-fine-tuning",
+                },
             },
             {
                 "id": "cust-FailedJobExample123",
@@ -437,12 +441,16 @@ class MockNeMoMicroservicesService:
                         },
                     ],
                 },
-                "custom_fields": {},
+                "custom_fields": {
+                    "job_name": "customization-llama-3.1-8b-problematic",
+                },
             },
         ]
 
         for job in sample_jobs:
             self._customizer_jobs[job["id"]] = job
+            # Add to tracked jobs so they appear in the UI
+            self._tracked_jobs.append(job["id"])
 
         # Sample NeMo Evaluator jobs (matching real API structure)
         sample_evaluator_jobs = [
@@ -1101,6 +1109,7 @@ class MockNeMoMicroservicesService:
         now = datetime.now(timezone.utc)
 
         # Extract data from the request
+        job_name = job_data.get("name", f"customization-{job_id}")
         config_name = job_data.get("config", "Unknown Model")
         dataset_info = job_data.get("dataset", {})
         dataset_name = dataset_info.get("name", "Unknown Dataset")
@@ -1152,7 +1161,9 @@ class MockNeMoMicroservicesService:
                 "training_loss": [],
                 "validation_loss": [],
             },
-            "custom_fields": {},
+            "custom_fields": {
+                "job_name": job_name,
+            },
         }
 
         # Store the job

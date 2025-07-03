@@ -74,7 +74,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
       <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            <span>Job Details: {jobId.slice(-8)}</span>
+            <span>Job Details: {jobStatus && ((jobStatus.custom_fields && jobStatus.custom_fields.job_name) || jobStatus.config?.name || jobId.slice(-8))}</span>
             {jobStatus && (
               <>
                 {getStatusIcon(jobStatus.status)}
@@ -221,6 +221,46 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                       <span className="text-muted-foreground">Last Updated:</span>
                       <span>{formatDistanceToNow(new Date(jobStatus.updated_at), { addSuffix: true })}</span>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Job Info Section */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center space-x-2">
+                  <Settings className="h-5 w-5" />
+                  <span>Job Info</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <Cpu className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Model:</span>
+                      <span className="font-medium truncate">{jobStatus.config?.name}</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <Database className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Dataset:</span>
+                      <span className="font-medium truncate">{jobStatus.dataset}</span>
+                    </div>
+                    {jobStatus.output_model && (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <Cpu className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">Output Model:</span>
+                        <span className="font-medium truncate">{jobStatus.output_model}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {jobStatus.hyperparameters && (
+                      <div className="flex items-center space-x-2 text-sm">
+                        <Settings className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">Epochs:</span>
+                        <span className="font-medium">{jobStatus.hyperparameters.epochs}</span>
+                        <span className="text-muted-foreground">Batch Size:</span>
+                        <span className="font-medium">{jobStatus.hyperparameters.batch_size}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

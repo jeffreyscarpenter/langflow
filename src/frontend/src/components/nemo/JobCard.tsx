@@ -13,7 +13,8 @@ import {
   Eye,
   Calendar,
   Database,
-  Cpu
+  Cpu,
+  Settings
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -69,13 +70,16 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
   const formattedCreatedAt = formatDistanceToNow(new Date(job.created_at), { addSuffix: true });
   const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), { addSuffix: true });
 
+  // Try to get job name from custom_fields or config
+  const jobName = (job.custom_fields && job.custom_fields.job_name) || (typeof job.config === 'string' ? job.config : job.config?.name) || `Job ${job.job_id.slice(-8)}`;
+
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold truncate flex items-center space-x-2">
             {getStatusIcon(job.status)}
-            <span>Job {job.job_id.slice(-8)}</span>
+            <span>{jobName}</span>
           </CardTitle>
           <Badge className={`${getStatusColor(job.status)} text-white`}>
             {job.status.toUpperCase()}
@@ -104,7 +108,7 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
           <div className="flex items-center space-x-2 text-sm">
             <Cpu className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Model:</span>
-            <span className="font-medium truncate">{job.config}</span>
+            <span className="font-medium truncate">{typeof job.config === 'string' ? job.config : job.config?.name}</span>
           </div>
 
           <div className="flex items-center space-x-2 text-sm">
@@ -112,6 +116,26 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
             <span className="text-muted-foreground">Dataset:</span>
             <span className="font-medium truncate">{job.dataset}</span>
           </div>
+
+          {/* Output Model */}
+          {job.output_model && (
+            <div className="flex items-center space-x-2 text-sm">
+              <Cpu className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Output Model:</span>
+              <span className="font-medium truncate">{job.output_model}</span>
+            </div>
+          )}
+
+          {/* Hyperparameters */}
+          {job.hyperparameters && (
+            <div className="flex items-center space-x-2 text-sm">
+              <Settings className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Epochs:</span>
+              <span className="font-medium">{job.hyperparameters.epochs}</span>
+              <span className="text-muted-foreground">Batch Size:</span>
+              <span className="font-medium">{job.hyperparameters.batch_size}</span>
+            </div>
+          )}
         </div>
 
         {/* Timestamps */}
