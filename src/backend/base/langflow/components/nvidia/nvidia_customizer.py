@@ -134,24 +134,22 @@ class NvidiaCustomizerComponent(Component):
         DropdownInput(
             name="model_name",
             display_name="Base Model Name",
-            info="Base model to fine tune",
+            info="Base model to fine tune (click refresh to load options)",
             refresh_button=True,
             required=True,
         ),
         DropdownInput(
             name="training_type",
             display_name="Training Type",
-            info="Select the type of training to use",
+            info="Select the type of training to use (click refresh to load options)",
             refresh_button=True,
             required=True,
-            options=["sft", "dpo", "rm"],
         ),
         DropdownInput(
             name="fine_tuning_type",
             display_name="Fine Tuning Type",
-            info="Select the fine tuning type to use",
+            info="Select the fine tuning type to use (click refresh to load options)",
             required=True,
-            options=["lora", "qlora", "full"],
         ),
         IntInput(
             name="epochs",
@@ -198,15 +196,19 @@ class NvidiaCustomizerComponent(Component):
 
     async def update_build_config(self, build_config, field_value, field_name=None):
         """Updates the component's configuration based on the selected option or refresh button."""
+        self.log(f"update_build_config called with field_name={field_name}, field_value={field_value}")
+        self.log(f"USE_MOCK={self.USE_MOCK}")
+
         if self.USE_MOCK:
             # Use mock service for configuration updates
             try:
                 if field_name == "model_name":
                     self.log("Refreshing model names from mock service")
                     models_data = await mock_nemo_service.get_customization_configs()
+                    self.log(f"Mock service returned {len(models_data.get('data', []))} models")
                     model_names = [model["base_model"] for model in models_data.get("data", [])]
                     build_config["model_name"]["options"] = model_names
-                    self.log("Updated model_name dropdown options from mock service.")
+                    self.log(f"Updated model_name dropdown options: {model_names}")
 
                     # Also update training_type and fine_tuning_type options if a model is selected
                     if field_value:
@@ -224,8 +226,10 @@ class NvidiaCustomizerComponent(Component):
                             self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_types}")
 
                 elif field_name == "training_type":
+                    self.log("Refreshing training types from mock service")
                     models_data = await mock_nemo_service.get_customization_configs()
                     selected_model_name = getattr(self, "model_name", None)
+                    self.log(f"Selected model name: {selected_model_name}")
                     if selected_model_name:
                         selected_model = next(
                             (
@@ -243,6 +247,10 @@ class NvidiaCustomizerComponent(Component):
                             fine_tuning_types = selected_model.get("finetuning_types", [])
                             build_config["fine_tuning_type"]["options"] = fine_tuning_types
                             self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_types}")
+                        else:
+                            self.log(f"Model {selected_model_name} not found in available models")
+                    else:
+                        self.log("No model name selected")
 
             except Exception as exc:
                 error_msg = f"Error refreshing model names from mock service: {exc}"
@@ -251,11 +259,14 @@ class NvidiaCustomizerComponent(Component):
 
         else:
             # Use real API
+            self.log("Using real API for configuration updates")
             if not hasattr(self, "api_key") or not self.api_key:
+                self.log("No API key provided for real API")
                 return build_config
 
             base_url = self.get_base_url()
             if not base_url:
+                self.log("No base URL provided for real API")
                 return build_config
 
             models_url = f"{base_url}/v1/customization/configs"
@@ -276,9 +287,10 @@ class NvidiaCustomizerComponent(Component):
 
                         build_config["model_name"]["options"] = model_names
 
-                    self.log("Updated model_name dropdown options.")
+                    self.log(f"Updated model_name dropdown options: {model_names}")
 
                 elif field_name == "training_type":
+                    self.log(f"Refreshing training types from endpoint {models_url}")
                     # Use a synchronous HTTP client with authentication
                     with httpx.Client(timeout=5.0) as client:
                         response = client.get(models_url, headers=self.get_auth_headers())
@@ -288,6 +300,7 @@ class NvidiaCustomizerComponent(Component):
 
                         # Logic to update `training_type` dropdown based on selected model
                         selected_model_name = getattr(self, "model_name", None)
+                        self.log(f"Selected model name: {selected_model_name}")
                         if selected_model_name:
                             # Find the selected model in the response
                             # Find model by config name (which includes version and GPU type)
@@ -318,6 +331,10 @@ class NvidiaCustomizerComponent(Component):
                                 self.log(f"Updated training_type dropdown options: {training_types}")
                                 build_config["fine_tuning_type"]["options"] = finetuning_types
                                 self.log(f"Updated fine_tuning_type dropdown options: {finetuning_types}")
+                            else:
+                                self.log(f"Model {selected_model_name} not found in available models")
+                        else:
+                            self.log("No model name selected")
 
             except httpx.HTTPStatusError as exc:
                 error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
@@ -329,6 +346,7 @@ class NvidiaCustomizerComponent(Component):
                 self.log(error_msg)
                 raise ValueError(error_msg) from exc
 
+        self.log(f"Final build_config: {build_config}")
         return build_config
 
     async def customize(self) -> dict:
