@@ -1341,6 +1341,7 @@ class MockNeMoMicroservicesService:
                         "config": job.get("config", {}).get("name", "Unknown Model"),
                         "dataset": job.get("dataset", "Unknown Dataset"),
                         "progress": job.get("status_details", {}).get("percentage_done", 0),
+                        "output_model": job.get("output_model", None),
                     }
                 )
 
