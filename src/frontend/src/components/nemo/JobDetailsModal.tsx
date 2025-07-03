@@ -146,12 +146,14 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                   <div className="space-y-3">
                     <h4 className="font-medium">Training Loss</h4>
                     <div className="space-y-2 max-h-32 overflow-y-auto">
-                      {jobStatus.status_details.training_loss.map((entry, index) => (
+                      {jobStatus.status_details.training_loss?.map((entry, index) => (
                         <div key={index} className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                           <span>Step {entry.step}</span>
                           <span className="font-mono">{entry.value.toFixed(4)}</span>
                         </div>
-                      ))}
+                      )) || (
+                        <div className="text-sm text-muted-foreground p-2">No training loss data available</div>
+                      )}
                     </div>
                   </div>
 
@@ -159,12 +161,14 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                   <div className="space-y-3">
                     <h4 className="font-medium">Validation Loss</h4>
                     <div className="space-y-2 max-h-32 overflow-y-auto">
-                      {jobStatus.status_details.validation_loss.map((entry, index) => (
+                      {jobStatus.status_details.validation_loss?.map((entry, index) => (
                         <div key={index} className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                           <span>Epoch {entry.epoch}</span>
                           <span className="font-mono">{entry.value.toFixed(4)}</span>
                         </div>
-                      ))}
+                      )) || (
+                        <div className="text-sm text-muted-foreground p-2">No validation loss data available</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -180,7 +184,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                 </h3>
 
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {jobStatus.status_details.status_logs.map((log, index) => (
+                  {jobStatus.status_details.status_logs?.map((log, index) => (
                     <div key={index} className="p-3 border rounded-lg space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{log.message}</span>
@@ -194,7 +198,9 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                         </div>
                       )}
                     </div>
-                  ))}
+                  )) || (
+                    <div className="text-sm text-muted-foreground p-2">No status logs available</div>
+                  )}
                 </div>
               </div>
 
@@ -245,9 +251,9 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                     </div>
                     {jobStatus.output_model && (
                       <div className="flex items-center space-x-2 text-sm">
-                        <Cpu className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Output Model:</span>
-                        <span className="font-medium truncate">{jobStatus.output_model}</span>
+                        <Cpu className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-muted-foreground flex-shrink-0">Output Model:</span>
+                        <span className="font-medium break-all" title={jobStatus.output_model}>{jobStatus.output_model}</span>
                       </div>
                     )}
                   </div>

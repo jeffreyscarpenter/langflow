@@ -165,6 +165,9 @@ export interface TrackedJob {
   config: string;
   dataset: string;
   progress: number;
+  output_model?: string;
+  hyperparameters?: NeMoJobHyperparameters;
+  custom_fields?: Record<string, any>;
 }
 
 export interface TrackJobRequest {

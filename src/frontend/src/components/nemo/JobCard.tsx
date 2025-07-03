@@ -120,9 +120,9 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
           {/* Output Model */}
           {job.output_model && (
             <div className="flex items-center space-x-2 text-sm">
-              <Cpu className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Output Model:</span>
-              <span className="font-medium truncate">{job.output_model}</span>
+              <Cpu className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="text-muted-foreground flex-shrink-0">Output Model:</span>
+              <span className="font-medium break-all" title={job.output_model}>{job.output_model}</span>
             </div>
           )}
 
