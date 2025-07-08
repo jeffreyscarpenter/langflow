@@ -29,7 +29,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from langflow.services.nemo_microservices_mock import mock_nemo_service
+from langflow.services.nemo_microservices_factory import get_nemo_service
 
 router = APIRouter(prefix="/nemo", tags=["NeMo Microservices"])
 
@@ -47,7 +47,8 @@ async def list_datasets():
         List of dataset objects from NeMo Data Store
     """
     try:
-        return await mock_nemo_service.list_datasets()
+        nemo_service = get_nemo_service()
+        return await nemo_service.list_datasets()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e!s}") from e
 
@@ -69,7 +70,8 @@ async def create_dataset(
         Created dataset object
     """
     try:
-        return await mock_nemo_service.create_dataset(name=name, description=description, dataset_type=dataset_type)
+        nemo_service = get_nemo_service()
+        return await nemo_service.create_dataset(name=name, description=description, dataset_type=dataset_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e!s}") from e
 
@@ -85,7 +87,8 @@ async def get_dataset(dataset_id: str):
         Dataset details including files and metadata
     """
     try:
-        dataset = await mock_nemo_service.get_dataset(dataset_id)
+        nemo_service = get_nemo_service()
+        dataset = await nemo_service.get_dataset(dataset_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
     except HTTPException:
@@ -107,7 +110,8 @@ async def delete_dataset(dataset_id: str):
         Success message
     """
     try:
-        deleted = await mock_nemo_service.delete_dataset(dataset_id)
+        nemo_service = get_nemo_service()
+        deleted = await nemo_service.delete_dataset(dataset_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Dataset not found")
     except HTTPException:
@@ -133,7 +137,8 @@ async def upload_files(
         Upload result with file information
     """
     try:
-        return await mock_nemo_service.upload_files(dataset_id=dataset_id, files=files)
+        nemo_service = get_nemo_service()
+        return await nemo_service.upload_files(dataset_id=dataset_id, files=files)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload files: {e!s}") from e
 
@@ -149,7 +154,8 @@ async def get_dataset_files(dataset_id: str):
         List of files in the dataset
     """
     try:
-        return await mock_nemo_service.get_dataset_files(dataset_id)
+        nemo_service = get_nemo_service()
+        return await nemo_service.get_dataset_files(dataset_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get dataset files: {e!s}") from e
 
@@ -173,7 +179,8 @@ async def get_customization_configs():
         Available model configurations with training and fine-tuning types
     """
     try:
-        return await mock_nemo_service.get_customization_configs()
+        nemo_service = get_nemo_service()
+        return await nemo_service.get_customization_configs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e!s}") from e
 
@@ -192,7 +199,8 @@ async def get_job_status(job_id: str):
         Job status with timestamped training and validation loss values
     """
     try:
-        job_status = await mock_nemo_service.get_customizer_job_status(job_id)
+        nemo_service = get_nemo_service()
+        job_status = await nemo_service.get_customizer_job_status(job_id)
         if not job_status:
             raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:
@@ -217,7 +225,8 @@ async def create_customization_job(job_data: dict):
         Created job information
     """
     try:
-        return await mock_nemo_service.create_customization_job(job_data)
+        nemo_service = get_nemo_service()
+        return await nemo_service.create_customization_job(job_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create customization job: {e!s}") from e
 
@@ -236,7 +245,8 @@ async def get_job_details(job_id: str):
         Detailed job information
     """
     try:
-        job_details = await mock_nemo_service.get_customizer_job_details(job_id)
+        nemo_service = get_nemo_service()
+        job_details = await nemo_service.get_customizer_job_details(job_id)
         if not job_details:
             raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:
@@ -258,7 +268,8 @@ async def list_all_customizer_jobs():
         List of all customization jobs
     """
     try:
-        return await mock_nemo_service.list_customizer_jobs()
+        nemo_service = get_nemo_service()
+        return await nemo_service.list_customizer_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e!s}") from e
 
@@ -282,7 +293,8 @@ async def create_evaluation_job(job_data: dict):
         Created evaluation job information
     """
     try:
-        return await mock_nemo_service.create_evaluation_job(job_data)
+        nemo_service = get_nemo_service()
+        return await nemo_service.create_evaluation_job(job_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create evaluation job: {e!s}") from e
 
@@ -301,7 +313,8 @@ async def create_evaluation_config(config_data: dict):
         Created evaluation configuration information
     """
     try:
-        return await mock_nemo_service.create_evaluation_config(config_data)
+        nemo_service = get_nemo_service()
+        return await nemo_service.create_evaluation_config(config_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create evaluation config: {e!s}") from e
 
@@ -320,7 +333,8 @@ async def create_evaluation_target(target_data: dict):
         Created evaluation target information
     """
     try:
-        return await mock_nemo_service.create_evaluation_target(target_data)
+        nemo_service = get_nemo_service()
+        return await nemo_service.create_evaluation_target(target_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create evaluation target: {e!s}") from e
 
@@ -339,7 +353,8 @@ async def get_evaluation_job(job_id: str):
         Evaluation job details
     """
     try:
-        job_details = await mock_nemo_service.get_evaluation_job(job_id)
+        nemo_service = get_nemo_service()
+        job_details = await nemo_service.get_evaluation_job(job_id)
         if not job_details:
             raise HTTPException(status_code=404, detail="Evaluation job not found")
     except HTTPException:
@@ -361,7 +376,8 @@ async def list_evaluation_jobs():
         List of all evaluation jobs
     """
     try:
-        return await mock_nemo_service.list_evaluation_jobs()
+        nemo_service = get_nemo_service()
+        return await nemo_service.list_evaluation_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e!s}") from e
 
@@ -383,7 +399,8 @@ async def track_job(job_id: str, metadata: dict | None = None):
         Tracking confirmation
     """
     try:
-        return await mock_nemo_service.track_customizer_job(job_id, metadata)
+        nemo_service = get_nemo_service()
+        return await nemo_service.track_customizer_job(job_id, metadata)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to track job: {e!s}") from e
 
@@ -396,7 +413,8 @@ async def get_tracked_jobs():
         List of tracked job IDs with their current status
     """
     try:
-        return await mock_nemo_service.get_tracked_jobs()
+        nemo_service = get_nemo_service()
+        return await nemo_service.get_tracked_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get tracked jobs: {e!s}") from e
 
@@ -412,7 +430,8 @@ async def stop_tracking_job(job_id: str):
         Confirmation message
     """
     try:
-        return await mock_nemo_service.stop_tracking_job(job_id)
+        nemo_service = get_nemo_service()
+        return await nemo_service.stop_tracking_job(job_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop tracking job: {e!s}") from e
 
@@ -440,7 +459,8 @@ async def store_job_for_tracking_legacy(job_data: dict):
             raise HTTPException(status_code=400, detail="Missing job ID in job_data")
 
         metadata = {"legacy_data": job_data, "source": "legacy_endpoint"}
-        return await mock_nemo_service.track_customizer_job(job_id, metadata)
+        nemo_service = get_nemo_service()
+        return await nemo_service.track_customizer_job(job_id, metadata)
     except HTTPException:
         raise
     except Exception as e:
@@ -457,7 +477,8 @@ async def list_customizer_jobs_legacy():
         List of tracked jobs
     """
     try:
-        return await mock_nemo_service.get_tracked_jobs()
+        nemo_service = get_nemo_service()
+        return await nemo_service.get_tracked_jobs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e!s}") from e
 
@@ -473,7 +494,8 @@ async def get_customizer_job_legacy(job_id: str):
         Job details
     """
     try:
-        job = await mock_nemo_service.get_customizer_job_details(job_id)
+        nemo_service = get_nemo_service()
+        job = await nemo_service.get_customizer_job_details(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:

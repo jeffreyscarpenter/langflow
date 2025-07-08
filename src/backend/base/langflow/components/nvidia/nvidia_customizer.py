@@ -24,7 +24,7 @@ from langflow.io import (
 )
 from langflow.schema import Data
 from langflow.services.deps import get_settings_service
-from langflow.services.nemo_microservices_mock import mock_nemo_service
+from langflow.services.nemo_microservices_factory import get_nemo_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +85,11 @@ class NvidiaCustomizerComponent(Component):
     name = "NVIDIANeMoCustomizer"
     beta = True
 
-    # Hardcoded flag to switch between mock and real API
-    USE_MOCK = True  # Set to False to use real API
+    # Use settings to determine mock vs real API
+    def _get_use_mock(self):
+        """Get whether to use mock service from settings."""
+        settings_service = get_settings_service()
+        return settings_service.settings.nemo_use_mock
 
     chunk_number = 1
 
@@ -180,13 +183,13 @@ class NvidiaCustomizerComponent(Component):
     def get_auth_headers(self):
         """Get headers with authentication token if using real API."""
         headers = {"accept": "application/json", "Content-Type": "application/json"}
-        if not self.USE_MOCK and hasattr(self, "api_key") and self.api_key:
+        if not self._get_use_mock() and hasattr(self, "api_key") and self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
     def get_base_url(self):
         """Get the appropriate base URL based on mock setting."""
-        if self.USE_MOCK:
+        if self._get_use_mock():
             return "mock-url"  # Use mock service
         return (
             self.base_url
@@ -197,14 +200,15 @@ class NvidiaCustomizerComponent(Component):
     async def update_build_config(self, build_config, field_value, field_name=None):
         """Updates the component's configuration based on the selected option or refresh button."""
         self.log(f"update_build_config called with field_name={field_name}, field_value={field_value}")
-        self.log(f"USE_MOCK={self.USE_MOCK}")
+        self.log(f"USE_MOCK={self._get_use_mock()}")
 
-        if self.USE_MOCK:
+        if self._get_use_mock():
             # Use mock service for configuration updates
             try:
                 if field_name == "model_name":
                     self.log("Refreshing model names from mock service")
-                    models_data = await mock_nemo_service.get_customization_configs()
+                    nemo_service = get_nemo_service()
+                    models_data = await nemo_service.get_customization_configs()
                     self.log(f"Mock service returned {len(models_data.get('data', []))} models")
                     model_names = [model["base_model"] for model in models_data.get("data", [])]
                     build_config["model_name"]["options"] = model_names
@@ -227,7 +231,8 @@ class NvidiaCustomizerComponent(Component):
 
                 elif field_name == "training_type":
                     self.log("Refreshing training types from mock service")
-                    models_data = await mock_nemo_service.get_customization_configs()
+                    nemo_service = get_nemo_service()
+                    models_data = await nemo_service.get_customization_configs()
                     selected_model_name = getattr(self, "model_name", None)
                     self.log(f"Selected model name: {selected_model_name}")
                     if selected_model_name:
@@ -350,7 +355,7 @@ class NvidiaCustomizerComponent(Component):
         return build_config
 
     async def customize(self) -> dict:
-        if self.USE_MOCK:
+        if self._get_use_mock():
             # Use mock service
             settings_service = get_settings_service()
             nemo_customizer_url = settings_service.settings.nemo_customizer_url
@@ -469,7 +474,8 @@ class NvidiaCustomizerComponent(Component):
                         "description": description,
                     }
 
-                    await mock_nemo_service.track_customizer_job(id_value, job_metadata)
+                    nemo_service = get_nemo_service()
+                    await nemo_service.track_customizer_job(id_value, job_metadata)
                     self.log(f"Successfully tracked job {id_value} for monitoring")
 
                     # Add tracking info to the result
@@ -488,14 +494,14 @@ class NvidiaCustomizerComponent(Component):
 
         except httpx.HTTPStatusError as exc:
             # Log the request details for debugging
-            if not self.USE_MOCK:
+            if not self._get_use_mock():
                 logger.exception("HTTP error occurred. Request was sent to: %s", customizations_url)
                 logger.exception("Request payload was: %s", formatted_data)
                 logger.exception("Request headers were: %s", json.dumps(self.get_auth_headers(), indent=2))
 
             # Check if the error is due to a 409 Conflict
             if exc.response.status_code == error_code_already_present:
-                if not self.USE_MOCK:
+                if not self._get_use_mock():
                     logger.exception(
                         "Received HTTP 409. Conflict output model name. " "Retry with a different output model name"
                     )
@@ -508,7 +514,7 @@ class NvidiaCustomizerComponent(Component):
             status_code = exc.response.status_code
             response_content = exc.response.text
             error_msg = f"HTTP error {status_code} on URL: {customizations_url}. Response content: {response_content}"
-            if not self.USE_MOCK:
+            if not self._get_use_mock():
                 logger.exception(error_msg)
             self.log(error_msg)
             raise ValueError(error_msg) from exc
@@ -578,7 +584,7 @@ class NvidiaCustomizerComponent(Component):
             # Inputs and repo setup
             dataset_name = str(uuid.uuid4())
 
-            if self.USE_MOCK:
+            if self._get_use_mock():
                 # Use mock service
                 hf_api = HfApi(endpoint=f"{base_url_or_data_store_url}/v1/hf", token="")
                 await self.create_namespace(self.namespace, base_url_or_data_store_url)
@@ -702,7 +708,7 @@ class NvidiaCustomizerComponent(Component):
             file_url = f"hf://datasets/{repo_id}"
             description = f"Dataset loaded using the input data {dataset_name}"
 
-            if self.USE_MOCK:
+            if self._get_use_mock():
                 entity_registry_url = f"{entity_store_url}/v1/datasets"
             else:
                 entity_registry_url = f"{base_url_or_data_store_url}/v1/datasets"
@@ -750,7 +756,7 @@ class NvidiaCustomizerComponent(Component):
             training_file_obj = BytesIO(json_data.encode("utf-8"))
             commit_message = f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-            if self.USE_MOCK:
+            if self._get_use_mock():
                 # Use standard HF API for mock
                 try:
                     hf_api.upload_file(
@@ -794,9 +800,8 @@ class NvidiaCustomizerComponent(Component):
         try:
             # If this is a mock URL, use the mock service directly
             if "mock-url" in nemo_data_store_url:
-                from langflow.services.nemo_microservices_mock import mock_nemo_service
-
-                datasets_data = await mock_nemo_service.list_datasets()
+                nemo_service = get_nemo_service()
+                datasets_data = await nemo_service.list_datasets()
                 return [dataset["name"] for dataset in datasets_data if "name" in dataset]
 
             # Otherwise, make HTTP request to the actual API

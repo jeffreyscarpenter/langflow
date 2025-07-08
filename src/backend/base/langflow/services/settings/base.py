@@ -288,6 +288,16 @@ class Settings(BaseSettings):
     nemo_evaluator_url: str = "http://localhost:9005"
     """Base api url for NeMo Evaluator."""
 
+    # NeMo service configuration
+    nemo_use_mock: bool = True
+    """If True, use mock NeMo services. If False, use real NeMo API endpoints."""
+
+    nemo_api_key: str | None = None
+    """API key for NeMo services authentication (only used when nemo_use_mock=False)."""
+
+    nemo_base_url: str = "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo"
+    """Base URL for NeMo services (only used when nemo_use_mock=False)."""
+
     @field_validator("dev")
     @classmethod
     def set_dev(cls, value):

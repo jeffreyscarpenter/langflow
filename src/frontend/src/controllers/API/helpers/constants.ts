@@ -30,6 +30,7 @@ export const URLs = {
   MCP: `mcp/project`,
   MCP_SERVERS: `mcp/servers`,
   NEMO: `nemo`,
+  SETTINGS: `settings`,
 } as const;
 
 // IMPORTANT: FOLDERS endpoint now points to 'projects' for backward compatibility

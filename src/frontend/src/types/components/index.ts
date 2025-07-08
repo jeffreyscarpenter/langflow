@@ -423,6 +423,9 @@ export type patchUserInputStateType = {
   profilePicture: string;
   apikey: string;
   gradient?: any;
+  nemoUseMock?: boolean;
+  nemoApiKey?: string;
+  nemoBaseUrl?: string;
 };
 
 export type UserInputType = {
