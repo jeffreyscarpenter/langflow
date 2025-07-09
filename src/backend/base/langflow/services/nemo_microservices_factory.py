@@ -1,7 +1,7 @@
-"""Factory for NeMo Microservices service selection.
+"""Factory for NeMo Microservices service.
 
-This module provides a factory that returns either the mock or real
-NeMo Microservices implementation based on configuration stored in global variables
+This module provides a factory that returns the NeMo Microservices
+implementation based on configuration stored in global variables
 with fallback to environment variables.
 """
 
@@ -14,7 +14,7 @@ from langflow.services.nemo_microservices_real import RealNeMoMicroservicesServi
 
 
 async def get_nemo_service(user_id: UUID | None = None, session=None):
-    """Get the appropriate NeMo service based on user's global variables with fallback to environment variables.
+    """Get the NeMo service with configuration from user's global variables with fallback to environment variables.
 
     Args:
         user_id: The user ID to get NeMo configuration for (optional)
@@ -57,11 +57,11 @@ async def get_nemo_service(user_id: UUID | None = None, session=None):
 
                 logger.info("Using environment variable NEMO_BASE_URL for NeMo configuration")
 
-    # If we have both API key and base URL, use the real service
+    # If we have both API key and base URL, use the service
     if nemo_api_key and nemo_base_url:
         return RealNeMoMicroservicesService(base_url=nemo_base_url, api_key=nemo_api_key)
 
-        # If configuration is missing, raise an error instead of using mock service
+    # If configuration is missing, raise an error
     missing_configs = []
     if not nemo_api_key:
         missing_configs.append("NEMO_API_KEY")

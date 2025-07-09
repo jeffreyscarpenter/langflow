@@ -1,6 +1,6 @@
-"""Real NeMo Microservices client for production use.
+"""NeMo Microservices client for production use.
 
-This module provides a real implementation of NeMo Microservices APIs
+This module provides an implementation of NeMo Microservices APIs
 that makes actual HTTP calls to NeMo services.
 
 Includes real implementations for:
@@ -224,7 +224,7 @@ class RealNeMoMicroservicesService:
 
     async def track_customizer_job(self, job_id: str, metadata: dict | None = None) -> dict[str, Any]:
         """Track a customization job for dashboard monitoring."""
-        # For real API, we just return success since tracking is handled by the real service
+        # For API, we just return success since tracking is handled by the service
         return {
             "job_id": job_id,
             "tracked_at": "2024-01-01T00:00:00Z",
@@ -234,28 +234,37 @@ class RealNeMoMicroservicesService:
 
     async def get_tracked_jobs(self) -> list[dict[str, Any]]:
         """Get tracked jobs for dashboard monitoring."""
-        # For real API, return actual jobs from the service
+        # For API, return actual jobs from the service
         try:
             jobs = await self.list_customizer_jobs()
         except Exception:
             logger.exception("Failed to get tracked jobs")
             raise
         else:
-            return [
-                {
-                    "job_id": job["id"],
-                    "status": job["status"],
-                    "created_at": job["created_at"],
-                    "updated_at": job["updated_at"],
-                    "config": job.get("config", {}).get("name", "Unknown Model"),
-                    "dataset": job.get("dataset", "Unknown Dataset"),
-                    "progress": job.get("status_details", {}).get("percentage_done", 0),
-                    "output_model": job.get("output_model"),
-                    "hyperparameters": job.get("hyperparameters"),
-                    "custom_fields": job.get("custom_fields"),
-                }
-                for job in jobs
-            ]
+            tracked = []
+            for job in jobs:
+                config = job.get("config")
+                if isinstance(config, dict):
+                    config_name = config.get("name", "Unknown Model")
+                elif isinstance(config, str):
+                    config_name = config
+                else:
+                    config_name = "Unknown Model"
+                tracked.append(
+                    {
+                        "job_id": job["id"],
+                        "status": job["status"],
+                        "created_at": job["created_at"],
+                        "updated_at": job["updated_at"],
+                        "config": config_name,
+                        "dataset": job.get("dataset", "Unknown Dataset"),
+                        "progress": job.get("status_details", {}).get("percentage_done", 0),
+                        "output_model": job.get("output_model"),
+                        "hyperparameters": job.get("hyperparameters"),
+                        "custom_fields": job.get("custom_fields"),
+                    }
+                )
+            return tracked
 
     async def stop_tracking_job(self, job_id: str) -> dict[str, Any]:
         """Stop tracking a job."""

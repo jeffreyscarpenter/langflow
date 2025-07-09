@@ -12,7 +12,9 @@ import requests
 from huggingface_hub import HfApi
 
 from langflow.custom import Component
-from langflow.io import (
+from langflow.field_typing import Data
+from langflow.services.nemo_microservices_factory import get_nemo_service
+from langflow.types import (
     DataInput,
     DatasetInput,
     DropdownInput,
@@ -22,9 +24,6 @@ from langflow.io import (
     SecretStrInput,
     StrInput,
 )
-from langflow.schema import Data
-from langflow.services.deps import get_settings_service
-from langflow.services.nemo_microservices_factory import get_nemo_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,25 +84,19 @@ class NvidiaCustomizerComponent(Component):
     name = "NVIDIANeMoCustomizer"
     beta = True
 
-    # Use settings to determine mock vs real API
-    def _get_use_mock(self):
-        """Get whether to use mock service from settings."""
-        settings_service = get_settings_service()
-        return settings_service.settings.nemo_use_mock
-
     chunk_number = 1
 
     inputs = [
         SecretStrInput(
             name="api_key",
             display_name="API Key",
-            info="API key for NeMo services authentication (only used when USE_MOCK=False)",
+            info="API key for NeMo services authentication",
             required=False,
         ),
         StrInput(
             name="base_url",
             display_name="Base API URL",
-            info="Base URL for the NeMo services (only used when USE_MOCK=False)",
+            info="Base URL for the NeMo services",
             required=False,
             value="https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
         ),
@@ -181,16 +174,14 @@ class NvidiaCustomizerComponent(Component):
     ]
 
     def get_auth_headers(self):
-        """Get headers with authentication token if using real API."""
+        """Get headers with authentication token."""
         headers = {"accept": "application/json", "Content-Type": "application/json"}
-        if not self._get_use_mock() and hasattr(self, "api_key") and self.api_key:
+        if hasattr(self, "api_key") and self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
     def get_base_url(self):
-        """Get the appropriate base URL based on mock setting."""
-        if self._get_use_mock():
-            return "mock-url"  # Use mock service
+        """Get the base URL for the API."""
         return (
             self.base_url
             if hasattr(self, "base_url") and self.base_url
@@ -200,177 +191,101 @@ class NvidiaCustomizerComponent(Component):
     async def update_build_config(self, build_config, field_value, field_name=None):
         """Updates the component's configuration based on the selected option or refresh button."""
         self.log(f"update_build_config called with field_name={field_name}, field_value={field_value}")
-        self.log(f"USE_MOCK={self._get_use_mock()}")
 
-        if self._get_use_mock():
-            # Use mock service for configuration updates
-            try:
-                if field_name == "model_name":
-                    self.log("Refreshing model names from mock service")
-                    nemo_service = get_nemo_service()
-                    models_data = await nemo_service.get_customization_configs()
-                    self.log(f"Mock service returned {len(models_data.get('data', []))} models")
-                    model_names = [model["base_model"] for model in models_data.get("data", [])]
+        if not hasattr(self, "api_key") or not self.api_key:
+            self.log("No API key provided for API")
+            return build_config
+
+        base_url = self.get_base_url()
+        if not base_url:
+            self.log("No base URL provided for API")
+            return build_config
+
+        models_url = f"{base_url}/v1/customization/configs"
+
+        try:
+            if field_name == "model_name":
+                self.log(f"Refreshing model names from endpoint {models_url}, value: {field_value}")
+
+                # Use a synchronous HTTP client with authentication
+                with httpx.Client(timeout=5.0) as client:
+                    response = client.get(models_url, headers=self.get_auth_headers())
+                    response.raise_for_status()
+
+                    models_data = response.json()
+                    # Use the config name which includes version and GPU type
+                    # (e.g., "llama-3.1-8b-instruct@v1.0.0+A100")
+                    model_names = [model["name"] for model in models_data.get("data", []) if "name" in model]
+
                     build_config["model_name"]["options"] = model_names
-                    self.log(f"Updated model_name dropdown options: {model_names}")
 
-                    # Also update training_type and fine_tuning_type options if a model is selected
-                    if field_value:
-                        selected_model = next(
-                            (model for model in models_data.get("data", []) if model["base_model"] == field_value),
-                            None,
-                        )
-                        if selected_model:
-                            training_types = selected_model.get("training_types", [])
-                            build_config["training_type"]["options"] = training_types
-                            self.log(f"Updated training_type dropdown options: {training_types}")
+                self.log(f"Updated model_name dropdown options: {model_names}")
 
-                            fine_tuning_types = selected_model.get("finetuning_types", [])
-                            build_config["fine_tuning_type"]["options"] = fine_tuning_types
-                            self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_types}")
+            elif field_name == "training_type":
+                self.log(f"Refreshing training types from endpoint {models_url}")
+                # Use a synchronous HTTP client with authentication
+                with httpx.Client(timeout=5.0) as client:
+                    response = client.get(models_url, headers=self.get_auth_headers())
+                    response.raise_for_status()
 
-                elif field_name == "training_type":
-                    self.log("Refreshing training types from mock service")
-                    nemo_service = get_nemo_service()
-                    models_data = await nemo_service.get_customization_configs()
+                    models_data = response.json()
+
+                    # Logic to update `training_type` dropdown based on selected model
                     selected_model_name = getattr(self, "model_name", None)
                     self.log(f"Selected model name: {selected_model_name}")
                     if selected_model_name:
+                        # Find the selected model in the response
+                        # Find model by config name (which includes version and GPU type)
                         selected_model = next(
                             (
                                 model
                                 for model in models_data.get("data", [])
-                                if model["base_model"] == selected_model_name
+                                if model.get("name") == selected_model_name
                             ),
                             None,
                         )
+
                         if selected_model:
-                            training_types = selected_model.get("training_types", [])
+                            # Extract training types and fine-tuning types from training_options
+                            training_options = selected_model.get("training_options", [])
+                            training_types = list(
+                                {opt.get("training_type") for opt in training_options if opt.get("training_type")}
+                            )
+                            finetuning_types = list(
+                                {opt.get("finetuning_type") for opt in training_options if opt.get("finetuning_type")}
+                            )
+
                             build_config["training_type"]["options"] = training_types
                             self.log(f"Updated training_type dropdown options: {training_types}")
-
-                            fine_tuning_types = selected_model.get("finetuning_types", [])
-                            build_config["fine_tuning_type"]["options"] = fine_tuning_types
-                            self.log(f"Updated fine_tuning_type dropdown options: {fine_tuning_types}")
+                            build_config["fine_tuning_type"]["options"] = finetuning_types
+                            self.log(f"Updated fine_tuning_type dropdown options: {finetuning_types}")
                         else:
                             self.log(f"Model {selected_model_name} not found in available models")
                     else:
                         self.log("No model name selected")
 
-            except Exception as exc:
-                error_msg = f"Error refreshing model names from mock service: {exc}"
-                self.log(error_msg)
-                raise ValueError(error_msg) from exc
-
-        else:
-            # Use real API
-            self.log("Using real API for configuration updates")
-            if not hasattr(self, "api_key") or not self.api_key:
-                self.log("No API key provided for real API")
-                return build_config
-
-            base_url = self.get_base_url()
-            if not base_url:
-                self.log("No base URL provided for real API")
-                return build_config
-
-            models_url = f"{base_url}/v1/customization/configs"
-
-            try:
-                if field_name == "model_name":
-                    self.log(f"Refreshing model names from endpoint {models_url}, value: {field_value}")
-
-                    # Use a synchronous HTTP client with authentication
-                    with httpx.Client(timeout=5.0) as client:
-                        response = client.get(models_url, headers=self.get_auth_headers())
-                        response.raise_for_status()
-
-                        models_data = response.json()
-                        # Use the config name which includes version and GPU type
-                        # (e.g., "llama-3.1-8b-instruct@v1.0.0+A100")
-                        model_names = [model["name"] for model in models_data.get("data", []) if "name" in model]
-
-                        build_config["model_name"]["options"] = model_names
-
-                    self.log(f"Updated model_name dropdown options: {model_names}")
-
-                elif field_name == "training_type":
-                    self.log(f"Refreshing training types from endpoint {models_url}")
-                    # Use a synchronous HTTP client with authentication
-                    with httpx.Client(timeout=5.0) as client:
-                        response = client.get(models_url, headers=self.get_auth_headers())
-                        response.raise_for_status()
-
-                        models_data = response.json()
-
-                        # Logic to update `training_type` dropdown based on selected model
-                        selected_model_name = getattr(self, "model_name", None)
-                        self.log(f"Selected model name: {selected_model_name}")
-                        if selected_model_name:
-                            # Find the selected model in the response
-                            # Find model by config name (which includes version and GPU type)
-                            selected_model = next(
-                                (
-                                    model
-                                    for model in models_data.get("data", [])
-                                    if model.get("name") == selected_model_name
-                                ),
-                                None,
-                            )
-
-                            if selected_model:
-                                # Extract training types and fine-tuning types from training_options
-                                training_options = selected_model.get("training_options", [])
-                                training_types = list(
-                                    {opt.get("training_type") for opt in training_options if opt.get("training_type")}
-                                )
-                                finetuning_types = list(
-                                    {
-                                        opt.get("finetuning_type")
-                                        for opt in training_options
-                                        if opt.get("finetuning_type")
-                                    }
-                                )
-
-                                build_config["training_type"]["options"] = training_types
-                                self.log(f"Updated training_type dropdown options: {training_types}")
-                                build_config["fine_tuning_type"]["options"] = finetuning_types
-                                self.log(f"Updated fine_tuning_type dropdown options: {finetuning_types}")
-                            else:
-                                self.log(f"Model {selected_model_name} not found in available models")
-                        else:
-                            self.log("No model name selected")
-
-            except httpx.HTTPStatusError as exc:
-                error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
-                self.log(error_msg)
-                raise ValueError(error_msg) from exc
-            except (httpx.RequestError, ValueError) as exc:
-                exception_str = str(exc)
-                error_msg = f"Error refreshing model names: {exception_str}"
-                self.log(error_msg)
-                raise ValueError(error_msg) from exc
+        except httpx.HTTPStatusError as exc:
+            error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+        except (httpx.RequestError, ValueError) as exc:
+            exception_str = str(exc)
+            error_msg = f"Error refreshing model names: {exception_str}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
         self.log(f"Final build_config: {build_config}")
         return build_config
 
     async def customize(self) -> dict:
-        if self._get_use_mock():
-            # Use mock service
-            settings_service = get_settings_service()
-            nemo_customizer_url = settings_service.settings.nemo_customizer_url
-            nemo_data_store_url = settings_service.settings.nemo_data_store_url
-            nemo_entity_store_url = settings_service.settings.nemo_entity_store_url
-        else:
-            # Use real API
-            if not hasattr(self, "api_key") or not self.api_key:
-                error_msg = "Missing API key for real API mode"
-                raise ValueError(error_msg)
+        if not hasattr(self, "api_key") or not self.api_key:
+            error_msg = "Missing API key."
+            raise ValueError(error_msg)
 
-            base_url = self.get_base_url()
-            if not base_url:
-                error_msg = "Missing base URL for real API mode"
-                raise ValueError(error_msg)
+        base_url = self.get_base_url()
+        if not base_url:
+            error_msg = "Missing base URL."
+            raise ValueError(error_msg)
 
         fine_tuned_model_name = self.fine_tuned_model_name
 
@@ -399,38 +314,32 @@ class NvidiaCustomizerComponent(Component):
             dataset_name = existing_dataset
         elif self.training_data is not None and len(self.training_data) > 0:
             # Process and upload new dataset
-            if self.USE_MOCK:
-                dataset_name = await self.process_dataset(nemo_data_store_url, nemo_entity_store_url)
-            else:
-                dataset_name = await self.process_dataset(base_url)
+            dataset_name = await self.process_dataset(base_url)
         else:
             error_msg = "Either select an existing dataset or provide training data to create a new dataset"
             raise ValueError(error_msg)
 
-        if self.USE_MOCK:
-            customizations_url = f"{nemo_customizer_url}/v1/customization/jobs"
-        else:
-            customizations_url = f"{base_url}/v1/customization/jobs"
+        customizations_url = f"{base_url}/v1/customization/jobs"
 
         error_code_already_present = 409
         output_model = f"{namespace}/{fine_tuned_model_name}"
 
         description = f"Fine tuning base model {self.model_name} using dataset {dataset_name}"
 
-        # Build the data payload (using real API format for both mock and real)
+        # Build the data payload (using API format)
         data = {
             "name": f"customization-{fine_tuned_model_name}",
-            "description": description,
-            "config": f"meta/{self.model_name}",
+            "config": self.model_name,
             "dataset": {"name": dataset_name, "namespace": namespace},
             "hyperparameters": {
-                "training_type": self.training_type,
                 "finetuning_type": self.fine_tuning_type,
                 "epochs": int(self.epochs),
                 "batch_size": int(self.batch_size),
                 "learning_rate": float(self.learning_rate),
             },
             "output_model": output_model,
+            "namespace": namespace,
+            "description": description,
         }
 
         # Add `adapter_dim` if fine tuning type is "lora"
@@ -457,35 +366,34 @@ class NvidiaCustomizerComponent(Component):
             id_value = result_dict["id"]
             result_dict["url"] = f"{customizations_url}/{id_value}/status"
 
-            # Track the job for monitoring in Langflow dashboard (only for mock mode)
-            if self.USE_MOCK:
-                try:
-                    job_metadata = {
-                        "source": "nvidia_customizer_component",
-                        "config": self.model_name,
-                        "dataset": dataset_name,
-                        "training_type": self.training_type,
-                        "fine_tuning_type": self.fine_tuning_type,
-                        "epochs": int(self.epochs),
-                        "batch_size": int(self.batch_size),
-                        "learning_rate": float(self.learning_rate),
-                        "output_model": output_model,
-                        "namespace": namespace,
-                        "description": description,
-                    }
+            # Track the job for monitoring in Langflow dashboard
+            try:
+                job_metadata = {
+                    "source": "nvidia_customizer_component",
+                    "config": self.model_name,
+                    "dataset": dataset_name,
+                    "training_type": self.training_type,
+                    "fine_tuning_type": self.fine_tuning_type,
+                    "epochs": int(self.epochs),
+                    "batch_size": int(self.batch_size),
+                    "learning_rate": float(self.learning_rate),
+                    "output_model": output_model,
+                    "namespace": namespace,
+                    "description": description,
+                }
 
-                    nemo_service = get_nemo_service()
-                    await nemo_service.track_customizer_job(id_value, job_metadata)
-                    self.log(f"Successfully tracked job {id_value} for monitoring")
+                nemo_service = get_nemo_service()
+                await nemo_service.track_customizer_job(id_value, job_metadata)
+                self.log(f"Successfully tracked job {id_value} for monitoring")
 
-                    # Add tracking info to the result
-                    result_dict["tracking_enabled"] = True
-                    result_dict["monitoring_url"] = "/nemo?tab=jobs"
+                # Add tracking info to the result
+                result_dict["tracking_enabled"] = True
+                result_dict["monitoring_url"] = "/nemo?tab=jobs"
 
-                except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as tracking_error:
-                    # Don't fail the job creation if tracking fails
-                    self.log(f"Warning: Failed to track job for monitoring: {tracking_error}")
-                    result_dict["tracking_enabled"] = False
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as tracking_error:
+                # Don't fail the job creation if tracking fails
+                self.log(f"Warning: Failed to track job for monitoring: {tracking_error}")
+                result_dict["tracking_enabled"] = False
 
         except httpx.TimeoutException as exc:
             error_msg = f"Request to {customizations_url} timed out"
@@ -494,17 +402,15 @@ class NvidiaCustomizerComponent(Component):
 
         except httpx.HTTPStatusError as exc:
             # Log the request details for debugging
-            if not self._get_use_mock():
-                logger.exception("HTTP error occurred. Request was sent to: %s", customizations_url)
-                logger.exception("Request payload was: %s", formatted_data)
-                logger.exception("Request headers were: %s", json.dumps(self.get_auth_headers(), indent=2))
+            logger.exception("HTTP error occurred. Request was sent to: %s", customizations_url)
+            logger.exception("Request payload was: %s", formatted_data)
+            logger.exception("Request headers were: %s", json.dumps(self.get_auth_headers(), indent=2))
 
             # Check if the error is due to a 409 Conflict
             if exc.response.status_code == error_code_already_present:
-                if not self._get_use_mock():
-                    logger.exception(
-                        "Received HTTP 409. Conflict output model name. " "Retry with a different output model name"
-                    )
+                logger.exception(
+                    "Received HTTP 409. Conflict output model name. " "Retry with a different output model name"
+                )
                 self.log("Received HTTP 409. Conflict output model name. Retry with a different output model name")
                 error_msg = (
                     f"There is already a fined tuned model with name {fine_tuned_model_name} "
@@ -514,8 +420,7 @@ class NvidiaCustomizerComponent(Component):
             status_code = exc.response.status_code
             response_content = exc.response.text
             error_msg = f"HTTP error {status_code} on URL: {customizations_url}. Response content: {response_content}"
-            if not self._get_use_mock():
-                logger.exception(error_msg)
+            logger.exception(error_msg)
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
@@ -571,33 +476,25 @@ class NvidiaCustomizerComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from e
 
-    async def process_dataset(self, base_url_or_data_store_url: str, entity_store_url: str | None = None) -> str:
+    async def process_dataset(self, base_url_or_data_store_url: str) -> str:
         """Asynchronously processes and uploads the dataset for training(90%) and validation(10%).
 
-        If the total valid record count is less than 10, at least one record is added to validation.
-
         Args:
-            base_url_or_data_store_url (str): Base URL for real API or Data store URL for mock
-            entity_store_url (str): Entity store URL (only used for mock mode)
+            base_url_or_data_store_url (str): Base URL for the API
         """
         try:
             # Inputs and repo setup
             dataset_name = str(uuid.uuid4())
 
-            if self._get_use_mock():
-                # Use mock service
-                hf_api = HfApi(endpoint=f"{base_url_or_data_store_url}/v1/hf", token="")
-                await self.create_namespace(self.namespace, base_url_or_data_store_url)
-            else:
-                # Use real API with authentication
-                hf_api = AuthenticatedHfApi(
-                    endpoint=f"{base_url_or_data_store_url}/v1/hf",
-                    auth_token=self.api_key,
-                    namespace=self.namespace,
-                    token=self.api_key,
-                )
-                await self.create_namespace(self.namespace, base_url_or_data_store_url)
-                await self.create_datastore_namespace(self.namespace, base_url_or_data_store_url)
+            # Use API with authentication
+            hf_api = AuthenticatedHfApi(
+                endpoint=f"{base_url_or_data_store_url}/v1/hf",
+                auth_token=self.api_key,
+                namespace=self.namespace,
+                token=self.api_key,
+            )
+            await self.create_namespace(self.namespace, base_url_or_data_store_url)
+            await self.create_datastore_namespace(self.namespace, base_url_or_data_store_url)
 
             repo_id = f"{self.namespace}/{dataset_name}"
             repo_type = "dataset"
@@ -708,10 +605,7 @@ class NvidiaCustomizerComponent(Component):
             file_url = f"hf://datasets/{repo_id}"
             description = f"Dataset loaded using the input data {dataset_name}"
 
-            if self._get_use_mock():
-                entity_registry_url = f"{entity_store_url}/v1/datasets"
-            else:
-                entity_registry_url = f"{base_url_or_data_store_url}/v1/datasets"
+            entity_registry_url = f"{base_url_or_data_store_url}/v1/datasets"
 
             create_payload = {
                 "name": dataset_name,
@@ -756,9 +650,12 @@ class NvidiaCustomizerComponent(Component):
             training_file_obj = BytesIO(json_data.encode("utf-8"))
             commit_message = f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-            if self._get_use_mock():
-                # Use standard HF API for mock
-                try:
+            # Use authenticated HF API with request patching
+            try:
+                # Patch requests to intercept namespace URLs
+                patched_request = create_auth_interceptor(self.api_key, self.namespace)
+
+                with patch.object(requests.Session, "request", patched_request):
                     hf_api.upload_file(
                         path_or_fileobj=training_file_obj,
                         path_in_repo=file_name_training,
@@ -766,24 +663,8 @@ class NvidiaCustomizerComponent(Component):
                         repo_type="dataset",
                         commit_message=commit_message,
                     )
-                finally:
-                    training_file_obj.close()
-            else:
-                # Use authenticated HF API with request patching for real API
-                try:
-                    # Patch requests to intercept namespace URLs
-                    patched_request = create_auth_interceptor(self.api_key, self.namespace)
-
-                    with patch.object(requests.Session, "request", patched_request):
-                        hf_api.upload_file(
-                            path_or_fileobj=training_file_obj,
-                            path_in_repo=file_name_training,
-                            repo_id=repo_id,
-                            repo_type="dataset",
-                            commit_message=commit_message,
-                        )
-                finally:
-                    training_file_obj.close()
+            finally:
+                training_file_obj.close()
 
         except Exception:
             logger.exception("An error occurred while uploading chunk %s", chunk_number)

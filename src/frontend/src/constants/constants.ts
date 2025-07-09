@@ -612,9 +612,10 @@ export const CONTROL_PATCH_USER_STATE = {
   cnfPassword: "",
   profilePicture: "",
   apikey: "",
-  nemoUseMock: true,
-  nemoApiKey: "",
-  nemoBaseUrl: "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
+  nemo: {
+    baseURL: "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
+    apiKey: "",
+  },
 };
 
 export const CONTROL_LOGIN_STATE = {
