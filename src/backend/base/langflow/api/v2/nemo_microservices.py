@@ -21,14 +21,14 @@ API Endpoints:
 - GET /api/v2/nemo/jobs/{id} - Get job details
 - POST /api/v2/nemo/jobs - Store job for tracking
 
-Note: This implementation uses a mock service for development/testing.
-In production, replace mock_nemo_service with actual NeMo Microservices clients.
+Note: This implementation requires proper NeMo configuration via global variables or environment variables.
 """
 
 from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from langflow.api.utils import CurrentActiveUser, DbSession
 from langflow.services.nemo_microservices_factory import get_nemo_service
 
 router = APIRouter(prefix="/nemo", tags=["NeMo Microservices"])
@@ -40,21 +40,30 @@ router = APIRouter(prefix="/nemo", tags=["NeMo Microservices"])
 
 
 @router.get("/datasets", response_model=list[dict])
-async def list_datasets():
+async def list_datasets(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+):
     """List all NeMo datasets.
 
     Returns:
         List of dataset objects from NeMo Data Store
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         return await nemo_service.list_datasets()
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e!s}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e!s}") from e
 
 
 @router.post("/datasets", response_model=dict)
 async def create_dataset(
+    current_user: CurrentActiveUser,
+    session: DbSession,
     name: str,
     description: str | None = None,
     dataset_type: str = "fileset",
@@ -62,6 +71,8 @@ async def create_dataset(
     """Create a new NeMo dataset.
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         name: Dataset name
         description: Optional description
         dataset_type: Type of dataset (default: fileset)
@@ -70,29 +81,43 @@ async def create_dataset(
         Created dataset object
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         return await nemo_service.create_dataset(name=name, description=description, dataset_type=dataset_type)
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e!s}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e!s}") from e
 
 
 @router.get("/datasets/{dataset_id}", response_model=dict)
-async def get_dataset(dataset_id: str):
+async def get_dataset(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    dataset_id: str,
+):
     """Get detailed information about a specific dataset.
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         dataset_id: NeMo Data Store dataset ID
 
     Returns:
         Dataset details including files and metadata
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         dataset = await nemo_service.get_dataset(dataset_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
     except HTTPException:
         raise
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e!s}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e!s}") from e
     else:
@@ -100,17 +125,23 @@ async def get_dataset(dataset_id: str):
 
 
 @router.delete("/datasets/{dataset_id}")
-async def delete_dataset(dataset_id: str):
+async def delete_dataset(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    dataset_id: str,
+):
     """Delete a dataset from NeMo Data Store.
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         dataset_id: NeMo Data Store dataset ID
 
     Returns:
         Success message
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         deleted = await nemo_service.delete_dataset(dataset_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Dataset not found")
@@ -124,12 +155,16 @@ async def delete_dataset(dataset_id: str):
 
 @router.post("/datasets/{dataset_id}/files", response_model=dict)
 async def upload_files(
+    current_user: CurrentActiveUser,
+    session: DbSession,
     dataset_id: str,
     files: Annotated[list[UploadFile], File(...)],
 ):
     """Upload files to a NeMo dataset.
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         dataset_id: NeMo Data Store dataset ID
         files: List of files to upload
 
@@ -137,7 +172,7 @@ async def upload_files(
         Upload result with file information
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         return await nemo_service.upload_files(dataset_id=dataset_id, files=files)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload files: {e!s}") from e
@@ -166,7 +201,10 @@ async def get_dataset_files(dataset_id: str):
 
 
 @router.get("/v1/customization/configs", response_model=dict)
-async def get_customization_configs():
+async def get_customization_configs(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+):
     """Get available model configurations for customization.
 
     This endpoint matches the real NeMo Customizer API:
@@ -179,7 +217,7 @@ async def get_customization_configs():
         Available model configurations with training and fine-tuning types
     """
     try:
-        nemo_service = get_nemo_service()
+        nemo_service = await get_nemo_service(current_user.id, session)
         return await nemo_service.get_customization_configs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e!s}") from e

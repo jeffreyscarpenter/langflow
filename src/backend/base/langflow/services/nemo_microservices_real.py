@@ -17,8 +17,6 @@ import httpx
 from fastapi import UploadFile
 from httpx import codes
 
-from langflow.services.deps import get_settings_service
-
 logger = logging.getLogger(__name__)
 
 
@@ -28,16 +26,15 @@ class RealNeMoMicroservicesService:
     Makes actual HTTP calls to NeMo services for production use.
     """
 
-    def __init__(self):
-        self.settings_service = get_settings_service()
-        self.base_url = self.settings_service.settings.nemo_base_url
-        self.api_key = self.settings_service.settings.nemo_api_key
+    def __init__(self, base_url: str | None = None, api_key: str | None = None):
+        self.base_url = base_url or "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo"
+        self.api_key = api_key
 
-        # Data Store URLs
-        self.data_store_url = self.settings_service.settings.nemo_data_store_url
-        self.entity_store_url = self.settings_service.settings.nemo_entity_store_url
-        self.customizer_url = self.settings_service.settings.nemo_customizer_url
-        self.evaluator_url = self.settings_service.settings.nemo_evaluator_url
+        # Data Store URLs - using defaults for now, could be made configurable later
+        self.data_store_url = "http://localhost:9001"
+        self.entity_store_url = "http://localhost:9002"
+        self.customizer_url = "http://localhost:7860/api/v2/nemo"
+        self.evaluator_url = "http://localhost:9005"
 
     def _get_auth_headers(self) -> dict[str, str]:
         """Get headers with authentication token."""

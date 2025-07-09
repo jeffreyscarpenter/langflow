@@ -10,8 +10,6 @@ import {
   useUpdateUser,
 } from "@/controllers/API/queries/auth";
 import { useGetProfilePicturesQuery } from "@/controllers/API/queries/files";
-import { useGetNeMoSettings } from "@/controllers/API/queries/settings/use-get-nemo-settings";
-import { useUpdateNeMoSettings } from "@/controllers/API/queries/settings/use-update-nemo-settings";
 import { ENABLE_PROFILE_ICONS } from "@/customization/feature-flags";
 import useAuthStore from "@/stores/authStore";
 import { cloneDeep } from "lodash";
@@ -27,7 +25,6 @@ import {
 } from "../../../../types/components";
 import useScrollToElement from "../hooks/use-scroll-to-element";
 import GeneralPageHeaderComponent from "./components/GeneralPageHeader";
-import NeMoSettingsForm from "./components/NeMoSettingsForm";
 import PasswordFormComponent from "./components/PasswordForm";
 import ProfilePictureFormComponent from "./components/ProfilePictureForm";
 
@@ -36,31 +33,12 @@ export const GeneralPage = () => {
 
   const [inputState, setInputState] = useState<patchUserInputStateType>({
     ...CONTROL_PATCH_USER_STATE,
-    nemoUseMock: true,
-    nemoApiKey: "",
-    nemoBaseUrl: "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
-  });
-
-  // Get NeMo settings from API
-  const { data: nemoSettings, isLoading: isLoadingNeMoSettings } = useGetNeMoSettings();
-
-  // Update NeMo settings mutation
-  const { mutate: updateNeMoSettings, isPending: isUpdatingNeMoSettings } = useUpdateNeMoSettings({
-    onSuccess: () => {
-      setSuccessData({ title: "NeMo settings saved successfully" });
-    },
-    onError: (error) => {
-      setErrorData({
-        title: "Failed to save NeMo settings",
-        list: [(error as any)?.response?.data?.detail || "Unknown error"],
-      });
-    },
   });
 
   const setSuccessData = useAlertStore((state) => state.setSuccessData);
   const setErrorData = useAlertStore((state) => state.setErrorData);
   const { userData, setUserData } = useContext(AuthContext);
-  const { password, cnfPassword, profilePicture, nemoUseMock, nemoApiKey, nemoBaseUrl } = inputState;
+  const { password, cnfPassword, profilePicture } = inputState;
   const autoLogin = useAuthStore((state) => state.autoLogin);
 
   const { storeApiKey } = useContext(AuthContext);
@@ -158,26 +136,6 @@ export const GeneralPage = () => {
     setInputState((prev) => ({ ...prev, [name]: value }));
   }
 
-  // Update local state when API data loads
-  useEffect(() => {
-    if (nemoSettings) {
-      setInputState(prev => ({
-        ...prev,
-        nemoUseMock: nemoSettings.nemo_use_mock,
-        nemoApiKey: nemoSettings.nemo_api_key || "",
-        nemoBaseUrl: nemoSettings.nemo_base_url,
-      }));
-    }
-  }, [nemoSettings]);
-
-  const handleSaveNeMoSettings = () => {
-    updateNeMoSettings({
-      nemo_use_mock: nemoUseMock,
-      nemo_api_key: nemoApiKey,
-      nemo_base_url: nemoBaseUrl,
-    });
-  };
-
   return (
     <div className="flex h-full w-full flex-col gap-6 overflow-x-hidden">
       <GeneralPageHeaderComponent />
@@ -201,16 +159,6 @@ export const GeneralPage = () => {
             handlePatchPassword={handlePatchPassword}
           />
         )}
-
-        <NeMoSettingsForm
-          nemoUseMock={nemoUseMock}
-          nemoApiKey={nemoApiKey}
-          nemoBaseUrl={nemoBaseUrl}
-          handleInput={handleInput}
-          onSave={handleSaveNeMoSettings}
-          isSaving={isUpdatingNeMoSettings}
-          isLoading={isLoadingNeMoSettings}
-        />
       </div>
     </div>
   );

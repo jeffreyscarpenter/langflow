@@ -718,14 +718,10 @@ class NvidiaEvaluatorComponent(Component):
             List of dataset names available for evaluation
         """
         try:
-            # If this is a mock URL, use the mock service directly
-            if "mock-url" in nemo_data_store_url:
-                from langflow.services.nemo_microservices_mock import mock_nemo_service
+            # Use the proper service factory to get datasets
 
-                datasets_data = await mock_nemo_service.list_datasets()
-                return [dataset["name"] for dataset in datasets_data if "name" in dataset]
-
-            # Otherwise, make HTTP request to the actual API
+            # Get the current user ID and session (this would need to be passed in)
+            # For now, we'll use the direct API approach
             datasets_url = f"{nemo_data_store_url}/datasets"
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(datasets_url, headers=self.headers)
