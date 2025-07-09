@@ -554,7 +554,7 @@ export type ChatInputType = {
   }: {
     repeat: number;
     files?: string[];
-  }) => void;
+  }) => Promise<void>;
   playgroundPage: boolean;
 };
 
@@ -843,7 +843,7 @@ export type chatViewProps = {
   }: {
     repeat: number;
     files?: string[];
-  }) => void;
+  }) => Promise<void>;
   visibleSession?: string;
   focusChat?: string;
   closeChat?: () => void;

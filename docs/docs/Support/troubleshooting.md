@@ -9,10 +9,10 @@ This page provides troubleshooting advice for issues you might encounter when us
 
 As Langflow development continues, components are often recategorized or deprecated for better alignment or to prepare for new components.
 
-If a component appears to be missing from the expected location on the component sidebar, try the following:
+If a component appears to be missing from the expected location on the **Components** menu, try the following:
 
 * Search for the component or check other component categories, including [Bundles](/components-bundle-components).
-* [Expose legacy components](/concepts-components#components-sidebar), which are hidden by default.
+* [Expose legacy components](/concepts-components#component-menus), which are hidden by default.
 * Check the [Changelog](https://github.com/langflow-ai/langflow/releases/latest) for component changes in recent releases.
 * Make sure the component isn't already present in your flow if it is a single-use component.
 
@@ -33,10 +33,6 @@ If you get an API key error when running a flow, try the following:
 ## Langflow installation issues
 
 The following issues can occur when installing Langflow.
-
-### C++ build tools required for Langflow Desktop on Windows
-
-Microsoft Windows installations of Langflow Desktop require a C++ compiler that may not be present on your system. If you receive a `C++ Build Tools Required!` error, follow the on-screen prompt to install Microsoft C++ Build Tools, or [install Microsoft Visual Studio](https://visualstudio.microsoft.com/downloads/).
 
 ### Langflow installation freezes at pip dependency resolution
 
