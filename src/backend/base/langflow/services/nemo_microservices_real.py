@@ -30,11 +30,9 @@ class RealNeMoMicroservicesService:
         self.base_url = base_url or "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo"
         self.api_key = api_key
 
-        # Data Store URLs - using defaults for now, could be made configurable later
-        self.data_store_url = "http://localhost:9001"
-        self.entity_store_url = "http://localhost:9002"
-        self.customizer_url = "http://localhost:7860/api/v2/nemo"
-        self.evaluator_url = "http://localhost:9005"
+        # All endpoints use the same base URL with different paths
+        # Based on the actual NeMo API structure
+        logger.info("Initialized NeMo service with base URL: %s", self.base_url)
 
     def _get_auth_headers(self) -> dict[str, str]:
         """Get headers with authentication token."""
@@ -51,7 +49,7 @@ class RealNeMoMicroservicesService:
         """Get list of datasets from NeMo Data Store."""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(f"{self.data_store_url}/v1/datasets", headers=self._get_auth_headers())
+                response = await client.get(f"{self.base_url}/v1/datasets", headers=self._get_auth_headers())
                 response.raise_for_status()
                 return response.json().get("data", [])
         except Exception:
@@ -71,7 +69,7 @@ class RealNeMoMicroservicesService:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    f"{self.data_store_url}/v1/datasets", json=data, headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/datasets", json=data, headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return response.json()
@@ -84,7 +82,7 @@ class RealNeMoMicroservicesService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
-                    f"{self.data_store_url}/v1/datasets/{dataset_id}", headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/datasets/{dataset_id}", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return response.json()
@@ -101,7 +99,7 @@ class RealNeMoMicroservicesService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.delete(
-                    f"{self.data_store_url}/v1/datasets/{dataset_id}", headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/datasets/{dataset_id}", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return True
@@ -122,7 +120,7 @@ class RealNeMoMicroservicesService:
 
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
-                    f"{self.data_store_url}/v1/datasets/{dataset_id}/files",
+                    f"{self.base_url}/v1/datasets/{dataset_id}/files",
                     files=form_data,
                     headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
                 )
@@ -137,7 +135,7 @@ class RealNeMoMicroservicesService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
-                    f"{self.data_store_url}/v1/datasets/{dataset_id}/files", headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/datasets/{dataset_id}/files", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return response.json().get("data", [])
@@ -272,7 +270,7 @@ class RealNeMoMicroservicesService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    f"{self.evaluator_url}/v1/evaluation/jobs", json=job_data, headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/evaluation/jobs", json=job_data, headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return response.json()
@@ -285,7 +283,7 @@ class RealNeMoMicroservicesService:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
-                    f"{self.evaluator_url}/v1/evaluation/jobs/{job_id}", headers=self._get_auth_headers()
+                    f"{self.base_url}/v1/evaluation/jobs/{job_id}", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
                 return response.json()
@@ -301,9 +299,7 @@ class RealNeMoMicroservicesService:
         """List all evaluation jobs."""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    f"{self.evaluator_url}/v1/evaluation/jobs", headers=self._get_auth_headers()
-                )
+                response = await client.get(f"{self.base_url}/v1/evaluation/jobs", headers=self._get_auth_headers())
                 response.raise_for_status()
                 return response.json().get("data", [])
         except Exception:
