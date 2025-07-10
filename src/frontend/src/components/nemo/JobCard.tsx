@@ -71,7 +71,8 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
   const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), { addSuffix: true });
 
   // Try to get job name from custom_fields or config
-  const jobName = (job.custom_fields && job.custom_fields.job_name) || (typeof job.config === 'string' ? job.config : job.config?.name) || `Job ${job.job_id.slice(-8)}`;
+  const jobName = (job.custom_fields && job.custom_fields.job_name) || job.config || `Job ${job.job_id.slice(-8)}`;
+
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -106,9 +107,15 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
         {/* Job Details */}
         <div className="space-y-2">
           <div className="flex items-center space-x-2 text-sm">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">Job ID:</span>
+            <span className="font-mono text-xs truncate" title={job.job_id}>{job.job_id}</span>
+          </div>
+
+          <div className="flex items-center space-x-2 text-sm">
             <Cpu className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Model:</span>
-            <span className="font-medium truncate">{typeof job.config === 'string' ? job.config : job.config?.name}</span>
+            <span className="font-medium truncate">{job.config}</span>
           </div>
 
           <div className="flex items-center space-x-2 text-sm">
@@ -156,7 +163,13 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
             variant="outline"
             size="sm"
             className="w-full"
-            onClick={() => onViewDetails?.(job.job_id)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onViewDetails) {
+                onViewDetails(job.job_id);
+              }
+            }}
           >
             <Eye className="h-4 w-4 mr-2" />
             View Details

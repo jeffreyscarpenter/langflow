@@ -1,11 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../api";
-import { getURL } from "../../helpers/constants";
-import { NeMoJobStatusResponse } from "@/types/nemo";
+import { nemoApi } from "../../nemo-api";
 
-async function getJobStatus(jobId: string): Promise<NeMoJobStatusResponse> {
-  const response = await api.get(`${getURL("NEMO", undefined, true)}/v1/customization/jobs/${jobId}/status`);
-  return response.data;
+async function getJobStatus(jobId: string) {
+  return await nemoApi.getCustomizerJobStatus(jobId);
 }
 
 export function useGetJobStatus(jobId: string | null) {

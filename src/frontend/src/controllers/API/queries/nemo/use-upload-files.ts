@@ -1,8 +1,7 @@
 import { useMutationFunctionType } from "@/types/api";
 import { UploadFilesResponse } from "@/types/nemo";
 import { UseMutationResult } from "@tanstack/react-query";
-import { api } from "../../api";
-import { getURL } from "../../helpers/constants";
+import { nemoApi } from "../../nemo-api";
 import { UseRequestProcessor } from "../../services/request-processor";
 
 interface UploadFilesParams {
@@ -18,21 +17,10 @@ export const useUploadFiles: useMutationFunctionType<
   const { mutate, queryClient } = UseRequestProcessor();
 
   async function uploadFilesFn(data: UploadFilesParams): Promise<UploadFilesResponse> {
-    const formData = new FormData();
-    data.files.forEach((file) => {
-      formData.append("files", file);
+    return await nemoApi.uploadFiles({
+      datasetId: data.datasetId,
+      files: data.files
     });
-
-    const response = await api.post<UploadFilesResponse>(
-      `${getURL("NEMO", undefined, true)}/datasets/${data.datasetId}/files`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      }
-    );
-    return response.data;
   }
 
   const mutation: UseMutationResult<UploadFilesResponse, any, UploadFilesParams> = mutate(

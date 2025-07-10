@@ -31,6 +31,7 @@ export interface NeMoFile {
 
 export interface CreateDatasetRequest {
   name: string;
+  namespace: string;
   description?: string;
   dataset_type?: string;
 }

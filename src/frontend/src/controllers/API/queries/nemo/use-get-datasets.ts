@@ -1,24 +1,33 @@
 import { useQueryFunctionType } from "@/types/api";
 import { NeMoDataset } from "@/types/nemo";
-import { api } from "../../api";
-import { getURL } from "../../helpers/constants";
+import { nemoApi } from "../../nemo-api";
 import { UseRequestProcessor } from "../../services/request-processor";
 
-export const useGetDatasets: useQueryFunctionType<
-  undefined,
-  NeMoDataset[]
-> = (options) => {
-  const { query } = UseRequestProcessor();
+interface UseGetDatasetsParams {
+  page?: number;
+  pageSize?: number;
+  datasetName?: string;
+}
 
-  const getDatasetsFn = async () => {
-    const response = await api.get<NeMoDataset[]>(
-      `${getURL("NEMO", undefined, true)}/datasets`
-    );
-    return response.data;
+interface PaginatedDatasetsResponse {
+  data: NeMoDataset[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export const useGetDatasets = (params: UseGetDatasetsParams = {}, options?: any) => {
+  const { query } = UseRequestProcessor();
+  const { page = 1, pageSize = 10, datasetName } = params;
+
+  const getDatasetsFn = async (): Promise<PaginatedDatasetsResponse> => {
+    return await nemoApi.getDatasets(page, pageSize, datasetName);
   };
 
   const queryResult = query(
-    ["useGetDatasets"],
+    ["useGetDatasets", page, pageSize, datasetName],
     getDatasetsFn,
     {
       refetchOnWindowFocus: false,

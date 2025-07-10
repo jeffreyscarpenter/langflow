@@ -25,13 +25,15 @@ import useAlertStore from "@/stores/alertStore";
 interface CreateDatasetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
 }
 
-const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenChange }) => {
+const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenChange, onSuccess }) => {
   const [formData, setFormData] = useState<CreateDatasetRequest>({
     name: "",
+    namespace: "default",
     description: "",
-    dataset_type: "general",
+    dataset_type: "fileset",
   });
   const setSuccessData = useAlertStore((state) => state.setSuccessData);
   const setErrorData = useAlertStore((state) => state.setErrorData);
@@ -41,8 +43,9 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
   const handleClose = () => {
     setFormData({
       name: "",
+      namespace: "default",
       description: "",
-      dataset_type: "general",
+      dataset_type: "fileset",
     });
     onOpenChange(false);
   };
@@ -56,12 +59,21 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
       });
       return;
     }
+    if (!formData.namespace.trim()) {
+      setErrorData({
+        title: "Error",
+        list: ["Namespace is required"],
+      });
+      return;
+    }
     createDatasetMutation.mutate(formData, {
-      onSuccess: () => {
+      onSuccess: (result) => {
         setSuccessData({
           title: "Dataset created",
+          text: result?.message || `Dataset ${formData.name} created successfully`,
         });
         handleClose();
+        onSuccess?.();
       },
       onError: (error) => {
         setErrorData({
@@ -99,6 +111,22 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
                 placeholder="Enter dataset name"
                 disabled={createDatasetMutation.isPending}
               />
+              <p className="text-sm text-muted-foreground">
+                Dataset name will be used to create a HuggingFace repository
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="namespace">Namespace *</Label>
+              <Input
+                id="namespace"
+                value={formData.namespace}
+                onChange={(e) => handleInputChange("namespace", e.target.value)}
+                placeholder="Enter namespace (e.g., default, your-org)"
+                disabled={createDatasetMutation.isPending}
+              />
+              <p className="text-sm text-muted-foreground">
+                Namespace will be created if it doesn't exist
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="description">Description</Label>
@@ -122,7 +150,7 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
                   <SelectValue placeholder="Select dataset type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="general">General</SelectItem>
+                  <SelectItem value="fileset">Fileset (Default)</SelectItem>
                   <SelectItem value="text">Text</SelectItem>
                   <SelectItem value="code">Code</SelectItem>
                   <SelectItem value="documentation">Documentation</SelectItem>
@@ -142,7 +170,7 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
             </Button>
             <Button
               type="submit"
-              disabled={createDatasetMutation.isPending || !formData.name.trim()}
+              disabled={createDatasetMutation.isPending || !formData.name.trim() || !formData.namespace.trim()}
             >
               {createDatasetMutation.isPending ? "Creating..." : "Create Dataset"}
             </Button>

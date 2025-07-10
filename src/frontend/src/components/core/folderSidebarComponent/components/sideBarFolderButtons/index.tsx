@@ -24,6 +24,7 @@ import {
   ENABLE_DATASTAX_LANGFLOW,
   ENABLE_FILE_MANAGEMENT,
   ENABLE_MCP_NOTICE,
+  ENABLE_NEMO_MICROSERVICES,
 } from "@/customization/feature-flags";
 import { useCustomNavigate } from "@/customization/hooks/use-custom-navigate";
 import { track } from "@/customization/utils/analytics";
@@ -484,7 +485,10 @@ const SideBarFoldersButtonsComponent = ({
             </SidebarMenuButton>
             <SidebarMenuButton
               isActive={checkPathNeMoDataStore}
-              onClick={() => handleNeMoDataStoreClick?.()}
+              onClick={() => {
+                console.log("NeMo Microservices clicked!");
+                handleNeMoDataStoreClick?.();
+              }}
               size="md"
               className="text-sm"
             >

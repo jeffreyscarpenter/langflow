@@ -1,11 +1,11 @@
 import { useQueryFunctionType } from "@/types/api";
 import { NeMoDataset } from "@/types/nemo";
-import { api } from "../../api";
-import { getURL } from "../../helpers/constants";
+import { nemoApi } from "../../nemo-api";
 import { UseRequestProcessor } from "../../services/request-processor";
 
 interface GetDatasetParams {
-  datasetId: string;
+  datasetName: string;
+  namespace?: string;
 }
 
 export const useGetDataset: useQueryFunctionType<
@@ -15,14 +15,11 @@ export const useGetDataset: useQueryFunctionType<
   const { query } = UseRequestProcessor();
 
   const getDatasetFn = async () => {
-    const response = await api.get<NeMoDataset>(
-      `${getURL("NEMO", undefined, true)}/datasets/${params.datasetId}`
-    );
-    return response.data;
+    return await nemoApi.getDataset(params.datasetName, params.namespace);
   };
 
   const queryResult = query(
-    ["useGetDataset", params.datasetId],
+    ["useGetDataset", params.datasetName, params.namespace],
     getDatasetFn,
     {
       refetchOnWindowFocus: false,

@@ -13,12 +13,16 @@ from langflow.services.deps import get_settings_service, get_variable_service
 from langflow.services.nemo_microservices_real import RealNeMoMicroservicesService
 
 
-async def get_nemo_service(user_id: UUID | None = None, session=None):
-    """Get the NeMo service with configuration from user's global variables with fallback to environment variables.
+async def get_nemo_service(
+    user_id: UUID | None = None, session=None, header_api_key: str | None = None, header_base_url: str | None = None
+):
+    """Get the NeMo service with configuration from headers, user's global variables, or environment variables.
 
     Args:
         user_id: The user ID to get NeMo configuration for (optional)
         session: Database session for accessing global variables (optional)
+        header_api_key: API key from HTTP headers (optional)
+        header_base_url: Base URL from HTTP headers (optional)
 
     Returns:
         The real NeMo service with configuration, or raises an error if configuration is missing
@@ -26,21 +30,23 @@ async def get_nemo_service(user_id: UUID | None = None, session=None):
     settings_service = get_settings_service()
     variable_service = get_variable_service()
 
-    # Try to get configuration from global variables first
-    nemo_api_key = None
-    nemo_base_url = None
+    # Prioritize headers first, then global variables, then environment variables
+    nemo_api_key = header_api_key
+    nemo_base_url = header_base_url
 
-    # Only try to get from global variables if user_id and session are provided
+    # Only try to get from global variables if user_id and session are provided and headers are not set
     if user_id and session:
-        with suppress(ValueError):
-            # Try to get NEMO_API_KEY from global variables
-            nemo_api_key = await variable_service.get_variable(user_id, "NEMO_API_KEY", "NEMO_API_KEY", session)
+        if nemo_api_key is None:
+            with suppress(ValueError):
+                # Try to get NEMO_API_KEY from global variables
+                nemo_api_key = await variable_service.get_variable(user_id, "NEMO_API_KEY", "NEMO_API_KEY", session)
 
-        with suppress(ValueError):
-            # Try to get NEMO_BASE_URL from global variables
-            nemo_base_url = await variable_service.get_variable(user_id, "NEMO_BASE_URL", "NEMO_BASE_URL", session)
+        if nemo_base_url is None:
+            with suppress(ValueError):
+                # Try to get NEMO_BASE_URL from global variables
+                nemo_base_url = await variable_service.get_variable(user_id, "NEMO_BASE_URL", "NEMO_BASE_URL", session)
 
-    # Fallback to environment variables if global variables are not set
+    # Fallback to environment variables if headers and global variables are not set
     # This follows the same pattern as other Langflow components
     if settings_service.settings.fallback_to_env_var:
         if nemo_api_key is None:
@@ -59,6 +65,11 @@ async def get_nemo_service(user_id: UUID | None = None, session=None):
 
     # If we have both API key and base URL, use the service
     if nemo_api_key and nemo_base_url:
+        # Log the source of configuration for debugging
+        if header_api_key and header_base_url:
+            from loguru import logger
+
+            logger.info("Using NeMo configuration from HTTP headers")
         return RealNeMoMicroservicesService(base_url=nemo_base_url, api_key=nemo_api_key)
 
     # If configuration is missing, raise an error

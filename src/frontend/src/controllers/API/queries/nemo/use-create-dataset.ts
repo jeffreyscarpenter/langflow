@@ -1,8 +1,7 @@
 import { useMutationFunctionType } from "@/types/api";
 import { CreateDatasetRequest, CreateDatasetResponse } from "@/types/nemo";
 import { UseMutationResult } from "@tanstack/react-query";
-import { api } from "../../api";
-import { getURL } from "../../helpers/constants";
+import { nemoApi } from "../../nemo-api";
 import { UseRequestProcessor } from "../../services/request-processor";
 
 export const useCreateDataset: useMutationFunctionType<
@@ -13,19 +12,14 @@ export const useCreateDataset: useMutationFunctionType<
   const { mutate, queryClient } = UseRequestProcessor();
 
   async function createDatasetFn(data: CreateDatasetRequest): Promise<CreateDatasetResponse> {
-    const params = new URLSearchParams();
-    params.append("name", data.name);
-    if (data.description) {
-      params.append("description", data.description);
-    }
-    if (data.dataset_type) {
-      params.append("dataset_type", data.dataset_type);
-    }
+    // Add namespace to the request data
+    const dataWithNamespace = {
+      ...data,
+      namespace: data.namespace || nemoApi.getNamespace()
+    };
 
-    const response = await api.post<CreateDatasetResponse>(
-      `${getURL("NEMO", undefined, true)}/datasets?${params.toString()}`
-    );
-    return response.data;
+    const response = await nemoApi.createDataset(dataWithNamespace);
+    return response;
   }
 
   const mutation: UseMutationResult<CreateDatasetResponse, any, CreateDatasetRequest> = mutate(

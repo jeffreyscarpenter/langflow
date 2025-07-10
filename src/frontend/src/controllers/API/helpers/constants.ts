@@ -29,7 +29,6 @@ export const URLs = {
   PUBLIC_FLOW: `flows/public_flow`,
   MCP: `mcp/project`,
   MCP_SERVERS: `mcp/servers`,
-  NEMO: `nemo`,
   SETTINGS: `settings`,
 } as const;
 

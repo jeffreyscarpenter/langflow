@@ -1,5 +1,5 @@
 import React from "react";
-import { useGetJobStatus } from "@/controllers/API/queries/nemo";
+import { useGetJobStatus, useCancelJob } from "@/controllers/API/queries/nemo";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import {
   Clock,
   CheckCircle,
@@ -23,10 +24,11 @@ import {
   Database,
   Cpu,
   Settings,
-  AlertTriangle
+  AlertTriangle,
+  StopCircle
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { NeMoJobStatus } from "@/types/nemo";
+import useAlertStore from "@/stores/alertStore";
 
 interface JobDetailsModalProps {
   jobId: string;
@@ -34,8 +36,8 @@ interface JobDetailsModalProps {
   onClose: () => void;
 }
 
-const getStatusIcon = (status: NeMoJobStatus) => {
-  switch (status) {
+const getStatusIcon = (status: string) => {
+  switch (status?.toLowerCase()) {
     case "running":
       return <PlayCircle className="h-5 w-5 text-blue-500" />;
     case "completed":
@@ -44,13 +46,16 @@ const getStatusIcon = (status: NeMoJobStatus) => {
       return <XCircle className="h-5 w-5 text-red-500" />;
     case "cancelled":
       return <Pause className="h-5 w-5 text-gray-500" />;
+    case "created":
+    case "pending":
+      return <Clock className="h-5 w-5 text-yellow-500" />;
     default:
       return <Clock className="h-5 w-5 text-yellow-500" />;
   }
 };
 
-const getStatusColor = (status: NeMoJobStatus): string => {
-  switch (status) {
+const getStatusColor = (status: string): string => {
+  switch (status?.toLowerCase()) {
     case "running":
       return "bg-blue-500 hover:bg-blue-600";
     case "completed":
@@ -59,6 +64,9 @@ const getStatusColor = (status: NeMoJobStatus): string => {
       return "bg-red-500 hover:bg-red-600";
     case "cancelled":
       return "bg-gray-500 hover:bg-gray-600";
+    case "created":
+    case "pending":
+      return "bg-yellow-500 hover:bg-yellow-600";
     default:
       return "bg-yellow-500 hover:bg-yellow-600";
   }
@@ -66,6 +74,25 @@ const getStatusColor = (status: NeMoJobStatus): string => {
 
 const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClose }) => {
   const { data: jobStatus, isLoading, error } = useGetJobStatus(jobId);
+  const cancelJobMutation = useCancelJob();
+  const setSuccessData = useAlertStore((state) => state.setSuccessData);
+  const setErrorData = useAlertStore((state) => state.setErrorData);
+
+  const handleCancelJob = async () => {
+    try {
+      await cancelJobMutation.mutateAsync(jobId);
+      setSuccessData({
+        title: "Job cancellation requested successfully",
+      });
+    } catch (error) {
+      console.error("Failed to cancel job:", error);
+      setErrorData({
+        title: "Failed to cancel job. Please try again.",
+      });
+    }
+  };
+
+  const canCancelJob = jobStatus?.status?.toLowerCase() === "created" || jobStatus?.status?.toLowerCase() === "pending";
 
   if (!isOpen) return null;
 
@@ -73,15 +100,29 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle className="flex items-center space-x-2">
-            <span>Job Details: {jobStatus && ((jobStatus.custom_fields && jobStatus.custom_fields.job_name) || jobStatus.config?.name || jobId.slice(-8))}</span>
-            {jobStatus && (
-              <>
-                {getStatusIcon(jobStatus.status)}
-                <Badge className={`${getStatusColor(jobStatus.status)} text-white`}>
-                  {jobStatus.status.toUpperCase()}
-                </Badge>
-              </>
+          <DialogTitle className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span>Job Details: {jobId.slice(-8)}</span>
+              {jobStatus && (
+                <>
+                  {getStatusIcon(jobStatus.status)}
+                  <Badge className={`${getStatusColor(jobStatus.status)} text-white`}>
+                    {jobStatus.status.toUpperCase()}
+                  </Badge>
+                </>
+              )}
+            </div>
+            {canCancelJob && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleCancelJob}
+                disabled={cancelJobMutation.isPending}
+                className="flex items-center space-x-2"
+              >
+                <StopCircle className="h-4 w-4" />
+                <span>{cancelJobMutation.isPending ? "Cancelling..." : "Cancel Job"}</span>
+              </Button>
             )}
           </DialogTitle>
         </DialogHeader>
@@ -107,27 +148,34 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                   <span>Progress</span>
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Overall Progress</span>
-                      <span className="font-medium">{jobStatus.status_details.percentage_done}%</span>
+                      <span className="font-medium">{jobStatus.percentage_done || 0}%</span>
                     </div>
-                    <Progress value={jobStatus.status_details.percentage_done} className="h-2" />
+                    <Progress value={jobStatus.percentage_done || 0} className="h-2" />
                   </div>
 
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-600">
-                      {jobStatus.status_details.epochs_completed}
+                      {jobStatus.epochs_completed || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Epochs Completed</div>
                   </div>
 
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">
-                      {jobStatus.status_details.steps_completed}
+                      {jobStatus.steps_completed || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Steps Completed</div>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {jobStatus.elapsed_time || 0}s
+                    </div>
+                    <div className="text-sm text-muted-foreground">Elapsed Time</div>
                   </div>
                 </div>
               </div>
@@ -142,35 +190,77 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Training Loss */}
+                  {/* Current Loss Values */}
                   <div className="space-y-3">
-                    <h4 className="font-medium">Training Loss</h4>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
-                      {jobStatus.status_details.training_loss?.map((entry, index) => (
-                        <div key={index} className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                          <span>Step {entry.step}</span>
-                          <span className="font-mono">{entry.value.toFixed(4)}</span>
-                        </div>
-                      )) || (
-                        <div className="text-sm text-muted-foreground p-2">No training loss data available</div>
-                      )}
+                    <h4 className="font-medium">Current Loss Values</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm p-3 bg-blue-50 dark:bg-blue-950 rounded">
+                        <span className="text-blue-600 dark:text-blue-400">Training Loss</span>
+                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {jobStatus.train_loss ? jobStatus.train_loss.toFixed(4) : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm p-3 bg-green-50 dark:bg-green-950 rounded">
+                        <span className="text-green-600 dark:text-green-400">Validation Loss</span>
+                        <span className="font-mono font-bold text-green-600 dark:text-green-400">
+                          {jobStatus.val_loss ? jobStatus.val_loss.toFixed(4) : "N/A"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Validation Loss */}
+                  {/* Training Progress */}
                   <div className="space-y-3">
-                    <h4 className="font-medium">Validation Loss</h4>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
-                      {jobStatus.status_details.validation_loss?.map((entry, index) => (
-                        <div key={index} className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                          <span>Epoch {entry.epoch}</span>
-                          <span className="font-mono">{entry.value.toFixed(4)}</span>
-                        </div>
-                      )) || (
-                        <div className="text-sm text-muted-foreground p-2">No validation loss data available</div>
-                      )}
+                    <h4 className="font-medium">Training Progress</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                        <span>Steps per Epoch</span>
+                        <span className="font-mono">{jobStatus.steps_per_epoch || 0}</span>
+                      </div>
+                      <div className="flex justify-between text-sm p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                        <span>Best Epoch</span>
+                        <span className="font-mono">{jobStatus.best_epoch || 0}</span>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Historical Metrics */}
+                  {jobStatus.metrics && (
+                    <div className="col-span-full space-y-3">
+                      <h4 className="font-medium">Historical Metrics</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Training Loss History */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-muted-foreground">Training Loss History</h5>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {jobStatus.metrics.metrics?.train_loss?.map((value, index) => (
+                              <div key={index} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                                <span>Step {index + 1}</span>
+                                <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                              </div>
+                            )) || (
+                              <div className="text-xs text-muted-foreground p-2">No training loss history available</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Validation Loss History */}
+                        <div className="space-y-2">
+                          <h5 className="text-sm font-medium text-muted-foreground">Validation Loss History</h5>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {jobStatus.metrics.metrics?.val_loss?.map((value, index) => (
+                              <div key={index} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                                <span>Epoch {index + 1}</span>
+                                <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                              </div>
+                            )) || (
+                              <div className="text-xs text-muted-foreground p-2">No validation loss history available</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -184,7 +274,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                 </h3>
 
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {jobStatus.status_details.status_logs?.map((log, index) => (
+                  {jobStatus.status_logs?.map((log, index) => (
                     <div key={index} className="p-3 border rounded-lg space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{log.message}</span>
@@ -235,38 +325,32 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold flex items-center space-x-2">
                   <Settings className="h-5 w-5" />
-                  <span>Job Info</span>
+                  <span>Job Information</span>
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2 text-sm">
-                      <Cpu className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Model:</span>
-                      <span className="font-medium truncate">{jobStatus.config?.name}</span>
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Job ID:</span>
+                      <span className="font-medium font-mono">{jobId}</span>
                     </div>
                     <div className="flex items-center space-x-2 text-sm">
                       <Database className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Dataset:</span>
-                      <span className="font-medium truncate">{jobStatus.dataset}</span>
+                      <span className="text-muted-foreground">Status:</span>
+                      <span className="font-medium">{jobStatus.status}</span>
                     </div>
-                    {jobStatus.output_model && (
-                      <div className="flex items-center space-x-2 text-sm">
-                        <Cpu className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <span className="text-muted-foreground flex-shrink-0">Output Model:</span>
-                        <span className="font-medium break-all" title={jobStatus.output_model}>{jobStatus.output_model}</span>
-                      </div>
-                    )}
                   </div>
                   <div className="space-y-2">
-                    {jobStatus.hyperparameters && (
-                      <div className="flex items-center space-x-2 text-sm">
-                        <Settings className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Epochs:</span>
-                        <span className="font-medium">{jobStatus.hyperparameters.epochs}</span>
-                        <span className="text-muted-foreground">Batch Size:</span>
-                        <span className="font-medium">{jobStatus.hyperparameters.batch_size}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center space-x-2 text-sm">
+                      <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Progress:</span>
+                      <span className="font-medium">{jobStatus.percentage_done || 0}%</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Elapsed:</span>
+                      <span className="font-medium">{jobStatus.elapsed_time || 0} seconds</span>
+                    </div>
                   </div>
                 </div>
               </div>
