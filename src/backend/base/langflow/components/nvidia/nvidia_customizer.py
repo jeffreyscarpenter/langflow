@@ -12,11 +12,8 @@ import requests
 from huggingface_hub import HfApi
 
 from langflow.custom import Component
-from langflow.field_typing import Data
-from langflow.services.nemo_microservices_factory import get_nemo_service
-from langflow.types import (
+from langflow.io import (
     DataInput,
-    DatasetInput,
     DropdownInput,
     FloatInput,
     IntInput,
@@ -24,6 +21,7 @@ from langflow.types import (
     SecretStrInput,
     StrInput,
 )
+from langflow.schema import Data
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +33,9 @@ def create_auth_interceptor(auth_token, namespace):
     def patched_request(self, method, url, *args, **kwargs):
         # Check if URL contains the namespace path
         if url and namespace and f"/{namespace}/" in url:
+            # Add authorization header for namespace requests
             headers = kwargs.get("headers", {})
-            if auth_token:
+            if "Authorization" not in headers:
                 headers["Authorization"] = f"Bearer {auth_token}"
                 kwargs["headers"] = headers
                 logger.info("Intercepted and added Authorization header for namespace URL: %s", url)
@@ -57,19 +56,22 @@ class AuthenticatedHfApi(HfApi):
     def _build_hf_headers(self, token=None, library_name=None, library_version=None, user_agent=None):
         """Override to add custom authentication headers."""
         # Call parent method with only the parameters it accepts
-        return super()._build_hf_headers(
-            token=token,
-            library_name=library_name,
-            library_version=library_version,
-            user_agent=user_agent,
+        headers = super()._build_hf_headers(
+            token=token, library_name=library_name, library_version=library_version, user_agent=user_agent
         )
+
+        # Always add our custom authentication header
+        headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        return headers
 
     def _request_wrapper(self, method, url, *args, **kwargs):
         """Override to intercept requests and add auth headers for namespace URLs."""
         # Check if URL contains the namespace path
         if url and self.namespace and f"/{self.namespace}/" in url:
+            # Add authorization header for namespace requests
             headers = kwargs.get("headers", {})
-            if self.auth_token:
+            if "Authorization" not in headers:
                 headers["Authorization"] = f"Bearer {self.auth_token}"
                 kwargs["headers"] = headers
                 logger.info("Added Authorization header for namespace URL: %s", url)
@@ -88,16 +90,16 @@ class NvidiaCustomizerComponent(Component):
 
     inputs = [
         SecretStrInput(
-            name="api_key",
-            display_name="API Key",
-            info="API key for NeMo services authentication",
-            required=False,
+            name="auth_token",
+            display_name="Authentication Token",
+            info="Bearer token for firewall authentication",
+            required=True,
         ),
         StrInput(
             name="base_url",
             display_name="Base API URL",
-            info="Base URL for the NeMo services",
-            required=False,
+            info="Base URL for the NeMo services (e.g., https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo)",
+            required=True,
             value="https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
         ),
         StrInput(
@@ -114,38 +116,37 @@ class NvidiaCustomizerComponent(Component):
             info="Enter the name to reference the output fine tuned model, ex: `imdb-data@v1`",
             required=True,
         ),
-        DatasetInput(
-            name="existing_dataset",
-            display_name="Existing Dataset",
-            info="Select an existing dataset from NeMo Data Store to use instead of uploading new training data",
-            dataset_types=["fileset"],
-        ),
         DataInput(
             name="training_data",
             display_name="Training Data",
-            info="Provide training data to create a new dataset, or leave empty if using an existing dataset",
             is_list=True,
-            required=False,
+            required=True,
         ),
         DropdownInput(
             name="model_name",
             display_name="Base Model Name",
-            info="Base model to fine tune (click refresh to load options)",
+            info="Base model to fine tune",
             refresh_button=True,
             required=True,
+            options=[],
+            combobox=True,
         ),
         DropdownInput(
             name="training_type",
             display_name="Training Type",
-            info="Select the type of training to use (click refresh to load options)",
+            info="Select the type of training to use",
             refresh_button=True,
             required=True,
+            options=[],
+            combobox=True,
         ),
         DropdownInput(
             name="fine_tuning_type",
             display_name="Fine Tuning Type",
-            info="Select the fine tuning type to use (click refresh to load options)",
+            info="Select the fine tuning type to use",
             required=True,
+            options=[],
+            combobox=True,
         ),
         IntInput(
             name="epochs",
@@ -175,38 +176,22 @@ class NvidiaCustomizerComponent(Component):
 
     def get_auth_headers(self):
         """Get headers with authentication token."""
-        headers = {"accept": "application/json", "Content-Type": "application/json"}
-        if hasattr(self, "api_key") and self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
+        return {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.auth_token}",
+        }
 
-    def get_base_url(self):
-        """Get the base URL for the API."""
-        return (
-            self.base_url
-            if hasattr(self, "base_url") and self.base_url
-            else "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo"
-        )
-
-    async def update_build_config(self, build_config, field_value, field_name=None):
+    async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
         """Updates the component's configuration based on the selected option or refresh button."""
-        self.log(f"update_build_config called with field_name={field_name}, field_value={field_value}")
-
-        if not hasattr(self, "api_key") or not self.api_key:
-            self.log("No API key provided for API")
+        if not hasattr(self, "auth_token") or not self.auth_token:
             return build_config
 
-        base_url = self.get_base_url()
-        if not base_url:
-            self.log("No base URL provided for API")
-            return build_config
-
+        base_url = self.base_url.rstrip("/")
         models_url = f"{base_url}/v1/customization/configs"
 
         try:
-            if field_name == "model_name":
-                self.log(f"Refreshing model names from endpoint {models_url}, value: {field_value}")
-
+            if field_name == "model_name" or field_name is None:
                 # Use a synchronous HTTP client with authentication
                 with httpx.Client(timeout=5.0) as client:
                     response = client.get(models_url, headers=self.get_auth_headers())
@@ -219,10 +204,7 @@ class NvidiaCustomizerComponent(Component):
 
                     build_config["model_name"]["options"] = model_names
 
-                self.log(f"Updated model_name dropdown options: {model_names}")
-
             elif field_name == "training_type":
-                self.log(f"Refreshing training types from endpoint {models_url}")
                 # Use a synchronous HTTP client with authentication
                 with httpx.Client(timeout=5.0) as client:
                     response = client.get(models_url, headers=self.get_auth_headers())
@@ -232,7 +214,6 @@ class NvidiaCustomizerComponent(Component):
 
                     # Logic to update `training_type` dropdown based on selected model
                     selected_model_name = getattr(self, "model_name", None)
-                    self.log(f"Selected model name: {selected_model_name}")
                     if selected_model_name:
                         # Find the selected model in the response
                         # Find model by config name (which includes version and GPU type)
@@ -256,13 +237,7 @@ class NvidiaCustomizerComponent(Component):
                             )
 
                             build_config["training_type"]["options"] = training_types
-                            self.log(f"Updated training_type dropdown options: {training_types}")
                             build_config["fine_tuning_type"]["options"] = finetuning_types
-                            self.log(f"Updated fine_tuning_type dropdown options: {finetuning_types}")
-                        else:
-                            self.log(f"Model {selected_model_name} not found in available models")
-                    else:
-                        self.log("No model name selected")
 
         except httpx.HTTPStatusError as exc:
             error_msg = f"HTTP error {exc.response.status_code} on {models_url}"
@@ -274,18 +249,14 @@ class NvidiaCustomizerComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
-        self.log(f"Final build_config: {build_config}")
         return build_config
 
     async def customize(self) -> dict:
-        if not hasattr(self, "api_key") or not self.api_key:
-            error_msg = "Missing API key."
+        if not self.auth_token:
+            error_msg = "Missing authentication token"
             raise ValueError(error_msg)
 
-        base_url = self.get_base_url()
-        if not base_url:
-            error_msg = "Missing base URL."
-            raise ValueError(error_msg)
+        base_url = self.base_url.rstrip("/")
 
         fine_tuned_model_name = self.fine_tuned_model_name
 
@@ -306,48 +277,43 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Refresh and select the training type and fine tuning type"
             raise ValueError(error_msg)
 
-        # Check if user selected an existing dataset or provided training data
-        existing_dataset = getattr(self, "existing_dataset", None)
-        if existing_dataset:
-            # Use existing dataset
-            self.log(f"Using existing dataset: {existing_dataset}")
-            dataset_name = existing_dataset
-        elif self.training_data is not None and len(self.training_data) > 0:
-            # Process and upload new dataset
-            dataset_name = await self.process_dataset(base_url)
-        else:
-            error_msg = "Either select an existing dataset or provide training data to create a new dataset"
+        # Process and upload the dataset if training_data is provided
+        if self.training_data is None:
+            error_msg = "Training data is empty, cannot customize the model"
             raise ValueError(error_msg)
 
+        dataset_name = await self.process_dataset(base_url)
         customizations_url = f"{base_url}/v1/customization/jobs"
-
         error_code_already_present = 409
         output_model = f"{namespace}/{fine_tuned_model_name}"
 
         description = f"Fine tuning base model {self.model_name} using dataset {dataset_name}"
-
-        # Build the data payload (using API format)
+        # Build the data payload following API spec
         data = {
             "name": f"customization-{fine_tuned_model_name}",
-            "config": self.model_name,
+            "description": description,
+            "config": f"meta/{self.model_name}",
             "dataset": {"name": dataset_name, "namespace": namespace},
             "hyperparameters": {
+                "training_type": self.training_type,
                 "finetuning_type": self.fine_tuning_type,
                 "epochs": int(self.epochs),
                 "batch_size": int(self.batch_size),
                 "learning_rate": float(self.learning_rate),
             },
             "output_model": output_model,
-            "namespace": namespace,
-            "description": description,
         }
 
         # Add `adapter_dim` if fine tuning type is "lora"
         if self.fine_tuning_type == "lora":
             data["hyperparameters"]["lora"] = {"adapter_dim": 16}
-
         try:
             formatted_data = json.dumps(data, indent=2)
+            logger.info("Sending customization request to URL: %s", customizations_url)
+            logger.info("Request headers: %s", json.dumps(self.get_auth_headers(), indent=2))
+            logger.info("Request payload: %s", formatted_data)
+
+            # Also use self.log for component logging
             self.log(f"Sending customization request to URL: {customizations_url}")
             self.log(f"Request payload: {formatted_data}")
 
@@ -366,35 +332,6 @@ class NvidiaCustomizerComponent(Component):
             id_value = result_dict["id"]
             result_dict["url"] = f"{customizations_url}/{id_value}/status"
 
-            # Track the job for monitoring in Langflow dashboard
-            try:
-                job_metadata = {
-                    "source": "nvidia_customizer_component",
-                    "config": self.model_name,
-                    "dataset": dataset_name,
-                    "training_type": self.training_type,
-                    "fine_tuning_type": self.fine_tuning_type,
-                    "epochs": int(self.epochs),
-                    "batch_size": int(self.batch_size),
-                    "learning_rate": float(self.learning_rate),
-                    "output_model": output_model,
-                    "namespace": namespace,
-                    "description": description,
-                }
-
-                nemo_service = get_nemo_service()
-                await nemo_service.track_customizer_job(id_value, job_metadata)
-                self.log(f"Successfully tracked job {id_value} for monitoring")
-
-                # Add tracking info to the result
-                result_dict["tracking_enabled"] = True
-                result_dict["monitoring_url"] = "/nemo?tab=jobs"
-
-            except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as tracking_error:
-                # Don't fail the job creation if tracking fails
-                self.log(f"Warning: Failed to track job for monitoring: {tracking_error}")
-                result_dict["tracking_enabled"] = False
-
         except httpx.TimeoutException as exc:
             error_msg = f"Request to {customizations_url} timed out"
             self.log(error_msg)
@@ -409,11 +346,11 @@ class NvidiaCustomizerComponent(Component):
             # Check if the error is due to a 409 Conflict
             if exc.response.status_code == error_code_already_present:
                 logger.exception(
-                    "Received HTTP 409. Conflict output model name. " "Retry with a different output model name"
+                    "Received HTTP 409. Conflict output model name. Retry with a different output model name"
                 )
                 self.log("Received HTTP 409. Conflict output model name. Retry with a different output model name")
                 error_msg = (
-                    f"There is already a fined tuned model with name {fine_tuned_model_name} "
+                    f"There is already a fined tuned model with name {output_model}. "
                     f"Please choose a different Output Model Name."
                 )
                 raise ValueError(error_msg) from exc
@@ -476,26 +413,21 @@ class NvidiaCustomizerComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from e
 
-    async def process_dataset(self, base_url_or_data_store_url: str) -> str:
-        """Asynchronously processes and uploads the dataset for training(90%) and validation(10%).
-
-        Args:
-            base_url_or_data_store_url (str): Base URL for the API
-        """
+    async def process_dataset(self, base_url: str) -> str:
+        """Asynchronously processes and uploads the dataset with authentication."""
         try:
             # Inputs and repo setup
             dataset_name = str(uuid.uuid4())
 
-            # Use API with authentication
+            # Use authenticated HuggingFace API client
             hf_api = AuthenticatedHfApi(
-                endpoint=f"{base_url_or_data_store_url}/v1/hf",
-                auth_token=self.api_key,
+                endpoint=f"{base_url}/v1/hf",
+                auth_token=self.auth_token,
                 namespace=self.namespace,
-                token=self.api_key,
+                token=self.auth_token,
             )
-            await self.create_namespace(self.namespace, base_url_or_data_store_url)
-            await self.create_datastore_namespace(self.namespace, base_url_or_data_store_url)
-
+            await self.create_namespace(self.namespace, base_url)
+            await self.create_datastore_namespace(self.namespace, base_url)
             repo_id = f"{self.namespace}/{dataset_name}"
             repo_type = "dataset"
             hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
@@ -604,9 +536,7 @@ class NvidiaCustomizerComponent(Component):
         try:
             file_url = f"hf://datasets/{repo_id}"
             description = f"Dataset loaded using the input data {dataset_name}"
-
-            entity_registry_url = f"{base_url_or_data_store_url}/v1/datasets"
-
+            entity_registry_url = f"{base_url}/v1/datasets"
             create_payload = {
                 "name": dataset_name,
                 "namespace": self.namespace,
@@ -636,7 +566,7 @@ class NvidiaCustomizerComponent(Component):
         return dataset_name
 
     async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, hf_api, is_validation):
-        """Asynchronously uploads a chunk of data to the REST API."""
+        """Asynchronously uploads a chunk of data using authenticated HF API."""
         try:
             json_data = chunk_df.to_json(orient="records", lines=True)
 
@@ -650,11 +580,10 @@ class NvidiaCustomizerComponent(Component):
             training_file_obj = BytesIO(json_data.encode("utf-8"))
             commit_message = f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-            # Use authenticated HF API with request patching
-            try:
-                # Patch requests to intercept namespace URLs
-                patched_request = create_auth_interceptor(self.api_key, self.namespace)
+            # Patch requests to intercept namespace URLs
+            patched_request = create_auth_interceptor(self.auth_token, self.namespace)
 
+            try:
                 with patch.object(requests.Session, "request", patched_request):
                     hf_api.upload_file(
                         path_or_fileobj=training_file_obj,
@@ -668,32 +597,3 @@ class NvidiaCustomizerComponent(Component):
 
         except Exception:
             logger.exception("An error occurred while uploading chunk %s", chunk_number)
-
-    async def fetch_existing_datasets(self, nemo_data_store_url: str) -> list[str]:
-        """Fetch existing datasets from the NeMo Data Store.
-
-        Args:
-            nemo_data_store_url (str): Base URL for the NeMo Data Store API
-
-        Returns:
-            List of dataset names available for training
-        """
-        try:
-            # Use the proper service factory to get datasets
-
-            # Get the current user ID and session (this would need to be passed in)
-            # For now, we'll use the direct API approach
-            datasets_url = f"{nemo_data_store_url}/datasets"
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(datasets_url, headers=self.get_auth_headers())
-                response.raise_for_status()
-
-                datasets_data = response.json()
-                return [dataset["name"] for dataset in datasets_data if "name" in dataset]
-
-        except httpx.RequestError as exc:
-            self.log(f"An error occurred while requesting datasets: {exc}")
-            return []
-        except httpx.HTTPStatusError as exc:
-            self.log(f"Error response {exc.response.status_code} while requesting datasets: {exc}")
-            return []
