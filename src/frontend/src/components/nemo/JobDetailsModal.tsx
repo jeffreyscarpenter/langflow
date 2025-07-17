@@ -3,6 +3,7 @@ import { useGetJobStatus, useCancelJob } from "@/controllers/API/queries/nemo";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -125,6 +126,9 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
               </Button>
             )}
           </DialogTitle>
+          <DialogDescription>
+            Detailed information about the customization job including progress, metrics, and logs.
+          </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[70vh]">
@@ -152,28 +156,28 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Overall Progress</span>
-                      <span className="font-medium">{jobStatus.percentage_done || 0}%</span>
+                      <span className="font-medium">{typeof jobStatus.percentage_done === 'number' ? jobStatus.percentage_done : 0}%</span>
                     </div>
-                    <Progress value={jobStatus.percentage_done || 0} className="h-2" />
+                    <Progress value={typeof jobStatus.percentage_done === 'number' ? jobStatus.percentage_done : 0} className="h-2" />
                   </div>
 
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-600">
-                      {jobStatus.epochs_completed || 0}
+                      {typeof jobStatus.epochs_completed === 'number' ? jobStatus.epochs_completed : 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Epochs Completed</div>
                   </div>
 
                   <div className="text-center">
                     <div className="text-2xl font-bold text-green-600">
-                      {jobStatus.steps_completed || 0}
+                      {typeof jobStatus.steps_completed === 'number' ? jobStatus.steps_completed : 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Steps Completed</div>
                   </div>
 
                   <div className="text-center">
                     <div className="text-2xl font-bold text-purple-600">
-                      {jobStatus.elapsed_time || 0}s
+                      {typeof jobStatus.elapsed_time === 'number' ? jobStatus.elapsed_time : 0}s
                     </div>
                     <div className="text-sm text-muted-foreground">Elapsed Time</div>
                   </div>
@@ -197,13 +201,13 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                       <div className="flex justify-between text-sm p-3 bg-blue-50 dark:bg-blue-950 rounded">
                         <span className="text-blue-600 dark:text-blue-400">Training Loss</span>
                         <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {jobStatus.train_loss ? jobStatus.train_loss.toFixed(4) : "N/A"}
+                          {jobStatus.train_loss ? (typeof jobStatus.train_loss === 'number' ? jobStatus.train_loss.toFixed(4) : String(jobStatus.train_loss)) : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm p-3 bg-green-50 dark:bg-green-950 rounded">
                         <span className="text-green-600 dark:text-green-400">Validation Loss</span>
                         <span className="font-mono font-bold text-green-600 dark:text-green-400">
-                          {jobStatus.val_loss ? jobStatus.val_loss.toFixed(4) : "N/A"}
+                          {jobStatus.val_loss ? (typeof jobStatus.val_loss === 'number' ? jobStatus.val_loss.toFixed(4) : String(jobStatus.val_loss)) : "N/A"}
                         </span>
                       </div>
                     </div>
@@ -233,10 +237,10 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                         <div className="space-y-2">
                           <h5 className="text-sm font-medium text-muted-foreground">Training Loss History</h5>
                           <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {jobStatus.metrics.metrics?.train_loss?.map((value, index) => (
+                            {jobStatus.metrics.metrics?.train_loss?.map((metric, index) => (
                               <div key={index} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                                <span>Step {index + 1}</span>
-                                <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                                <span>Step {typeof metric === 'object' && metric.step ? metric.step : index + 1}</span>
+                                <span className="font-mono">{typeof metric === 'object' && metric.value !== undefined ? (typeof metric.value === 'number' ? metric.value.toFixed(4) : String(metric.value)) : (typeof metric === 'number' ? metric.toFixed(4) : String(metric))}</span>
                               </div>
                             )) || (
                               <div className="text-xs text-muted-foreground p-2">No training loss history available</div>
@@ -248,10 +252,10 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                         <div className="space-y-2">
                           <h5 className="text-sm font-medium text-muted-foreground">Validation Loss History</h5>
                           <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {jobStatus.metrics.metrics?.val_loss?.map((value, index) => (
+                            {jobStatus.metrics.metrics?.val_loss?.map((metric, index) => (
                               <div key={index} className="flex justify-between text-xs p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                                <span>Epoch {index + 1}</span>
-                                <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                                <span>Epoch {typeof metric === 'object' && metric.epoch ? metric.epoch : index + 1}</span>
+                                <span className="font-mono">{typeof metric === 'object' && metric.value !== undefined ? (typeof metric.value === 'number' ? metric.value.toFixed(4) : String(metric.value)) : (typeof metric === 'number' ? metric.toFixed(4) : String(metric))}</span>
                               </div>
                             )) || (
                               <div className="text-xs text-muted-foreground p-2">No validation loss history available</div>
@@ -277,14 +281,14 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                   {jobStatus.status_logs?.map((log, index) => (
                     <div key={index} className="p-3 border rounded-lg space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{log.message}</span>
+                        <span className="font-medium">{typeof log.message === 'string' ? log.message : JSON.stringify(log.message)}</span>
                         <span className="text-xs text-muted-foreground">
                           {formatDistanceToNow(new Date(log.updated_at), { addSuffix: true })}
                         </span>
                       </div>
                       {log.detail && (
                         <div className="text-xs text-muted-foreground font-mono bg-gray-50 dark:bg-gray-800 p-2 rounded mt-2">
-                          {log.detail}
+                          {typeof log.detail === 'string' ? log.detail : JSON.stringify(log.detail, null, 2)}
                         </div>
                       )}
                     </div>
@@ -344,7 +348,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ jobId, isOpen, onClos
                     <div className="flex items-center space-x-2 text-sm">
                       <BarChart3 className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">Progress:</span>
-                      <span className="font-medium">{jobStatus.percentage_done || 0}%</span>
+                      <span className="font-medium">{typeof jobStatus.percentage_done === 'number' ? jobStatus.percentage_done : 0}%</span>
                     </div>
                     <div className="flex items-center space-x-2 text-sm">
                       <Clock className="h-4 w-4 text-muted-foreground" />

@@ -71,7 +71,16 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
   const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), { addSuffix: true });
 
   // Try to get job name from custom_fields or config
-  const jobName = (job.custom_fields && job.custom_fields.job_name) || job.config || `Job ${job.job_id.slice(-8)}`;
+  const getJobName = () => {
+    if (job.custom_fields && job.custom_fields.job_name) {
+      return typeof job.custom_fields.job_name === 'string' ? job.custom_fields.job_name : String(job.custom_fields.job_name);
+    }
+    if (job.config) {
+      return typeof job.config === 'string' ? job.config : String(job.config);
+    }
+    return `Job ${job.job_id.slice(-8)}`;
+  };
+  const jobName = getJobName();
 
 
   return (
