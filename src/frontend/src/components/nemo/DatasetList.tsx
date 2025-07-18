@@ -5,7 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Loader2, Database, Plus, Eye, Trash2, Calendar, FileText, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { 
+  Loader2, 
+  Database, 
+  Plus, 
+  Eye, 
+  Trash2, 
+  Calendar, 
+  FileText, 
+  Search, 
+  ChevronLeft, 
+  ChevronRight 
+} from "lucide-react";
 import { useGetDatasets } from "@/controllers/API/queries/nemo/use-get-datasets";
 import { useDeleteDataset } from "@/controllers/API/queries/nemo/use-delete-dataset";
 import { NeMoDataset } from "@/types/nemo";
@@ -41,6 +52,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
     datasetName: debouncedSearchQuery || undefined
   });
 
+
   const datasets = response?.data || [];
   const pagination = {
     page: response?.page || 1,
@@ -49,6 +61,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
     hasNext: response?.has_next || false,
     hasPrev: response?.has_prev || false
   };
+  const authError = response?.error;
 
   const deleteDatasetMutation = useDeleteDataset();
 
@@ -126,6 +139,15 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
           <span>Create Dataset</span>
         </Button>
       </div>
+
+      {/* Authentication Error Alert */}
+      {authError && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {authError} Please configure your NeMo credentials in the settings to access datasets.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Search and Filter Controls */}
       <div className="flex items-center space-x-4">
@@ -236,6 +258,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
               onClick={handlePrevPage}
               disabled={!pagination.hasPrev || isLoading}
               className="flex items-center space-x-1"
+              type="button"
             >
               <ChevronLeft className="h-4 w-4" />
               <span>Previous</span>
@@ -246,6 +269,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
               onClick={handleNextPage}
               disabled={!pagination.hasNext || isLoading}
               className="flex items-center space-x-1"
+              type="button"
             >
               <span>Next</span>
               <ChevronRight className="h-4 w-4" />

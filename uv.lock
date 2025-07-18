@@ -5086,6 +5086,7 @@ dependencies = [
     { name = "mcp" },
     { name = "multiprocess" },
     { name = "nanoid" },
+    { name = "nemo-microservices" },
     { name = "nest-asyncio" },
     { name = "networkx" },
     { name = "opentelemetry-api" },
@@ -5222,6 +5223,7 @@ requires-dist = [
     { name = "mcp", specifier = "~=1.10.1" },
     { name = "multiprocess", specifier = ">=0.70.14,<1.0.0" },
     { name = "nanoid", specifier = ">=2.0.0,<3.0.0" },
+    { name = "nemo-microservices", specifier = ">=1.0.1" },
     { name = "nest-asyncio", specifier = ">=1.6.0,<2.0.0" },
     { name = "networkx", specifier = ">=3.4.2" },
     { name = "opentelemetry-api", specifier = ">=1.25.0,<2.0.0" },
@@ -6480,6 +6482,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ee/04/d9a2b278fe89c4cabd962235c9c5d57cc61a44d5c6eb6f657557132d3bcd/needle_python-0.5.0.tar.gz", hash = "sha256:d2309b011fd5d4f30c43168cf2e666dd920a3577b3bf3686d3ce5dd617794097", size = 6696, upload-time = "2025-03-28T17:34:15.994Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/11/8c/c6cb66abaecc382ae9bbf8e2e1b826cd7434d72966fbc379aad96e2d2548/needle_python-0.5.0-py3-none-any.whl", hash = "sha256:523680cd4260bbe74dd03df1eb4c09d91038568dcc218e70791c1a20291db3f9", size = 9596, upload-time = "2025-03-28T17:34:14.776Z" },
+]
+
+[[package]]
+name = "nemo-microservices"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/64/b0492e4015c03138c8d86d499d9a13bf73837409489657f4568c9f734eea/nemo_microservices-1.0.1-py3-none-any.whl", hash = "sha256:2e6c6f6c5f1cee5d8277d26d62530d5133cd0808f259a8a54fca6fa6bf2f1bcd", size = 614409, upload-time = "2025-07-10T00:09:20.151Z" },
 ]
 
 [[package]]

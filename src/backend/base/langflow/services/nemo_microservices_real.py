@@ -21,6 +21,8 @@ import requests
 from fastapi import UploadFile
 from httpx import codes
 from huggingface_hub import HfApi
+from nemo_microservices import AsyncNeMoMicroservices, NeMoMicroservicesError
+from nemo_microservices._types import NOT_GIVEN
 
 logger = logging.getLogger(__name__)
 
@@ -95,55 +97,141 @@ class RealNeMoMicroservicesService:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
+    def get_nemo_client(self) -> AsyncNeMoMicroservices:
+        """Get an authenticated NeMo microservices client."""
+        return AsyncNeMoMicroservices(
+            base_url=self.base_url,
+        )
+
+    def _serialize_datetime_objects(self, obj: Any) -> Any:
+        """Convert datetime objects to strings for JSON serialization."""
+        if isinstance(obj, dict):
+            return {k: self._serialize_datetime_objects(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_datetime_objects(item) for item in obj]
+        elif hasattr(obj, 'isoformat'):  # datetime objects
+            return obj.isoformat()
+        else:
+            return obj
+
     # =============================================================================
     # Dataset Management (Data Store)
     # =============================================================================
 
     async def list_datasets(
-        self, page: int = 1, page_size: int = 10, dataset_name: str | None = None
+        self, page: int = 1, page_size: int = 10, dataset_name: str | None = None, namespace: str | None = None
     ) -> dict[str, Any]:
-        """Get list of datasets from NeMo Data Store with pagination and optional filtering.
+        """Get list of datasets from NeMo Entity Store with pagination and optional filtering.
 
         Args:
             page: Page number (1-based)
             page_size: Number of datasets per page
             dataset_name: Optional dataset name to filter by
+            namespace: Optional namespace to filter by
 
         Returns:
             Paginated dataset response with data, pagination info
         """
         try:
-            params = {"page": page, "page_size": page_size}
+            nemo_client = self.get_nemo_client()
+            
+            # Build filter for search and namespace
+            filter_params = {}
+            if namespace:
+                filter_params["namespace"] = namespace
+            
+            # Note: The SDK doesn't have direct dataset_name filtering,
+            # so we'll filter results after getting them if needed
+            
+            # Use SDK pagination with entity store
+            paginated_response = await nemo_client.datasets.list(
+                page=page,
+                page_size=page_size,
+                filter=filter_params if filter_params else NOT_GIVEN,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            
+            # Convert SDK response to current format
+            datasets = []
+            for dataset in paginated_response.data:
+                dataset_dict = dataset.model_dump()
+                # Apply datetime serialization
+                dataset_dict = self._serialize_datetime_objects(dataset_dict)
+                datasets.append(dataset_dict)
+            
+            # Apply dataset_name filtering if provided (since SDK doesn't support it directly)
             if dataset_name:
-                params["dataset_name"] = dataset_name
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/v1/datasets", headers=self._get_auth_headers(), params=params
-                )
-                response.raise_for_status()
-                return response.json()
+                datasets = [d for d in datasets if dataset_name.lower() in d.get("name", "").lower()]
+            
+            # Build response in the format expected by frontend
+            current_page = paginated_response.pagination.page if paginated_response.pagination else page
+            page_size = paginated_response.pagination.page_size if paginated_response.pagination else page_size
+            total_pages = paginated_response.pagination.total_pages if paginated_response.pagination else 1
+            total_results = paginated_response.pagination.total_results if paginated_response.pagination else len(datasets)
+            
+            response = {
+                "data": datasets,
+                "page": current_page,
+                "page_size": page_size,
+                "total": total_results,
+                "total_pages": total_pages,
+                "has_next": current_page < total_pages,
+                "has_prev": current_page > 1,
+            }
+            
+            logger.info(f"Retrieved {len(datasets)} datasets from entity store (page {page}, size {page_size})")
+            return response
+            
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo microservices error while listing datasets: %s", exc)
+            
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty dataset list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials."
+                }
+            
+            raise ValueError(f"NeMo microservices error while listing datasets: {exc}") from exc
         except Exception:
             logger.exception("Failed to list datasets")
             raise
 
     async def create_dataset(
-        self, name: str, description: str | None = None, dataset_type: str = "fileset"
+        self, name: str, description: str | None = None, dataset_type: str = "fileset", namespace: str = "default"
     ) -> dict[str, Any]:
-        """Create a new dataset in NeMo Data Store."""
+        """Create a new dataset in NeMo Entity Store."""
         try:
-            data = {
-                "name": name,
-                "description": description or "",
-                "type": dataset_type,
-            }
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/datasets", json=data, headers=self._get_auth_headers()
-                )
-                response.raise_for_status()
-                return response.json()
+            nemo_client = self.get_nemo_client()
+            
+            # Create a basic dataset without HuggingFace repo - just metadata
+            dataset_response = await nemo_client.datasets.create(
+                name=name,
+                namespace=namespace,
+                description=description or f"Dataset {name} created via API",
+                files_url=f"hf://datasets/{namespace}/{name}",  # Placeholder URL
+                format="jsonl",
+                project=name,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            
+            # Convert SDK response to dict and serialize datetime objects
+            result = dataset_response.model_dump()
+            result = self._serialize_datetime_objects(result)
+            
+            logger.info(f"Created dataset {name} in namespace {namespace}")
+            return result
+            
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo microservices error while creating dataset: %s", exc)
+            raise ValueError(f"NeMo microservices error while creating dataset: {exc}") from exc
         except Exception:
             logger.exception("Failed to create dataset")
             raise
@@ -190,27 +278,26 @@ class RealNeMoMicroservicesService:
 
             logger.info(f"Created HuggingFace repo: {repo_id}")
 
-            # Register dataset in entity registry
+            # Register dataset in entity registry using SDK
             file_url = f"hf://datasets/{repo_id}"
             description_text = description or f"Dataset {name} created via NeMo interface"
 
-            entity_registry_url = f"{self.base_url}/v1/datasets"
+            nemo_client = self.get_nemo_client()
+            dataset_response = await nemo_client.datasets.create(
+                name=name,
+                namespace=namespace,
+                description=description_text,
+                files_url=file_url,
+                format="jsonl",
+                project=name,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
 
-            create_payload = {
-                "name": name,
-                "namespace": namespace,
-                "description": description_text,
-                "files_url": file_url,
-                "format": "jsonl",
-                "project": name,
-            }
+            # Convert SDK response to dict and serialize datetime objects
+            result = dataset_response.model_dump()
+            result = self._serialize_datetime_objects(result)
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(entity_registry_url, json=create_payload, headers=self._get_auth_headers())
-                response.raise_for_status()
-                result = response.json()
-
-            logger.info(f"Successfully registered dataset {name} in entity registry")
+            logger.info(f"Successfully registered dataset {name} in entity registry using SDK")
 
             # Return structured response
             return {
@@ -225,6 +312,9 @@ class RealNeMoMicroservicesService:
                 "message": f"Dataset {name} created successfully with HuggingFace repository {repo_id}",
             }
 
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo microservices error while creating dataset: %s", exc)
+            raise ValueError(f"NeMo microservices error while creating dataset: {exc}") from exc
         except Exception:
             logger.exception("Failed to create dataset with namespace")
             raise
@@ -268,58 +358,82 @@ class RealNeMoMicroservicesService:
             raise ValueError(f"Error processing datastore namespace: {e}") from e
 
     async def get_dataset(self, dataset_name: str, namespace: str | None = None) -> dict[str, Any] | None:
-        """Get dataset details from NeMo Data Store.
+        """Get dataset details from NeMo Entity Store.
 
         Args:
             dataset_name: Dataset name
-            namespace: Dataset namespace (optional)
+            namespace: Dataset namespace (required for SDK)
 
         Returns:
             Dataset details or None if not found
         """
         try:
-            url = f"{self.base_url}/v1/datasets/{dataset_name}"
-            params = {}
-            if namespace:
-                params["namespace"] = namespace
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, headers=self._get_auth_headers(), params=params)
-                response.raise_for_status()
-                return response.json()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == codes.NOT_FOUND:
+            nemo_client = self.get_nemo_client()
+            
+            # SDK requires namespace, use 'default' if not provided
+            ns = namespace or "default"
+            
+            dataset = await nemo_client.datasets.retrieve(
+                dataset_name=dataset_name,
+                namespace=ns,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            
+            # Convert SDK response to dict and serialize datetime objects
+            dataset_dict = dataset.model_dump()
+            dataset_dict = self._serialize_datetime_objects(dataset_dict)
+            
+            logger.info(f"Retrieved dataset {dataset_name} from namespace {ns}")
+            return dataset_dict
+            
+        except NeMoMicroservicesError as exc:
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info(f"Dataset {dataset_name} not found in namespace {ns}")
                 return None
-            raise
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot get dataset")
+                return None
+            logger.exception("NeMo microservices error while getting dataset: %s", exc)
+            raise ValueError(f"NeMo microservices error while getting dataset: {exc}") from exc
         except Exception:
             logger.exception("Failed to get dataset")
             raise
 
     async def delete_dataset(self, dataset_name: str, namespace: str | None = None) -> bool:
-        """Delete a dataset from NeMo Data Store.
+        """Delete a dataset from NeMo Entity Store.
 
         Args:
             dataset_name: Dataset name
-            namespace: Dataset namespace (optional)
+            namespace: Dataset namespace (required for SDK)
 
         Returns:
             True if deleted successfully, False if not found
         """
         try:
-            # Use namespace/dataset_name format for delete endpoint
-            if namespace:
-                url = f"{self.base_url}/v1/datasets/{namespace}/{dataset_name}"
-            else:
-                url = f"{self.base_url}/v1/datasets/{dataset_name}"
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.delete(url, headers=self._get_auth_headers())
-                response.raise_for_status()
-                return True
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == codes.NOT_FOUND:
+            nemo_client = self.get_nemo_client()
+            
+            # SDK requires namespace, use 'default' if not provided
+            ns = namespace or "default"
+            
+            delete_response = await nemo_client.datasets.delete(
+                dataset_name=dataset_name,
+                namespace=ns,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            
+            # SDK returns DeleteResponse object, check if successful
+            logger.info(f"Deleted dataset {dataset_name} from namespace {ns}")
+            return True
+            
+        except NeMoMicroservicesError as exc:
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info(f"Dataset {dataset_name} not found in namespace {ns} for deletion")
                 return False
-            raise
+            logger.exception("NeMo microservices error while deleting dataset: %s", exc)
+            raise ValueError(f"NeMo microservices error while deleting dataset: {exc}") from exc
         except Exception:
             logger.exception("Failed to delete dataset")
             raise
@@ -511,15 +625,50 @@ class RealNeMoMicroservicesService:
             logger.exception("Failed to get job details")
             raise
 
-    async def list_customizer_jobs(self) -> list[dict[str, Any]]:
-        """List all customization jobs."""
+    async def list_customizer_jobs(self, page: int = 1, page_size: int = 10) -> dict[str, Any]:
+        """List customization jobs with pagination."""
         try:
+            # Get all jobs first since NeMo Customizer API doesn't support pagination
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(f"{self.base_url}/v1/customization/jobs", headers=self._get_auth_headers())
                 response.raise_for_status()
-                return response.json().get("data", [])
-        except Exception:
+                all_jobs = response.json().get("data", [])
+            
+            # Apply client-side pagination
+            total_jobs = len(all_jobs)
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            paginated_jobs = all_jobs[start_index:end_index]
+            
+            total_pages = (total_jobs + page_size - 1) // page_size
+            
+            # Return paginated response in the same format as datasets
+            return {
+                "data": paginated_jobs,
+                "page": page,
+                "page_size": page_size,
+                "total": total_jobs,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            }
+        except Exception as exc:
             logger.exception("Failed to list customization jobs")
+            
+            # Handle authentication errors gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty jobs list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials."
+                }
+            
             raise
 
     async def cancel_customization_job(self, job_id: str) -> dict[str, Any]:
@@ -553,7 +702,8 @@ class RealNeMoMicroservicesService:
         """Get tracked jobs for dashboard monitoring."""
         # For API, return actual jobs from the service
         try:
-            jobs = await self.list_customizer_jobs()
+            jobs_response = await self.list_customizer_jobs(page=1, page_size=1000)  # Get all jobs for tracking
+            jobs = jobs_response["data"]
         except Exception:
             logger.exception("Failed to get tracked jobs")
             raise
@@ -621,13 +771,33 @@ class RealNeMoMicroservicesService:
             logger.exception("Failed to get evaluation job")
             raise
 
-    async def list_evaluation_jobs(self) -> list[dict[str, Any]]:
-        """List all evaluation jobs."""
+    async def list_evaluation_jobs(self, page: int = 1, page_size: int = 10) -> dict[str, Any]:
+        """List evaluation jobs with pagination."""
         try:
+            # Get all jobs first since NeMo Evaluator API doesn't support pagination
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(f"{self.base_url}/v1/evaluation/jobs", headers=self._get_auth_headers())
                 response.raise_for_status()
-                return response.json().get("data", [])
+                all_jobs = response.json().get("data", [])
+            
+            # Apply client-side pagination
+            total_jobs = len(all_jobs)
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            paginated_jobs = all_jobs[start_index:end_index]
+            
+            total_pages = (total_jobs + page_size - 1) // page_size
+            
+            # Return paginated response in the same format as datasets
+            return {
+                "data": paginated_jobs,
+                "page": page,
+                "page_size": page_size,
+                "total": total_jobs,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            }
         except Exception:
             logger.exception("Failed to list evaluation jobs")
             raise

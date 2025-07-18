@@ -47,10 +47,11 @@ async def list_datasets(
     page: int = 1,
     page_size: int = 10,
     dataset_name: str | None = None,
+    namespace: str | None = None,
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
 ):
-    """List NeMo datasets with pagination and optional filtering by name.
+    """List NeMo datasets with pagination and optional filtering by name and namespace.
 
     Args:
         current_user: Current authenticated user
@@ -58,6 +59,7 @@ async def list_datasets(
         page: Page number (1-based)
         page_size: Number of datasets per page (default: 10)
         dataset_name: Optional dataset name to filter by
+        namespace: Optional namespace to filter by
         x_nemo_auth_token: Optional NeMo authentication token override
         x_nemo_base_url: Optional NeMo base URL override
 
@@ -68,7 +70,7 @@ async def list_datasets(
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.list_datasets(page=page, page_size=page_size, dataset_name=dataset_name)
+        return await nemo_service.list_datasets(page=page, page_size=page_size, dataset_name=dataset_name, namespace=namespace)
     except ValueError as e:
         if "configuration is incomplete" in str(e):
             raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
@@ -132,8 +134,8 @@ async def get_dataset(
     Args:
         current_user: Current authenticated user
         session: Database session
-        dataset_name: NeMo Data Store dataset name
-        namespace: Dataset namespace (optional)
+        dataset_name: NeMo Entity Store dataset name
+        namespace: Dataset namespace (optional, defaults to 'default')
 
     Returns:
         Dataset details including files and metadata
@@ -198,13 +200,13 @@ async def delete_dataset(
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
 ):
-    """Delete a dataset from NeMo Data Store.
+    """Delete a dataset from NeMo Entity Store.
 
     Args:
         current_user: Current authenticated user
         session: Database session
-        dataset_name: NeMo Data Store dataset name
-        namespace: Dataset namespace (optional)
+        dataset_name: NeMo Entity Store dataset name
+        namespace: Dataset namespace (optional, defaults to 'default')
 
     Returns:
         Success message
@@ -492,26 +494,32 @@ async def cancel_customization_job(
         raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e!s}") from e
 
 
-@router.get("/v1/customization/jobs", response_model=list[dict])
+@router.get("/v1/customization/jobs", response_model=dict)
 async def list_all_customizer_jobs(
     current_user: CurrentActiveUser,
     session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
 ):
-    """List all customization jobs.
+    """List customization jobs with pagination.
 
     This endpoint matches the NeMo Customizer API:
     GET /v1/customization/jobs
 
+    Args:
+        page: Page number (1-based)
+        page_size: Number of jobs per page (default: 10)
+
     Returns:
-        List of all customization jobs
+        Paginated list of customization jobs
     """
     try:
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.list_customizer_jobs()
+        return await nemo_service.list_customizer_jobs(page=page, page_size=page_size)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e!s}") from e
 
@@ -647,26 +655,32 @@ async def get_evaluation_job(
         return job_details
 
 
-@router.get("/v1/evaluation/jobs", response_model=list[dict])
+@router.get("/v1/evaluation/jobs", response_model=dict)
 async def list_evaluation_jobs(
     current_user: CurrentActiveUser,
     session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
 ):
-    """List all evaluation jobs.
+    """List evaluation jobs with pagination.
 
     This endpoint matches the NeMo Evaluator API:
     GET /v1/evaluation/jobs
 
+    Args:
+        page: Page number (1-based)
+        page_size: Number of jobs per page (default: 10)
+
     Returns:
-        List of all evaluation jobs
+        Paginated list of evaluation jobs
     """
     try:
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.list_evaluation_jobs()
+        return await nemo_service.list_evaluation_jobs(page=page, page_size=page_size)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e!s}") from e
 

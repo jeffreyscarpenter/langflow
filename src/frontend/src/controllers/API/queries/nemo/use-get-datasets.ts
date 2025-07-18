@@ -16,6 +16,7 @@ interface PaginatedDatasetsResponse {
   total: number;
   has_next: boolean;
   has_prev: boolean;
+  error?: string;
 }
 
 export const useGetDatasets = (params: UseGetDatasetsParams = {}, options?: any) => {
