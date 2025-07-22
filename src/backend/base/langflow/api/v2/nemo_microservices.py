@@ -657,7 +657,7 @@ async def get_evaluation_job(
         return job_details
 
 
-@router.get("/v1/evaluation/jobs", response_model=dict)
+@router.get("/v1/evaluation/jobs", response_model=list[dict])
 async def list_evaluation_jobs(
     current_user: CurrentActiveUser,
     session: DbSession,
