@@ -545,11 +545,11 @@ class NvidiaEvaluatorComponent(Component):
         # Create the evaluation using SDK pattern like customizer
         try:
             nemo_client = self.get_nemo_client()
-            
+
             if evaluation_type == "LM Evaluation Harness":
                 # Create LM evaluation config and target, then create job with IDs
                 config_data, target_data = await self._prepare_lm_evaluation_data(base_url)
-                
+
                 # Create config first
                 config_response = await nemo_client.evaluation.configs.create(
                     type=config_data["type"],
@@ -560,11 +560,11 @@ class NvidiaEvaluatorComponent(Component):
                 )
                 config_id = config_response.id
                 self.log(f"Created evaluation config with ID: {config_id}")
-                
+
                 # Debug log the config structure
                 formatted_config = json.dumps(config_data, indent=2, default=str)
                 self.log(f"Config data sent: {formatted_config}")
-                
+
                 # Create target
                 target_response = await nemo_client.evaluation.targets.create(
                     type=target_data["type"],
@@ -574,7 +574,7 @@ class NvidiaEvaluatorComponent(Component):
                 )
                 target_id = target_response.id
                 self.log(f"Created evaluation target with ID: {target_id}")
-                
+
                 # Create job with config and target IDs
                 response = await nemo_client.evaluation.jobs.create(
                     namespace=self.namespace,
@@ -582,11 +582,11 @@ class NvidiaEvaluatorComponent(Component):
                     target=target_id,
                     extra_headers={"Authorization": f"Bearer {self.auth_token}"},
                 )
-                
+
             elif evaluation_type == "Similarity Metrics":
                 # Create custom evaluation config and target, then create job with IDs
                 config_data, target_data = await self._prepare_custom_evaluation_data(base_url)
-                
+
                 # Create config first
                 config_response = await nemo_client.evaluation.configs.create(
                     type=config_data["type"],
@@ -597,11 +597,11 @@ class NvidiaEvaluatorComponent(Component):
                 )
                 config_id = config_response.id
                 self.log(f"Created evaluation config with ID: {config_id}")
-                
+
                 # Debug log the config structure
                 formatted_config = json.dumps(config_data, indent=2, default=str)
                 self.log(f"Config data sent: {formatted_config}")
-                
+
                 # Create target
                 target_response = await nemo_client.evaluation.targets.create(
                     type=target_data["type"],
@@ -611,7 +611,7 @@ class NvidiaEvaluatorComponent(Component):
                 )
                 target_id = target_response.id
                 self.log(f"Created evaluation target with ID: {target_id}")
-                
+
                 # Create job with config and target IDs
                 response = await nemo_client.evaluation.jobs.create(
                     namespace=self.namespace,
@@ -655,7 +655,7 @@ class NvidiaEvaluatorComponent(Component):
         """Prepare LM evaluation config and target data for SDK."""
         # Create target first
         target_data = await self._create_evaluation_target(None, base_url)
-        
+
         # Get required parameters
         hf_token = getattr(self, "100_huggingface_token", None)
         if not hf_token:
@@ -686,7 +686,7 @@ class NvidiaEvaluatorComponent(Component):
                 "tokens_to_generate": getattr(self, "154_tokens_to_generate", 1024),
             },
         }
-        
+
         return config_data, target_data
 
     async def _prepare_custom_evaluation_data(self, base_url: str) -> tuple:
@@ -702,16 +702,16 @@ class NvidiaEvaluatorComponent(Component):
                 raise ValueError(error_msg)
             repo_id = await self.process_eval_dataset(base_url)
 
-        # Use the file path with the repo ID 
+        # Use the file path with the repo ID
         input_file = f"nds:{repo_id}/input.jsonl"
-        
+
         # Handle run_inference
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
         output_file = None if run_inference else f"nds:{repo_id}/output.jsonl"
-        
+
         # Create target
         target_data = await self._create_evaluation_target(output_file, base_url)
-        
+
         # Create metrics in SDK format
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
         metrics_dict = {}
@@ -748,14 +748,14 @@ class NvidiaEvaluatorComponent(Component):
                 }
             },
         }
-        
+
         return config_data, target_data
 
     async def _create_evaluation_target(self, output_file, base_url: str):
         """Create evaluation target using SDK and return the data for job creation."""
         try:
             nemo_client = self.get_nemo_client()
-            
+
             if output_file:
                 # Target with cached outputs
                 model_data = {"cached_outputs": {"files_url": output_file}}
@@ -777,9 +777,9 @@ class NvidiaEvaluatorComponent(Component):
                 "namespace": self.namespace,
                 "model": model_data,
             }
-            
+
             return target_data
-            
+
         except Exception as exc:
             error_msg = f"Error creating evaluation target: {exc}"
             self.log(error_msg)
@@ -1197,9 +1197,9 @@ class NvidiaEvaluatorComponent(Component):
             )
 
             # Log the entity store dataset creation
-            entity_dataset_id = response.id if hasattr(response, 'id') else dataset_name
+            entity_dataset_id = response.id if hasattr(response, "id") else dataset_name
             self.log(f"Created dataset in entity store with ID: {entity_dataset_id}")
-            
+
             logger.info("Dataset registered successfully with entity store")
             logger.info("All data has been processed and uploaded successfully.")
         except NeMoMicroservicesError as exc:
