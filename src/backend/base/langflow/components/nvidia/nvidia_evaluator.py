@@ -3,8 +3,10 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import httpx
+import requests
 from huggingface_hub import HfApi
 from nemo_microservices import AsyncNeMoMicroservices, NeMoMicroservicesError
 
@@ -26,6 +28,30 @@ from langflow.schema import Data
 logger = logging.getLogger(__name__)
 
 
+def create_auth_interceptor(auth_token, namespace):
+    """Create a function to intercept HTTP requests and add auth headers for namespace URLs"""
+    original_request = requests.Session.request
+
+    def patched_request(self, method, url, *args, **kwargs):
+        # Check if URL contains the namespace path or if it's an LFS request
+        is_namespace_url = url and namespace and f"/{namespace}/" in url
+        is_lfs_url = url and "/lfs/" in url
+
+        if is_namespace_url or is_lfs_url:
+            # Add authorization header for namespace requests and LFS uploads
+            headers = kwargs.get("headers", {})
+            if "Authorization" not in headers:
+                headers["Authorization"] = f"Bearer {auth_token}"
+                kwargs["headers"] = headers
+                logger.info(
+                    f"Intercepted and added Authorization header for URL: {url} (namespace: {is_namespace_url}, lfs: {is_lfs_url})"
+                )
+
+        return original_request(self, method, url, *args, **kwargs)
+
+    return patched_request
+
+
 class AuthenticatedHfApi(HfApi):
     """Custom HuggingFace API client that adds authentication headers for firewall."""
 
@@ -41,16 +67,13 @@ class AuthenticatedHfApi(HfApi):
             token=token, library_name=library_name, library_version=library_version, user_agent=user_agent
         )
 
-        # Always add our custom authentication header
+        # Always add our custom authentication header for all requests
         headers["Authorization"] = f"Bearer {self.auth_token}"
 
         return headers
 
     def _request_wrapper(self, method, url, *args, **kwargs):
         """Override to intercept requests and add auth headers for namespace URLs."""
-        # Log all requests to debug authentication issues
-        logger.info("HF API Request: %s %s", method, url)
-
         # Check if URL contains the namespace path OR if it's an LFS request
         is_namespace_url = url and self.namespace and f"/{self.namespace}/" in url
         is_lfs_url = url and "/lfs/" in url
@@ -64,10 +87,6 @@ class AuthenticatedHfApi(HfApi):
                 logger.info(
                     "Added Authorization header for URL: %s (namespace: %s, lfs: %s)", url, is_namespace_url, is_lfs_url
                 )
-            else:
-                logger.info("Authorization header already present for URL: %s", url)
-        else:
-            logger.info("No auth header added for URL: %s", url)
 
         return super()._request_wrapper(method, url, *args, **kwargs)
 
@@ -127,6 +146,16 @@ class NvidiaEvaluatorComponent(Component):
         return AsyncNeMoMicroservices(
             base_url=self.base_url,
         )
+
+    def convert_datetime_to_string(self, obj):
+        """Convert datetime objects to strings for JSON serialization."""
+        if isinstance(obj, dict):
+            return {k: self.convert_datetime_to_string(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self.convert_datetime_to_string(item) for item in obj]
+        if hasattr(obj, "isoformat"):  # datetime objects
+            return obj.isoformat()
+        return obj
 
     # Define initial static inputs - consistent with customizer component
     inputs = [
@@ -513,50 +542,99 @@ class NvidiaEvaluatorComponent(Component):
 
         base_url = self.base_url.rstrip("/")
 
-        # Generate the request data based on evaluation type
-        if evaluation_type == "LM Evaluation Harness":
-            data = await self._generate_lm_evaluation_body(base_url)
-        elif evaluation_type == "Similarity Metrics":
-            data = await self._generate_custom_evaluation_body(base_url)
-        else:
-            error_msg = f"Unsupported evaluation type: {evaluation_type}"
-            raise ValueError(error_msg)
-
-        # Send the request using NeMo client
+        # Create the evaluation using SDK pattern like customizer
         try:
-            # Format the data as a JSON string for logging
-            formatted_data = json.dumps(data, indent=2)
-            self.log(f"Sending evaluation request to NeMo API with data: {formatted_data}")
-
-            # Use NeMo client for evaluation job creation
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.evaluation.jobs.create(
-                tags=data["tags"],
-                namespace=data["namespace"],
-                target=data["target"],
-                config=data["config"],
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-            )
+            
+            if evaluation_type == "LM Evaluation Harness":
+                # Create LM evaluation config and target, then create job with IDs
+                config_data, target_data = await self._prepare_lm_evaluation_data(base_url)
+                
+                # Create config first
+                config_response = await nemo_client.evaluation.configs.create(
+                    type=config_data["type"],
+                    namespace=config_data["namespace"],
+                    tasks=config_data["tasks"],
+                    params=config_data["params"],
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+                config_id = config_response.id
+                self.log(f"Created evaluation config with ID: {config_id}")
+                
+                # Debug log the config structure
+                formatted_config = json.dumps(config_data, indent=2, default=str)
+                self.log(f"Config data sent: {formatted_config}")
+                
+                # Create target
+                target_response = await nemo_client.evaluation.targets.create(
+                    type=target_data["type"],
+                    namespace=target_data["namespace"],
+                    model=target_data["model"],
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+                target_id = target_response.id
+                self.log(f"Created evaluation target with ID: {target_id}")
+                
+                # Create job with config and target IDs
+                response = await nemo_client.evaluation.jobs.create(
+                    namespace=self.namespace,
+                    config=config_id,
+                    target=target_id,
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+                
+            elif evaluation_type == "Similarity Metrics":
+                # Create custom evaluation config and target, then create job with IDs
+                config_data, target_data = await self._prepare_custom_evaluation_data(base_url)
+                
+                # Create config first
+                config_response = await nemo_client.evaluation.configs.create(
+                    type=config_data["type"],
+                    namespace=config_data["namespace"],
+                    tasks=config_data["tasks"],
+                    params=config_data["params"],
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+                config_id = config_response.id
+                self.log(f"Created evaluation config with ID: {config_id}")
+                
+                # Debug log the config structure
+                formatted_config = json.dumps(config_data, indent=2, default=str)
+                self.log(f"Config data sent: {formatted_config}")
+                
+                # Create target
+                target_response = await nemo_client.evaluation.targets.create(
+                    type=target_data["type"],
+                    namespace=target_data["namespace"],
+                    model=target_data["model"],
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+                target_id = target_response.id
+                self.log(f"Created evaluation target with ID: {target_id}")
+                
+                # Create job with config and target IDs
+                response = await nemo_client.evaluation.jobs.create(
+                    namespace=self.namespace,
+                    config=config_id,
+                    target=target_id,
+                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                )
+            else:
+                error_msg = f"Unsupported evaluation type: {evaluation_type}"
+                raise ValueError(error_msg)
 
             # Process the response
             result_dict = response.model_dump()
 
             # Convert datetime objects to strings for JSON serialization
-            def convert_datetime_to_string(obj):
-                if isinstance(obj, dict):
-                    return {k: convert_datetime_to_string(v) for k, v in obj.items()}
-                if isinstance(obj, list):
-                    return [convert_datetime_to_string(item) for item in obj]
-                if hasattr(obj, "isoformat"):  # datetime objects
-                    return obj.isoformat()
-                return obj
-
-            result_dict = convert_datetime_to_string(result_dict)
+            result_dict = self.convert_datetime_to_string(result_dict)
 
             # Log the successful response
             formatted_result = json.dumps(result_dict, indent=2)
             msg = f"Received successful evaluation response: {formatted_result}"
             self.log(msg)
+
+            return result_dict
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error during evaluation job creation: {exc}"
@@ -572,8 +650,140 @@ class NvidiaEvaluatorComponent(Component):
             error_msg = f"Unexpected error during evaluation job creation: {exc}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+
+    async def _prepare_lm_evaluation_data(self, base_url: str) -> tuple:
+        """Prepare LM evaluation config and target data for SDK."""
+        # Create target first
+        target_data = await self._create_evaluation_target(None, base_url)
+        
+        # Get required parameters
+        hf_token = getattr(self, "100_huggingface_token", None)
+        if not hf_token:
+            error_msg = "Missing hf token"
+            raise ValueError(error_msg)
+
+        # Create config data in SDK format
+        config_data = {
+            "type": "lm_eval_harness",
+            "namespace": self.namespace,
+            "tasks": {
+                getattr(self, "110_task_name", "gsm8k"): {
+                    "params": {
+                        "num_fewshot": getattr(self, "112_few_shot_examples", 5),
+                        "batch_size": getattr(self, "113_batch_size", 16),
+                        "bootstrap_iters": getattr(self, "114_bootstrap_iterations", 100000),
+                        "limit": getattr(self, "115_limit", -1),
+                    },
+                }
+            },
+            "params": {
+                "hf_token": hf_token,
+                "use_greedy": True,
+                "top_p": getattr(self, "151_top_p", 0.0),
+                "top_k": getattr(self, "152_top_k", 1),
+                "temperature": getattr(self, "153_temperature", 0.0),
+                "stop": [],
+                "tokens_to_generate": getattr(self, "154_tokens_to_generate", 1024),
+            },
+        }
+        
+        return config_data, target_data
+
+    async def _prepare_custom_evaluation_data(self, base_url: str) -> tuple:
+        """Prepare custom evaluation config and target data for SDK."""
+        # Process dataset
+        existing_dataset = getattr(self, "existing_dataset", None)
+        if existing_dataset:
+            self.log(f"Using existing dataset: {existing_dataset}")
+            repo_id = f"{self.namespace}/{existing_dataset}"
         else:
-            return result_dict
+            if self.evaluation_data is None or len(self.evaluation_data) == 0:
+                error_msg = "Either select an existing dataset or provide evaluation data to run evaluation"
+                raise ValueError(error_msg)
+            repo_id = await self.process_eval_dataset(base_url)
+
+        # Use the file path with the repo ID 
+        input_file = f"nds:{repo_id}/input.jsonl"
+        
+        # Handle run_inference
+        run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
+        output_file = None if run_inference else f"nds:{repo_id}/output.jsonl"
+        
+        # Create target
+        target_data = await self._create_evaluation_target(output_file, base_url)
+        
+        # Create metrics in SDK format
+        scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
+        metrics_dict = {}
+        for score in scores:
+            metric_name = score.lower()
+            if metric_name == "bleu":
+                metrics_dict[metric_name] = {"type": "bleu", "params": {"references": ["{{item.ideal_response}}"]}}
+            elif metric_name == "rouge":
+                metrics_dict[metric_name] = {"type": "rouge", "params": {"ground_truth": "{{item.ideal_response}}"}}
+            elif metric_name == "em":
+                metrics_dict["exact_match"] = {
+                    "type": "string-check",
+                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                }
+            elif metric_name == "f1":
+                metrics_dict[metric_name] = {"type": "f1", "params": {"ground_truth": "{{item.ideal_response}}"}}
+            else:
+                metrics_dict[metric_name] = {
+                    "type": "string-check",
+                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                }
+
+        # Create config data in SDK format
+        config_data = {
+            "type": "custom",
+            "namespace": self.namespace,
+            "params": {"parallelism": 8},
+            "tasks": {
+                "default_task": {
+                    "type": "completion",
+                    "params": {"template": {"prompt": "{{item.prompt}}"}},
+                    "metrics": metrics_dict,
+                    "dataset": {"files_url": input_file},
+                }
+            },
+        }
+        
+        return config_data, target_data
+
+    async def _create_evaluation_target(self, output_file, base_url: str):
+        """Create evaluation target using SDK and return the data for job creation."""
+        try:
+            nemo_client = self.get_nemo_client()
+            
+            if output_file:
+                # Target with cached outputs
+                model_data = {"cached_outputs": {"files_url": output_file}}
+            else:
+                # Target with API endpoint
+                if not self.inference_model_url:
+                    error_msg = "Provide the nim url for evaluation inference to be processed"
+                    raise ValueError(error_msg)
+                model_data = {
+                    "api_endpoint": {
+                        "url": f"{self.inference_model_url}/v1/completions",
+                        "model_id": getattr(self, "000_llm_name", ""),
+                    }
+                }
+
+            # Create target data for SDK
+            target_data = {
+                "type": "model",
+                "namespace": self.namespace,
+                "model": model_data,
+            }
+            
+            return target_data
+            
+        except Exception as exc:
+            error_msg = f"Error creating evaluation target: {exc}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
 
     async def _generate_lm_evaluation_body(self, base_url: str) -> dict:
         target_id = await self.create_eval_target(None, base_url)
@@ -633,6 +843,8 @@ class NvidiaEvaluatorComponent(Component):
                 "namespace": namespace,
                 "target": f"{namespace}/{target_id}",
                 "config": f"{namespace}/{config_id}",
+                "config_obj": response,  # Pass the actual config object
+                "target_obj": await self._get_target_object(target_id, base_url),  # Get target object
             }
 
         except NeMoMicroservicesError as exc:
@@ -664,7 +876,8 @@ class NvidiaEvaluatorComponent(Component):
                 raise ValueError(error_msg)
             repo_id = await self.process_eval_dataset(base_url)
 
-        input_file = f"nds:{repo_id}/input.json"
+        # Use the file path with the repo ID
+        input_file = f"nds:{repo_id}/input.jsonl"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
 
@@ -676,30 +889,46 @@ class NvidiaEvaluatorComponent(Component):
         # Set output_file based on run_inference
         output_file = None
         if not run_inference:  # Only set output_file if run_inference is False
-            output_file = f"nds:{repo_id}/output.json"
+            output_file = f"nds:{repo_id}/output.jsonl"
         self.log(f"input_file: {input_file}, output_file: {output_file}")
 
         target_id = await self.create_eval_target(output_file, base_url)
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
 
-        # Transform the list into the desired format
-        metrics_to_eval = [{"name": score} for score in scores]
-        config_data = {
-            "type": "similarity_metrics",
-            "namespace": namespace,
-            "tasks": [
-                {
-                    "type": "default",
-                    "metrics": metrics_to_eval,
-                    "dataset": {"files_url": input_file},
-                    "params": {
-                        "tokens_to_generate": getattr(self, "311_tokens_to_generate", 1024),
-                        "temperature": getattr(self, "312_temperature", 0.0),
-                        "top_k": getattr(self, "313_top_k", 0.0),
-                        "n_samples": getattr(self, "350_num_of_samples", -1),
-                    },
+        # Transform the list into the correct custom evaluation format
+        metrics_dict = {}
+        for score in scores:
+            metric_name = score.lower()
+            if metric_name == "bleu":
+                metrics_dict[metric_name] = {"type": "bleu", "params": {"references": ["{{item.ideal_response}}"]}}
+            elif metric_name == "rouge":
+                metrics_dict[metric_name] = {"type": "rouge", "params": {"ground_truth": "{{item.ideal_response}}"}}
+            elif metric_name == "em":
+                metrics_dict["exact_match"] = {
+                    "type": "string-check",
+                    "params": {"ground_truth": "{{item.ideal_response}}"},
                 }
-            ],
+            elif metric_name == "f1":
+                metrics_dict[metric_name] = {"type": "f1", "params": {"ground_truth": "{{item.ideal_response}}"}}
+            else:
+                # For other metrics like accuracy, bert - use string-check
+                metrics_dict[metric_name] = {
+                    "type": "string-check",
+                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                }
+
+        config_data = {
+            "type": "custom",
+            "namespace": namespace,
+            "params": {"parallelism": 8},
+            "tasks": {
+                "default_task": {
+                    "type": "completion",
+                    "params": {"template": {"prompt": "{{item.prompt}}"}},
+                    "metrics": metrics_dict,
+                    "dataset": {"files_url": input_file},
+                }
+            },
         }
 
         try:
@@ -708,12 +937,16 @@ class NvidiaEvaluatorComponent(Component):
             response = await nemo_client.evaluation.configs.create(
                 type=config_data["type"],
                 namespace=config_data["namespace"],
+                params=config_data["params"],
                 tasks=config_data["tasks"],
                 extra_headers={"Authorization": f"Bearer {self.auth_token}"},
             )
 
             # Process the response
             result_dict = response.model_dump()
+
+            # Convert datetime objects to strings for JSON serialization
+            result_dict = self.convert_datetime_to_string(result_dict)
             formatted_result = json.dumps(result_dict, indent=2)
             self.log(f"Received successful response: {formatted_result}")
 
@@ -723,6 +956,8 @@ class NvidiaEvaluatorComponent(Component):
                 "target": f"{namespace}/{target_id}",
                 "config": f"{namespace}/{config_id}",
                 "tags": [getattr(self, "001_tag", "")],
+                "config_obj": response,  # Pass the actual config object
+                "target_obj": await self._get_target_object(target_id, base_url),  # Get target object
             }
 
         except NeMoMicroservicesError as exc:
@@ -739,6 +974,21 @@ class NvidiaEvaluatorComponent(Component):
             error_msg = f"Unexpected error during evaluation config creation: {exc}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+
+    async def _get_target_object(self, target_id: str, base_url: str):
+        """Get the target object for SDK use."""
+        try:
+            nemo_client = self.get_nemo_client()
+            target_obj = await nemo_client.evaluation.targets.retrieve(
+                target_id=target_id,
+                namespace=self.namespace,
+                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+            )
+            return target_obj
+        except Exception as exc:
+            self.log(f"Warning: Could not retrieve target object {target_id}, using string: {exc}")
+            # Fallback to string format if object retrieval fails
+            return f"{self.namespace}/{target_id}"
 
     async def create_eval_target(self, output_file, base_url: str) -> str:  # noqa: ARG002
         namespace = self.namespace
@@ -770,6 +1020,9 @@ class NvidiaEvaluatorComponent(Component):
 
             # Process the response
             result_dict = response.model_dump()
+
+            # Convert datetime objects to strings for JSON serialization
+            result_dict = self.convert_datetime_to_string(result_dict)
             formatted_result = json.dumps(result_dict, indent=2)
             self.log(f"Received successful response: {formatted_result}")
 
@@ -879,31 +1132,39 @@ class NvidiaEvaluatorComponent(Component):
                                 "llm_name": filtered_data["llm_name"],
                             }
                         )
-            # Create in-memory JSON files
-            input_file_buffer = io.BytesIO(json.dumps(input_file_data, indent=4).encode("utf-8"))
-            input_file_name = "input.json"
+            # Create in-memory JSONL files (compact format like customizer to avoid LFS)
+            input_jsonl_data = "\n".join(json.dumps(record) for record in input_file_data)
+            input_file_buffer = io.BytesIO(input_jsonl_data.encode("utf-8"))
+            input_file_name = "input.jsonl"
+
+            # Patch requests to intercept namespace URLs
+            patched_request = create_auth_interceptor(self.auth_token, self.namespace)
+
             try:
-                hf_api.upload_file(
-                    path_or_fileobj=input_file_buffer,
-                    path_in_repo=input_file_name,
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    commit_message=f"Input file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-                )
+                with patch.object(requests.Session, "request", patched_request):
+                    hf_api.upload_file(
+                        path_or_fileobj=input_file_buffer,
+                        path_in_repo=input_file_name,
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        commit_message=f"Input file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+                    )
             finally:
                 input_file_buffer.close()
 
             if generate_output_file:
-                output_file_buffer = io.BytesIO(json.dumps(output_file_data, indent=4).encode("utf-8"))
-                output_file_name = "output.json"
+                output_jsonl_data = "\n".join(json.dumps(record) for record in output_file_data)
+                output_file_buffer = io.BytesIO(output_jsonl_data.encode("utf-8"))
+                output_file_name = "output.jsonl"
                 try:
-                    hf_api.upload_file(
-                        path_or_fileobj=output_file_buffer,
-                        path_in_repo=output_file_name,
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        commit_message=f"Output file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-                    )
+                    with patch.object(requests.Session, "request", patched_request):
+                        hf_api.upload_file(
+                            path_or_fileobj=output_file_buffer,
+                            path_in_repo=output_file_name,
+                            repo_id=repo_id,
+                            repo_type="dataset",
+                            commit_message=f"Output file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+                        )
                 finally:
                     output_file_buffer.close()
 
@@ -925,7 +1186,7 @@ class NvidiaEvaluatorComponent(Component):
 
             # Use NeMo client for entity registry operations
             nemo_client = self.get_nemo_client()
-            _response = await nemo_client.datasets.create(
+            response = await nemo_client.datasets.create(
                 name=dataset_name,
                 namespace=self.namespace,
                 description=description,
@@ -935,6 +1196,10 @@ class NvidiaEvaluatorComponent(Component):
                 extra_headers={"Authorization": f"Bearer {self.auth_token}"},
             )
 
+            # Log the entity store dataset creation
+            entity_dataset_id = response.id if hasattr(response, 'id') else dataset_name
+            self.log(f"Created dataset in entity store with ID: {entity_dataset_id}")
+            
             logger.info("Dataset registered successfully with entity store")
             logger.info("All data has been processed and uploaded successfully.")
         except NeMoMicroservicesError as exc:
@@ -947,6 +1212,7 @@ class NvidiaEvaluatorComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
+        # Return the repo_id (used for HF repo) for file path construction
         return repo_id
 
     async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):

@@ -70,7 +70,9 @@ async def list_datasets(
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.list_datasets(page=page, page_size=page_size, dataset_name=dataset_name, namespace=namespace)
+        return await nemo_service.list_datasets(
+            page=page, page_size=page_size, dataset_name=dataset_name, namespace=namespace
+        )
     except ValueError as e:
         if "configuration is incomplete" in str(e):
             raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
