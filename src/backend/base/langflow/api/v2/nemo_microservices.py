@@ -75,10 +75,10 @@ async def list_datasets(
         )
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list datasets: {e}") from e
 
 
 @router.post("/datasets", response_model=dict)
@@ -116,10 +116,10 @@ async def create_dataset(
         )
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create dataset: {e}") from e
 
 
 @router.get("/datasets/{dataset_name}", response_model=dict)
@@ -138,6 +138,8 @@ async def get_dataset(
         session: Database session
         dataset_name: NeMo Entity Store dataset name
         namespace: Dataset namespace (optional, defaults to 'default')
+        x_nemo_auth_token: Optional NeMo authentication token override
+        x_nemo_base_url: Optional NeMo base URL override
 
     Returns:
         Dataset details including files and metadata
@@ -154,10 +156,10 @@ async def get_dataset(
         raise
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset: {e}") from e
 
 
 @router.get("/datasets/{dataset_name}/details", response_model=dict)
@@ -176,6 +178,8 @@ async def get_dataset_details_with_files(
         session: Database session
         dataset_name: NeMo Data Store dataset name
         namespace: Dataset namespace (optional)
+        x_nemo_auth_token: Optional NeMo authentication token override
+        x_nemo_base_url: Optional NeMo base URL override
 
     Returns:
         Dataset details with files from siblings section
@@ -187,10 +191,10 @@ async def get_dataset_details_with_files(
         return await nemo_service.get_dataset_details(dataset_name, namespace=namespace)
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to get dataset details: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset details: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get dataset details: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset details: {e}") from e
 
 
 @router.delete("/datasets/{dataset_name}")
@@ -225,10 +229,10 @@ async def delete_dataset(
         raise
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {e}") from e
 
 
 @router.post("/datasets/{dataset_id}/files", response_model=dict)
@@ -257,7 +261,7 @@ async def upload_files(
         )
         return await nemo_service.upload_files(dataset_id=dataset_id, files=files)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload files: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to upload files: {e}") from e
 
 
 @router.get("/datasets/{dataset_id}/files", response_model=list[dict])
@@ -284,7 +288,7 @@ async def get_dataset_files(
         )
         return await nemo_service.get_dataset_files(dataset_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get dataset files: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset files: {e}") from e
 
 
 @router.post("/datasets/{dataset_name}/upload", response_model=dict)
@@ -323,7 +327,7 @@ async def upload_dataset_files(
             dataset_name=dataset_name, path=path, namespace=namespace, files=files
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload files: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to upload files: {e}") from e
 
 
 # =============================================================================
@@ -355,7 +359,7 @@ async def get_customization_configs(
         )
         return await nemo_service.get_customization_configs()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e}") from e
 
 
 @router.get("/v1/customization/jobs/{job_id}/status", response_model=dict)
@@ -386,12 +390,11 @@ async def get_job_status(
         job_status = await nemo_service.get_customizer_job_status(job_id)
         if not job_status:
             raise HTTPException(status_code=404, detail="Job not found")
+        return job_status
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get job status: {e!s}") from e
-    else:
-        return job_status
+        raise HTTPException(status_code=500, detail=f"Failed to get job status: {e}") from e
 
 
 @router.post("/v1/customization/jobs", response_model=dict)
@@ -421,7 +424,7 @@ async def create_customization_job(
         )
         return await nemo_service.create_customization_job(job_data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create customization job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create customization job: {e}") from e
 
 
 @router.get("/v1/customization/jobs/{job_id}", response_model=dict)
@@ -452,12 +455,11 @@ async def get_job_details(
         job_details = await nemo_service.get_customizer_job_details(job_id)
         if not job_details:
             raise HTTPException(status_code=404, detail="Job not found")
+        return job_details
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get job details: {e!s}") from e
-    else:
-        return job_details
+        raise HTTPException(status_code=500, detail=f"Failed to get job details: {e}") from e
 
 
 @router.post("/v1/customization/jobs/{job_id}/cancel", response_model=dict)
@@ -490,10 +492,10 @@ async def cancel_customization_job(
         raise
     except ValueError as e:
         if "configuration is incomplete" in str(e):
-            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e!s}") from e
-        raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e!s}") from e
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e}") from e
 
 
 @router.get("/v1/customization/jobs", response_model=dict)
@@ -523,7 +525,7 @@ async def list_all_customizer_jobs(
         )
         return await nemo_service.list_customizer_jobs(page=page, page_size=page_size)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e}") from e
 
 
 # =============================================================================
@@ -558,7 +560,7 @@ async def create_evaluation_job(
         )
         return await nemo_service.create_evaluation_job(job_data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create evaluation job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation job: {e}") from e
 
 
 @router.post("/v1/evaluation/configs", response_model=dict)
@@ -588,7 +590,7 @@ async def create_evaluation_config(
         )
         return await nemo_service.create_evaluation_config(config_data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create evaluation config: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation config: {e}") from e
 
 
 @router.post("/v1/evaluation/targets", response_model=dict)
@@ -618,7 +620,7 @@ async def create_evaluation_target(
         )
         return await nemo_service.create_evaluation_target(target_data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create evaluation target: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to create evaluation target: {e}") from e
 
 
 @router.get("/v1/evaluation/jobs/{job_id}", response_model=dict)
@@ -649,12 +651,11 @@ async def get_evaluation_job(
         job_details = await nemo_service.get_evaluation_job(job_id)
         if not job_details:
             raise HTTPException(status_code=404, detail="Evaluation job not found")
+        return job_details
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job: {e!s}") from e
-    else:
-        return job_details
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job: {e}") from e
 
 
 @router.get("/v1/evaluation/jobs", response_model=list[dict])
@@ -687,7 +688,7 @@ async def list_evaluation_jobs(
         # Pass namespace from headers to service
         return await nemo_service.list_evaluation_jobs(page=page, page_size=page_size, namespace=x_nemo_namespace)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e}") from e
 
 
 # =============================================================================
@@ -721,7 +722,7 @@ async def track_job(
         )
         return await nemo_service.track_customizer_job(job_id, metadata)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to track job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to track job: {e}") from e
 
 
 @router.get("/jobs/tracked", response_model=list[dict])
@@ -742,7 +743,7 @@ async def get_tracked_jobs(
         )
         return await nemo_service.get_tracked_jobs()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get tracked jobs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get tracked jobs: {e}") from e
 
 
 @router.delete("/jobs/track/{job_id}")
@@ -769,7 +770,7 @@ async def stop_tracking_job(
         )
         return await nemo_service.stop_tracking_job(job_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stop tracking job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to stop tracking job: {e}") from e
 
 
 # =============================================================================
@@ -810,7 +811,7 @@ async def store_job_for_tracking_legacy(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to store job: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to store job: {e}") from e
 
 
 @router.get("/jobs", response_model=list[dict])
@@ -833,7 +834,7 @@ async def list_customizer_jobs_legacy(
         )
         return await nemo_service.get_tracked_jobs()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e!s}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to list jobs: {e}") from e
 
 
 @router.get("/jobs/{job_id}", response_model=dict)
@@ -861,9 +862,8 @@ async def get_customizer_job_legacy(
         job = await nemo_service.get_customizer_job_details(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
+        return job
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get job: {e!s}") from e
-    else:
-        return job
+        raise HTTPException(status_code=500, detail=f"Failed to get job: {e}") from e
