@@ -665,6 +665,7 @@ async def list_evaluation_jobs(
     page_size: int = 10,
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+    x_nemo_namespace: Annotated[str | None, Header(alias="X-NeMo-Namespace")] = None,
 ):
     """List evaluation jobs with pagination.
 
@@ -674,6 +675,7 @@ async def list_evaluation_jobs(
     Args:
         page: Page number (1-based)
         page_size: Number of jobs per page (default: 10)
+        x_nemo_namespace: Optional namespace from frontend headers
 
     Returns:
         Paginated list of evaluation jobs
@@ -682,7 +684,8 @@ async def list_evaluation_jobs(
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.list_evaluation_jobs(page=page, page_size=page_size)
+        # Pass namespace from headers to service
+        return await nemo_service.list_evaluation_jobs(page=page, page_size=page_size, namespace=x_nemo_namespace)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e!s}") from e
 

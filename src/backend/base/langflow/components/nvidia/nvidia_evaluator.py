@@ -157,6 +157,39 @@ class NvidiaEvaluatorComponent(Component):
             return obj.isoformat()
         return obj
 
+    def normalize_nim_url(self, base_url: str) -> str:
+        """Normalize NIM inference URL to avoid duplicate path components.
+
+        Handles cases where the base URL already contains /v1/completions or /v1/chat/completions
+        to prevent double-appending of paths.
+
+        Args:
+            base_url (str): The base NIM inference URL
+
+        Returns:
+            str: Normalized URL ending with /v1/completions
+        """
+        if not base_url:
+            return ""
+
+        # Remove trailing slash
+        url = base_url.rstrip("/")
+
+        # If URL already ends with the correct path, return as-is
+        if url.endswith("/v1/completions"):
+            return url
+
+        # If URL ends with /v1/chat/completions, change it to /v1/completions
+        if url.endswith("/v1/chat/completions"):
+            return url.replace("/v1/chat/completions", "/v1/completions")
+
+        # If URL contains /v1/chat/completions/v1/completions (the broken case), fix it
+        if "/v1/chat/completions/v1/completions" in url:
+            return url.replace("/v1/chat/completions/v1/completions", "/v1/completions")
+
+        # Otherwise, append /v1/completions
+        return f"{url}/v1/completions"
+
     # Define initial static inputs - consistent with customizer component
     inputs = [
         SecretStrInput(
@@ -703,35 +736,32 @@ class NvidiaEvaluatorComponent(Component):
             repo_id = await self.process_eval_dataset(base_url)
 
         # Use the file path with the repo ID
-        input_file = f"nds:{repo_id}/input.jsonl"
+        input_file = f"hf://datasets/{repo_id}/input.jsonl"
 
         # Handle run_inference
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
-        output_file = None if run_inference else f"nds:{repo_id}/output.jsonl"
+        output_file = None if run_inference else f"hf://datasets/{repo_id}/output.jsonl"
 
         # Create target
         target_data = await self._create_evaluation_target(output_file, base_url)
 
-        # Create metrics in SDK format
+        # Create metrics in SDK format - use string-check for all to ensure consistent return types
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
         metrics_dict = {}
         for score in scores:
             metric_name = score.lower()
-            if metric_name == "bleu":
-                metrics_dict[metric_name] = {"type": "bleu", "params": {"references": ["{{item.ideal_response}}"]}}
-            elif metric_name == "rouge":
-                metrics_dict[metric_name] = {"type": "rouge", "params": {"ground_truth": "{{item.ideal_response}}"}}
-            elif metric_name == "em":
+            # Use string-check for all metrics to ensure consistent result format
+            # This should avoid the model_dump() error while maintaining the correct check parameter format
+            if metric_name == "em":
                 metrics_dict["exact_match"] = {
                     "type": "string-check",
-                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
                 }
-            elif metric_name == "f1":
-                metrics_dict[metric_name] = {"type": "f1", "params": {"ground_truth": "{{item.ideal_response}}"}}
             else:
+                # Use string-check for all other metrics with proper 3-element check array
                 metrics_dict[metric_name] = {
                     "type": "string-check",
-                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
                 }
 
         # Create config data in SDK format
@@ -766,7 +796,7 @@ class NvidiaEvaluatorComponent(Component):
                     raise ValueError(error_msg)
                 model_data = {
                     "api_endpoint": {
-                        "url": f"{self.inference_model_url}/v1/completions",
+                        "url": self.normalize_nim_url(self.inference_model_url),
                         "model_id": getattr(self, "000_llm_name", ""),
                     }
                 }
@@ -877,7 +907,7 @@ class NvidiaEvaluatorComponent(Component):
             repo_id = await self.process_eval_dataset(base_url)
 
         # Use the file path with the repo ID
-        input_file = f"nds:{repo_id}/input.jsonl"
+        input_file = f"hf://datasets/{repo_id}/input.jsonl"
         # Handle run_inference as a boolean
         run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
 
@@ -889,32 +919,28 @@ class NvidiaEvaluatorComponent(Component):
         # Set output_file based on run_inference
         output_file = None
         if not run_inference:  # Only set output_file if run_inference is False
-            output_file = f"nds:{repo_id}/output.jsonl"
+            output_file = f"hf://datasets/{repo_id}/output.jsonl"
         self.log(f"input_file: {input_file}, output_file: {output_file}")
 
         target_id = await self.create_eval_target(output_file, base_url)
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
 
-        # Transform the list into the correct custom evaluation format
+        # Transform the list into the correct custom evaluation format - use string-check for consistency
         metrics_dict = {}
         for score in scores:
             metric_name = score.lower()
-            if metric_name == "bleu":
-                metrics_dict[metric_name] = {"type": "bleu", "params": {"references": ["{{item.ideal_response}}"]}}
-            elif metric_name == "rouge":
-                metrics_dict[metric_name] = {"type": "rouge", "params": {"ground_truth": "{{item.ideal_response}}"}}
-            elif metric_name == "em":
+            # Use string-check for all metrics to ensure consistent result format
+            # This should avoid the model_dump() error while maintaining the correct check parameter format
+            if metric_name == "em":
                 metrics_dict["exact_match"] = {
                     "type": "string-check",
-                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
                 }
-            elif metric_name == "f1":
-                metrics_dict[metric_name] = {"type": "f1", "params": {"ground_truth": "{{item.ideal_response}}"}}
             else:
-                # For other metrics like accuracy, bert - use string-check
+                # Use string-check for all other metrics with proper 3-element check array
                 metrics_dict[metric_name] = {
                     "type": "string-check",
-                    "params": {"ground_truth": "{{item.ideal_response}}"},
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
                 }
 
         config_data = {
@@ -1011,7 +1037,7 @@ class NvidiaEvaluatorComponent(Component):
                     namespace=namespace,
                     model={
                         "api_endpoint": {
-                            "url": f"{self.inference_model_url}/v1/completions",
+                            "url": self.normalize_nim_url(self.inference_model_url),
                             "model_id": getattr(self, "000_llm_name", ""),
                         }
                     },

@@ -107,28 +107,40 @@ const EvaluatorJobCard: React.FC<{
   onViewDetails: (jobId: string) => void;
 }> = ({ job, onViewDetails }) => {
   const statusColor = statusColorMap[job.status] || "bg-gray-100 text-gray-800";
+
+  // Safe string conversion for complex objects
+  const safeString = (value: any): string => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  // Safe array handling
+  const safeTags = Array.isArray(job.tags) ? job.tags : [];
+
   return (
     <div className="space-y-2 p-6 border rounded-lg cursor-pointer hover:shadow-md transition" onClick={() => onViewDetails(job.id)}>
       <div className="flex items-center justify-between">
-        <div className="font-semibold truncate max-w-[60%]">{job.id}</div>
+        <div className="font-semibold truncate max-w-[60%]">{safeString(job.id)}</div>
         <span className={`text-xs px-2 py-1 rounded ${statusColor} capitalize`}>
-          {job.status}
+          {safeString(job.status)}
         </span>
       </div>
       <div className="flex flex-wrap gap-1 mb-1">
-        {job.tags?.map((tag) => (
-          <span key={tag} className="text-xs bg-gray-200 dark:bg-gray-700 rounded px-2 py-0.5">
-            {tag}
+        {safeTags.map((tag, index) => (
+          <span key={`tag-${index}`} className="text-xs bg-gray-200 dark:bg-gray-700 rounded px-2 py-0.5">
+            {safeString(tag)}
           </span>
         ))}
       </div>
-      <div className="text-sm text-muted-foreground truncate">Namespace: {job.namespace}</div>
-      <div className="text-sm text-muted-foreground truncate">Target: {job.target}</div>
-      <div className="text-sm text-muted-foreground truncate">Config: {job.config}</div>
-      <div className="text-xs text-gray-400">Created: {new Date(job.created_at).toLocaleString()}</div>
-      <div className="text-xs text-gray-400">Updated: {new Date(job.updated_at).toLocaleString()}</div>
+      <div className="text-sm text-muted-foreground truncate">Namespace: {safeString(job.namespace)}</div>
+      <div className="text-sm text-muted-foreground truncate">Target: {safeString(job.target)}</div>
+      <div className="text-sm text-muted-foreground truncate">Config: {safeString(job.config)}</div>
+      <div className="text-xs text-gray-400">Created: {safeString(job.created_at) ? new Date(safeString(job.created_at)).toLocaleString() : "-"}</div>
+      <div className="text-xs text-gray-400">Updated: {safeString(job.updated_at) ? new Date(safeString(job.updated_at)).toLocaleString() : "-"}</div>
       <div className="text-xs text-gray-600 font-medium mt-2 mb-1">
-        Status Message: {job.status_details?.message || "-"}
+        Status Message: {job.status_details?.message ? safeString(job.status_details.message) : "-"}
       </div>
       {typeof job.status_details?.percentage_done === "number" && (
         <Progress value={job.status_details.percentage_done} className="h-2" />
@@ -144,15 +156,26 @@ const EvaluatorJobDetailsModal: React.FC<{
 }> = ({ job, isOpen, onClose }) => {
   if (!job) return null;
 
+  // Safe string conversion for complex objects
+  const safeString = (value: any): string => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  // Safe array handling
+  const safeTags = Array.isArray(job.tags) ? job.tags : [];
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            <span>Evaluator Job Details: {job.id.slice(-8)}</span>
-            {getStatusIcon(job.status)}
-            <Badge className={`${getStatusColor(job.status)} text-white`}>
-              {job.status.toUpperCase()}
+            <span>Evaluator Job Details: {safeString(job.id).slice(-8)}</span>
+            {getStatusIcon(safeString(job.status))}
+            <Badge className={`${getStatusColor(safeString(job.status))} text-white`}>
+              {safeString(job.status).toUpperCase()}
             </Badge>
           </DialogTitle>
         </DialogHeader>
@@ -209,11 +232,11 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Namespace</span>
-                      <span className="font-mono">{job.namespace}</span>
+                      <span className="font-mono">{safeString(job.namespace)}</span>
                     </div>
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Job ID</span>
-                      <span className="font-mono">{job.id}</span>
+                      <span className="font-mono">{safeString(job.id)}</span>
                     </div>
                   </div>
                 </div>
@@ -226,11 +249,11 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Target</span>
-                      <span className="font-mono">{job.target}</span>
+                      <span className="font-mono">{safeString(job.target)}</span>
                     </div>
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Config</span>
-                      <span className="font-mono">{job.config}</span>
+                      <span className="font-mono">{safeString(job.config)}</span>
                     </div>
                   </div>
                 </div>
@@ -240,7 +263,7 @@ const EvaluatorJobDetailsModal: React.FC<{
             <Separator />
 
             {/* Tags */}
-            {job.tags && job.tags.length > 0 && (
+            {safeTags && safeTags.length > 0 && (
               <>
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold flex items-center space-x-2">
@@ -248,9 +271,9 @@ const EvaluatorJobDetailsModal: React.FC<{
                     <span>Tags</span>
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {job.tags.map((tag, index) => (
+                    {safeTags.map((tag, index) => (
                       <Badge key={index} variant="secondary">
-                        {tag}
+                        {safeString(tag)}
                       </Badge>
                     ))}
                   </div>
@@ -272,7 +295,7 @@ const EvaluatorJobDetailsModal: React.FC<{
                     <span className="font-medium">Status Message</span>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {job.status_details?.message || "No status message available"}
+                    {job.status_details?.message ? safeString(job.status_details.message) : "No status message available"}
                   </div>
                 </div>
               </div>
@@ -292,14 +315,14 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="flex items-center space-x-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Created:</span>
-                    <span>{formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}</span>
+                    <span>{safeString(job.created_at) ? formatDistanceToNow(new Date(safeString(job.created_at)), { addSuffix: true }) : "-"}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center space-x-2">
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Last Updated:</span>
-                    <span>{formatDistanceToNow(new Date(job.updated_at), { addSuffix: true })}</span>
+                    <span>{safeString(job.updated_at) ? formatDistanceToNow(new Date(safeString(job.updated_at)), { addSuffix: true }) : "-"}</span>
                   </div>
                 </div>
               </div>
@@ -313,7 +336,20 @@ const EvaluatorJobDetailsModal: React.FC<{
 
 const EvaluatorJobList: React.FC = () => {
   const { data: jobs, isLoading, error, refetch, isFetching } = useGetEvaluatorJobs();
-  const safeJobs: NeMoEvaluatorJob[] = Array.isArray(jobs) ? jobs : [];
+
+  // Safe jobs handling - ensure we have a valid array
+  const safeJobs: NeMoEvaluatorJob[] = React.useMemo(() => {
+    if (Array.isArray(jobs)) {
+      return jobs;
+    }
+    // If the response has a data property (paginated response), use that
+    if (jobs && typeof jobs === 'object' && Array.isArray(jobs.data)) {
+      return jobs.data;
+    }
+    // Otherwise return empty array
+    return [];
+  }, [jobs]);
+
   const [selectedJob, setSelectedJob] = useState<NeMoEvaluatorJob | null>(null);
 
   const handleRefresh = () => {

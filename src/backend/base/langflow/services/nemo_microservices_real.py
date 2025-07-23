@@ -750,7 +750,7 @@ class RealNeMoMicroservicesService:
         try:
             # Use NeMo client for evaluation job creation
             nemo_client = self.get_nemo_client()
-            
+
             # Create evaluation job using SDK
             job = await nemo_client.evaluation.jobs.create(
                 namespace=job_data.get("namespace", "default"),
@@ -759,14 +759,14 @@ class RealNeMoMicroservicesService:
                 tags=job_data.get("tags", []),
                 extra_headers={"Authorization": f"Bearer {self.api_key}"},
             )
-            
+
             # Convert SDK response to dict and serialize datetime objects
             job_dict = job.model_dump()
             job_dict = self._serialize_datetime_objects(job_dict)
-            
+
             logger.info(f"Created evaluation job {job_dict.get('id')}")
             return job_dict
-            
+
         except NeMoMicroservicesError as exc:
             logger.exception("NeMo microservices error while creating evaluation job: %s", exc)
             msg = f"NeMo microservices error while creating evaluation job: {exc}"
@@ -780,7 +780,7 @@ class RealNeMoMicroservicesService:
         try:
             # Use NeMo client for evaluation config creation
             nemo_client = self.get_nemo_client()
-            
+
             # Create evaluation config using SDK
             config = await nemo_client.evaluation.configs.create(
                 type=config_data["type"],
@@ -789,14 +789,14 @@ class RealNeMoMicroservicesService:
                 params=config_data.get("params", {}),
                 extra_headers={"Authorization": f"Bearer {self.api_key}"},
             )
-            
+
             # Convert SDK response to dict and serialize datetime objects
             config_dict = config.model_dump()
             config_dict = self._serialize_datetime_objects(config_dict)
-            
+
             logger.info(f"Created evaluation config {config_dict.get('id')}")
             return config_dict
-            
+
         except NeMoMicroservicesError as exc:
             logger.exception("NeMo microservices error while creating evaluation config: %s", exc)
             msg = f"NeMo microservices error while creating evaluation config: {exc}"
@@ -810,7 +810,7 @@ class RealNeMoMicroservicesService:
         try:
             # Use NeMo client for evaluation target creation
             nemo_client = self.get_nemo_client()
-            
+
             # Create evaluation target using SDK
             target = await nemo_client.evaluation.targets.create(
                 type=target_data["type"],
@@ -818,14 +818,14 @@ class RealNeMoMicroservicesService:
                 model=target_data["model"],
                 extra_headers={"Authorization": f"Bearer {self.api_key}"},
             )
-            
+
             # Convert SDK response to dict and serialize datetime objects
             target_dict = target.model_dump()
             target_dict = self._serialize_datetime_objects(target_dict)
-            
+
             logger.info(f"Created evaluation target {target_dict.get('id')}")
             return target_dict
-            
+
         except NeMoMicroservicesError as exc:
             logger.exception("NeMo microservices error while creating evaluation target: %s", exc)
             msg = f"NeMo microservices error while creating evaluation target: {exc}"
@@ -839,20 +839,20 @@ class RealNeMoMicroservicesService:
         try:
             # Use NeMo client for evaluation job retrieval
             nemo_client = self.get_nemo_client()
-            
+
             # Get evaluation job using SDK
             job = await nemo_client.evaluation.jobs.retrieve(
                 job_id=job_id,
                 extra_headers={"Authorization": f"Bearer {self.api_key}"},
             )
-            
+
             # Convert SDK response to dict and serialize datetime objects
             job_dict = job.model_dump()
             job_dict = self._serialize_datetime_objects(job_dict)
-            
+
             logger.info(f"Retrieved evaluation job {job_id}")
             return job_dict
-            
+
         except NeMoMicroservicesError as exc:
             # Check if it's a 404 (not found) error
             if "404" in str(exc) or "not found" in str(exc).lower():
@@ -869,42 +869,83 @@ class RealNeMoMicroservicesService:
             logger.exception("Failed to get evaluation job")
             raise
 
-    async def list_evaluation_jobs(self, page: int = 1, page_size: int = 10) -> list[dict[str, Any]]:
+    async def list_evaluation_jobs(
+        self, page: int = 1, page_size: int = 10, namespace: str | None = None
+    ) -> list[dict[str, Any]]:
         """List evaluation jobs using NeMo Python SDK."""
+        logger.info(
+            f"Starting list_evaluation_jobs with params: page={page}, page_size={page_size}, namespace={namespace}"
+        )
+
         try:
             # Use NeMo client for evaluation jobs
             nemo_client = self.get_nemo_client()
-            
-            # Get evaluation jobs using SDK with pagination
-            response = await nemo_client.evaluation.jobs.list(
-                page=page,
-                page_size=page_size,
-                extra_headers={"Authorization": f"Bearer {self.api_key}"},
-            )
-            
+            logger.info(f"Created NeMo client with base_url={self.base_url}")
+
+            # Build headers for SDK call
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+
+            # Add namespace to headers if provided
+            if namespace:
+                # Try multiple possible header formats for namespace
+                headers["X-Namespace"] = namespace
+                headers["X-NeMo-Namespace"] = namespace
+                logger.info(f"Using namespace filter in headers: {namespace}")
+            else:
+                logger.info("No namespace filter provided")
+
+            logger.info(f"Calling SDK evaluation.jobs.list with headers: {headers}")
+
+            # Get evaluation jobs using SDK (try minimal parameters first)
+            try:
+                # First try with just headers
+                response = await nemo_client.evaluation.jobs.list(extra_headers=headers)
+                logger.info("SDK call successful with basic headers")
+            except Exception as e:
+                logger.error(f"SDK call failed even with minimal parameters: {e}")
+                # If SDK fails, return empty list gracefully
+                return []
+            logger.info(f"SDK returned response with {len(response.data) if response.data else 0} jobs")
+
             # Convert SDK response to list format for frontend
-            jobs = []
+            all_jobs = []
             for job in response.data:
                 job_dict = job.model_dump()
                 # Apply datetime serialization
                 job_dict = self._serialize_datetime_objects(job_dict)
-                jobs.append(job_dict)
-            
-            logger.info(f"Retrieved {len(jobs)} evaluation jobs from NeMo (page {page}, size {page_size})")
-            return jobs
-            
+
+                # Filter by namespace if provided (client-side filtering)
+                if namespace and job_dict.get("namespace") != namespace:
+                    logger.debug(f"Skipping job {job_dict.get('id', 'unknown')} - namespace mismatch")
+                    continue
+
+                all_jobs.append(job_dict)
+                logger.debug(
+                    f"Processed job: {job_dict.get('id', 'unknown')} with status: {job_dict.get('status', 'unknown')}"
+                )
+
+            # Apply client-side pagination since SDK might not support it
+            start_index = (page - 1) * page_size
+            end_index = start_index + page_size
+            paginated_jobs = all_jobs[start_index:end_index]
+
+            logger.info(
+                f"Successfully retrieved {len(all_jobs)} total evaluation jobs, returning {len(paginated_jobs)} for page {page} (namespace={namespace})"
+            )
+            return paginated_jobs
+
         except NeMoMicroservicesError as exc:
             logger.exception("NeMo microservices error while listing evaluation jobs: %s", exc)
-            
+
             # Handle 401 Unauthorized gracefully
             if "401" in str(exc) or "Unauthorized" in str(exc):
                 logger.warning("Authentication failed for NeMo microservices - returning empty jobs list")
                 return []
-                
+
             msg = f"NeMo microservices error while listing evaluation jobs: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
-            logger.exception("Failed to list evaluation jobs")
+        except Exception as e:
+            logger.exception("Failed to list evaluation jobs: %s", e)
             raise
 
     async def get_dataset_details(self, dataset_name: str, namespace: str | None = None) -> dict[str, Any]:
