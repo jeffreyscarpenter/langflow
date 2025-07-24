@@ -15,6 +15,7 @@ from langflow.io import (
     DataInput,
     DropdownInput,
     FloatInput,
+    HandleInput,
     IntInput,
     Output,
     SecretStrInput,
@@ -96,11 +97,18 @@ class NvidiaCustomizerComponent(Component):
             info="Enter the name to reference the output fine tuned model, ex: `imdb-data@v1`",
             required=True,
         ),
+        HandleInput(
+            name="dataset",
+            display_name="Dataset",
+            info="Dataset from NeMo Dataset Creator (optional - if not provided, will use training_data)",
+            required=False,
+            input_types=["Data"],
+        ),
         DataInput(
             name="training_data",
             display_name="Training Data",
             is_list=True,
-            required=True,
+            required=False,
         ),
         DropdownInput(
             name="model_name",
@@ -357,13 +365,53 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Refresh and select the training type and fine tuning type"
             raise ValueError(error_msg)
 
-        # Process and upload the dataset if training_data is provided
-        if self.training_data is None:
-            error_msg = "Training data is empty, cannot customize the model"
+        # Check if we have a dataset input or training data
+        dataset_input = getattr(self, "dataset", None)
+        training_data = getattr(self, "training_data", None)
+
+        if dataset_input is None and training_data is None:
+            error_msg = "Either dataset or training_data must be provided"
             raise ValueError(error_msg)
 
-        dataset_name = await self.process_dataset(base_url)
-        output_model = f"{namespace}/{fine_tuned_model_name}"
+        # Use dataset if provided, otherwise process training data
+        if dataset_input is not None:
+            # Extract dataset information from the provided dataset
+            if not isinstance(dataset_input, Data):
+                error_msg = "Dataset input must be a Data object"
+                raise ValueError(error_msg)
+
+            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
+
+            if not isinstance(dataset_data, dict):
+                error_msg = "Dataset data must be a dictionary"
+                raise ValueError(error_msg)
+
+            # Extract required fields from dataset
+            dataset_name = dataset_data.get("dataset_name")
+            dataset_namespace = dataset_data.get("namespace")
+
+            if not dataset_name:
+                error_msg = "Dataset must contain 'dataset_name' field"
+                raise ValueError(error_msg)
+
+            if not dataset_namespace:
+                error_msg = "Dataset must contain 'namespace' field"
+                raise ValueError(error_msg)
+
+            # Use dataset namespace if different from component namespace
+            effective_namespace = dataset_namespace
+            self.log(f"Using dataset: {dataset_name} from namespace: {effective_namespace}")
+
+        else:
+            # Process and upload the dataset if training_data is provided
+            if training_data is None:
+                error_msg = "Training data is empty, cannot customize the model"
+                raise ValueError(error_msg)
+
+            dataset_name = await self.process_dataset(base_url)
+            effective_namespace = namespace
+
+        output_model = f"{effective_namespace}/{fine_tuned_model_name}"
 
         description = f"Fine tuning base model {self.model_name} using dataset {dataset_name}"
         # Build the data payload following API spec
@@ -371,7 +419,7 @@ class NvidiaCustomizerComponent(Component):
             "name": f"customization-{fine_tuned_model_name}",
             "description": description,
             "config": f"meta/{self.model_name}",
-            "dataset": {"name": dataset_name, "namespace": namespace},
+            "dataset": {"name": dataset_name, "namespace": effective_namespace},
             "hyperparameters": {
                 "training_type": self.training_type,
                 "finetuning_type": self.fine_tuning_type,
