@@ -558,40 +558,8 @@ class NvidiaCustomizerComponent(Component):
             # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
         else:
-            # Create a table-friendly format for the job data
-            # Extract key information into a structured format that can be displayed as a table
-            # Each key becomes a column header, and the values become the row data
-
-            # Helper function to safely extract nested values
-            def safe_get(data, *keys, default="N/A"):
-                """Safely extract nested dictionary values."""
-                current = data
-                for key in keys:
-                    if isinstance(current, dict) and key in current:
-                        current = current[key]
-                    else:
-                        return default
-                return current if current is not None else default
-
-            job_summary = {
-                "Job ID": safe_get(result_dict, "id"),
-                "Job Name": safe_get(result_dict, "name"),
-                "Description": safe_get(result_dict, "description"),
-                "Status": safe_get(result_dict, "status"),
-                "Base Model": safe_get(result_dict, "config"),
-                "Dataset": safe_get(result_dict, "dataset", "name"),
-                "Output Model": safe_get(result_dict, "output_model"),
-                "Training Type": safe_get(result_dict, "hyperparameters", "training_type"),
-                "Fine-tuning Type": safe_get(result_dict, "hyperparameters", "finetuning_type"),
-                "Epochs": safe_get(result_dict, "hyperparameters", "epochs"),
-                "Batch Size": safe_get(result_dict, "hyperparameters", "batch_size"),
-                "Learning Rate": safe_get(result_dict, "hyperparameters", "learning_rate"),
-                "Created At": safe_get(result_dict, "created_at"),
-                "Status URL": safe_get(result_dict, "url"),
-            }
-
-            # Return as a dictionary for table display
-            return Data(data=job_summary)
+            # Return the job data as a simple Data object
+            return Data(data=result_dict)
 
     async def fetch_existing_datasets(self) -> list[str]:
         """Fetch existing datasets from the NeMo Data Store.
