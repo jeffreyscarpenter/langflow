@@ -151,7 +151,7 @@ class NvidiaCustomizerComponent(Component):
     ]
 
     outputs = [
-        Output(display_name="Job Info", name="job_info", method="customize"),
+        Output(display_name="Customization Data", name="job_info", method="customize"),
     ]
 
     def get_auth_headers(self):
@@ -331,7 +331,7 @@ class NvidiaCustomizerComponent(Component):
 
         return build_config
 
-    async def customize(self) -> dict:
+    async def customize(self) -> Data:
         if not self.auth_token:
             error_msg = "Missing authentication token"
             raise ValueError(error_msg)
@@ -464,7 +464,7 @@ class NvidiaCustomizerComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from exc
         else:
-            return result_dict
+            return Data(data=result_dict)
 
     async def create_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
         """Checks and creates namespace in entity-store with authentication using NeMo client."""

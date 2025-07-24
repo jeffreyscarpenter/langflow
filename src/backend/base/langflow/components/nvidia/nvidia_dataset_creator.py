@@ -63,10 +63,10 @@ class NvidiaDatasetCreatorComponent(Component):
     ]
 
     outputs = [
-        Output(display_name="Dataset Info", name="dataset_info", method="create_dataset"),
+        Output(display_name="Dataset Data", name="dataset_info", method="create_dataset"),
     ]
 
-    async def create_dataset(self) -> dict:
+    async def create_dataset(self) -> Data:
         """Create a dataset in NeMo Data Store."""
         settings_service = get_settings_service()
         nemo_data_store_url = settings_service.settings.nemo_data_store_url
@@ -131,15 +131,17 @@ class NvidiaDatasetCreatorComponent(Component):
 
             self.log(f"Successfully created dataset: {dataset_name}")
 
-            return {
-                "dataset_name": dataset_name,
-                "namespace": namespace,
-                "repo_id": repo_id,
-                "description": description,
-                "file_url": file_url,
-                "has_training_data": bool(training_data),
-                "has_evaluation_data": bool(evaluation_data),
-            }
+            return Data(
+                data={
+                    "dataset_name": dataset_name,
+                    "namespace": namespace,
+                    "repo_id": repo_id,
+                    "description": description,
+                    "file_url": file_url,
+                    "has_training_data": bool(training_data),
+                    "has_evaluation_data": bool(evaluation_data),
+                }
+            )
 
         except Exception as exc:
             exception_str = str(exc)
@@ -256,7 +258,7 @@ class NvidiaDatasetCreatorComponent(Component):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{url}/{namespace}")
-                if response.status_code == 404:
+                if response.status_code == 404:  # noqa: PLR2004
                     self.log(f"Namespace not found, creating namespace: {namespace}")
                     create_payload = {"namespace": namespace}
                     create_response = await client.post(url, json=create_payload)

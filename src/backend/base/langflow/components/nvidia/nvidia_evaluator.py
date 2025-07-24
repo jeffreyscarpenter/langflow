@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_auth_interceptor(auth_token, namespace):
-    """Create a function to intercept HTTP requests and add auth headers for namespace URLs"""
+    """Create a function to intercept HTTP requests and add auth headers for namespace URLs."""
     original_request = requests.Session.request
 
     def patched_request(self, method, url, *args, **kwargs):
@@ -44,7 +44,10 @@ def create_auth_interceptor(auth_token, namespace):
                 headers["Authorization"] = f"Bearer {auth_token}"
                 kwargs["headers"] = headers
                 logger.info(
-                    f"Intercepted and added Authorization header for URL: {url} (namespace: {is_namespace_url}, lfs: {is_lfs_url})"
+                    "Intercepted and added Authorization header for URL: %s (namespace: %s, lfs: %s)",
+                    url,
+                    is_namespace_url,
+                    is_lfs_url,
                 )
 
         return original_request(self, method, url, *args, **kwargs)
@@ -254,7 +257,7 @@ class NvidiaEvaluatorComponent(Component):
     ]
 
     outputs = [
-        Output(display_name="Job Info", name="job_info", method="evaluate"),
+        Output(display_name="Evaluation Data", name="job_info", method="evaluate"),
     ]
 
     # Inputs for LM Evaluation
@@ -557,7 +560,7 @@ class NvidiaEvaluatorComponent(Component):
             return build_config
         return build_config
 
-    async def evaluate(self) -> dict:
+    async def evaluate(self) -> Data:
         evaluation_type = getattr(self, "002_evaluation_type", "LM Evaluation Harness")
 
         if not self.namespace:
@@ -667,7 +670,7 @@ class NvidiaEvaluatorComponent(Component):
             msg = f"Received successful evaluation response: {formatted_result}"
             self.log(msg)
 
-            return result_dict
+            return Data(data=result_dict)
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error during evaluation job creation: {exc}"
@@ -781,11 +784,9 @@ class NvidiaEvaluatorComponent(Component):
 
         return config_data, target_data
 
-    async def _create_evaluation_target(self, output_file, base_url: str):
+    async def _create_evaluation_target(self, output_file, base_url: str):  # noqa: ARG002
         """Create evaluation target using SDK and return the data for job creation."""
         try:
-            nemo_client = self.get_nemo_client()
-
             if output_file:
                 # Target with cached outputs
                 model_data = {"cached_outputs": {"files_url": output_file}}
@@ -808,12 +809,12 @@ class NvidiaEvaluatorComponent(Component):
                 "model": model_data,
             }
 
-            return target_data
-
         except Exception as exc:
             error_msg = f"Error creating evaluation target: {exc}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+        else:
+            return target_data
 
     async def _generate_lm_evaluation_body(self, base_url: str) -> dict:
         target_id = await self.create_eval_target(None, base_url)
@@ -1001,7 +1002,7 @@ class NvidiaEvaluatorComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
-    async def _get_target_object(self, target_id: str, base_url: str):
+    async def _get_target_object(self, target_id: str, base_url: str):  # noqa: ARG002
         """Get the target object for SDK use."""
         try:
             nemo_client = self.get_nemo_client()
@@ -1010,11 +1011,12 @@ class NvidiaEvaluatorComponent(Component):
                 namespace=self.namespace,
                 extra_headers={"Authorization": f"Bearer {self.auth_token}"},
             )
-            return target_obj
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self.log(f"Warning: Could not retrieve target object {target_id}, using string: {exc}")
             # Fallback to string format if object retrieval fails
             return f"{self.namespace}/{target_id}"
+        else:
+            return target_obj
 
     async def create_eval_target(self, output_file, base_url: str) -> str:  # noqa: ARG002
         namespace = self.namespace
@@ -1189,7 +1191,7 @@ class NvidiaEvaluatorComponent(Component):
                             path_in_repo=output_file_name,
                             repo_id=repo_id,
                             repo_type="dataset",
-                            commit_message=f"Output file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+                            commit_message=f"Output file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",  # noqa: E501
                         )
                 finally:
                     output_file_buffer.close()
