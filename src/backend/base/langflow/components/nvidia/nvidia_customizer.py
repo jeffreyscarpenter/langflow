@@ -170,7 +170,7 @@ class NvidiaCustomizerComponent(Component):
     ]
 
     outputs = [
-        Output(display_name="Customization Data", name="job_info", method="customize"),
+        Output(display_name="Job Details", name="job_info", method="customize"),
     ]
 
     def get_auth_headers(self):
@@ -558,8 +558,20 @@ class NvidiaCustomizerComponent(Component):
             # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
         else:
-            # Return the job data as a simple Data object
-            return Data(data=result_dict)
+            # Return the job data as a list of Data objects to display as a table
+            # Each field becomes a column in the table
+            return [
+                Data(
+                    job_id=result_dict.get("id"),
+                    status=result_dict.get("status", "created"),
+                    name=result_dict.get("name"),
+                    description=result_dict.get("description", ""),
+                    output_model=result_dict.get("output_model"),
+                    created_at=result_dict.get("created_at"),
+                    updated_at=result_dict.get("updated_at"),
+                    status_url=result_dict.get("url"),
+                )
+            ]
 
     async def fetch_existing_datasets(self) -> list[str]:
         """Fetch existing datasets from the NeMo Data Store.
