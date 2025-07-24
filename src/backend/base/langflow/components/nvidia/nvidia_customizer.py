@@ -110,6 +110,7 @@ class NvidiaCustomizerComponent(Component):
             info="Select an existing dataset from NeMo Data Store to use for training",
             options=[],
             refresh_button=True,
+            combobox=True,
             required=False,
         ),
         DataInput(
@@ -211,7 +212,7 @@ class NvidiaCustomizerComponent(Component):
                 # Namespace doesn't exist, create it
                 pass
             else:
-                self.log(f"Entity namespace already exists: {namespace}")
+                logger.info("Entity namespace already exists: %s", namespace)
                 return
 
             await nemo_client.namespaces.create(
@@ -219,10 +220,10 @@ class NvidiaCustomizerComponent(Component):
                 description=f"Entity namespace for {namespace} resources",
                 extra_headers={"Authorization": f"Bearer {self.auth_token}"},
             )
-            self.log(f"Created entity namespace: {namespace}")
+            logger.info("Created entity namespace: %s", namespace)
         except NeMoMicroservicesError as exc:
             if "already exists" in str(exc).lower():
-                self.log(f"Entity namespace already exists: {namespace}")
+                logger.info("Entity namespace already exists: %s", namespace)
             else:
                 error_msg = f"Failed to create entity namespace: {exc}"
                 raise ValueError(error_msg) from exc
@@ -241,44 +242,69 @@ class NvidiaCustomizerComponent(Component):
                 try:
                     response = await client.get(f"{nds_url}/{namespace}", headers=headers)
                     if response.status_code == 200:  # noqa: PLR2004
-                        self.log(f"Datastore namespace already exists: {namespace}")
+                        logger.info("Datastore namespace already exists: %s", namespace)
                         return
                 except httpx.HTTPError:
                     # Namespace doesn't exist, create it
                     pass
 
                 # Create the namespace
-                self.log(f"Creating datastore namespace at URL: {nds_url}")
+                logger.info("Creating datastore namespace at URL: %s", nds_url)
                 response = await client.post(nds_url, headers=headers, json=data)
 
-                self.log(f"Response status: {response.status_code}")
+                logger.info("Response status: %s", response.status_code)
 
                 if response.status_code in (200, 201):
-                    self.log(f"Created datastore namespace: {namespace}")
+                    logger.info("Created datastore namespace: %s", namespace)
                     return
                 if response.status_code in (409, 422):
-                    self.log(f"Datastore namespace already exists: {namespace}")
+                    logger.info("Datastore namespace already exists: %s", namespace)
                     return
                 error_msg = f"Failed to create datastore namespace: {response.status_code} - {response.text}"
-                self.log(error_msg)
+                logger.error(error_msg)
                 raise ValueError(error_msg)
 
         except httpx.HTTPError as exc:
             error_msg = f"HTTP error creating datastore namespace: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             error_msg = f"Unexpected error creating datastore namespace: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
     async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
         """Updates the component's configuration based on the selected option or refresh button."""
-        if not hasattr(self, "auth_token") or not self.auth_token:
-            return build_config
-
         try:
-            if field_name == "model_name" or field_name is None:
+            if field_name == "existing_dataset":
+                # Defensive check for auth_token
+                if not hasattr(self, "auth_token") or not self.auth_token:
+                    logger.warning("Authentication token not set, cannot fetch datasets")
+                    return build_config
+
+                # Defensive check for namespace
+                if not hasattr(self, "namespace") or not self.namespace:
+                    logger.warning("Namespace not set, cannot fetch datasets")
+                    return build_config
+
+                # Refresh dataset options for existing dataset dropdown
+                logger.info("Refreshing datasets for field: %s", field_name)
+                try:
+                    dataset_options = await self.fetch_existing_datasets()
+                    build_config["existing_dataset"]["options"] = dataset_options
+                    msg = f"Updated dataset options: {dataset_options}"
+                    logger.info(msg)
+                except Exception:
+                    logger.exception("Error fetching datasets")
+                    # Return empty options instead of failing completely
+                    build_config["existing_dataset"]["options"] = []
+
+            elif field_name == "model_name" or field_name is None:
+                # Defensive check for auth_token
+                if not hasattr(self, "auth_token") or not self.auth_token:
+                    logger.warning("Authentication token not set, cannot fetch models")
+                    return build_config
+
                 # Use NeMo client for model fetching
                 nemo_client = self.get_nemo_client()
                 response = await nemo_client.customization.configs.list(
@@ -333,29 +359,23 @@ class NvidiaCustomizerComponent(Component):
                         build_config["training_type"]["options"] = training_types
                         build_config["fine_tuning_type"]["options"] = finetuning_types
 
-            elif field_name == "existing_dataset":
-                # Refresh dataset options for existing dataset dropdown
-                logger.info("Refreshing datasets for field: %s", field_name)
-                build_config["existing_dataset"]["options"] = await self.fetch_existing_datasets()
-                dataset_options = build_config["existing_dataset"]["options"]
-                msg = f"Updated dataset options: {dataset_options}"
-                logger.info(msg)
-                if hasattr(self, "log"):
-                    self.log(f"Refreshed {len(dataset_options)} datasets for training")
-
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while fetching models: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Keep httpx error handling for any remaining httpx calls
             error_msg = f"HTTP error while fetching models: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except ValueError as exc:
             error_msg = f"Error refreshing model names: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
+        except Exception as exc:
+            error_msg = f"Unexpected error during build config update: {exc}"
+            logger.exception(error_msg)
+            return build_config
 
         return build_config
 
@@ -421,13 +441,13 @@ class NvidiaCustomizerComponent(Component):
 
             # Use dataset namespace if different from component namespace
             effective_namespace = dataset_namespace
-            self.log(f"Using dataset connection: {dataset_name} from namespace: {effective_namespace}")
+            logger.info("Using dataset connection: %s from namespace: %s", dataset_name, effective_namespace)
 
         elif existing_dataset is not None:
             # Use selected existing dataset
             dataset_name = existing_dataset
             effective_namespace = namespace
-            self.log(f"Using existing dataset: {dataset_name} from namespace: {effective_namespace}")
+            logger.info("Using existing dataset: %s from namespace: %s", dataset_name, effective_namespace)
 
         else:
             # Process and upload the dataset if training_data is provided
@@ -466,8 +486,8 @@ class NvidiaCustomizerComponent(Component):
             logger.info("Request payload: %s", formatted_data)
 
             # Also use self.log for component logging
-            self.log("Sending customization request using NeMo client")
-            self.log(f"Request payload: {formatted_data}")
+            # self.log("Sending customization request using NeMo client") # Removed
+            # self.log(f"Request payload: {formatted_data}") # Removed
 
             # Use NeMo client for job creation
             nemo_client = self.get_nemo_client()
@@ -496,8 +516,7 @@ class NvidiaCustomizerComponent(Component):
 
             result_dict = convert_datetime_to_string(result_dict)
 
-            formatted_result = json.dumps(result_dict, indent=2)
-            self.log(f"Received successful response: {formatted_result}")
+            # self.log(f"Received successful response: {formatted_result}") # Removed
 
             id_value = result_dict["id"]
             result_dict["url"] = f"{base_url}/v1/customization/jobs/{id_value}/status"
@@ -514,7 +533,7 @@ class NvidiaCustomizerComponent(Component):
                     "Retry with a different output model name"
                 )
                 logger.exception(conflict_msg)
-                self.log(conflict_msg)
+                # self.log(conflict_msg) # Removed
                 error_msg = (
                     f"There is already a fined tuned model with name {output_model}. "
                     f"Please choose a different Output Model Name."
@@ -523,20 +542,20 @@ class NvidiaCustomizerComponent(Component):
 
             error_msg = f"NeMo microservices error during job creation: {exc}"
             logger.exception(error_msg)
-            self.log(error_msg)
+            # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
 
         except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Keep httpx error handling for backward compatibility
             error_msg = f"HTTP error during job creation: {exc}"
             logger.exception(error_msg)
-            self.log(error_msg)
+            # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
 
         except ValueError as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred during job creation: {exception_str}"
-            self.log(error_msg)
+            # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
         else:
             return Data(data=result_dict)
@@ -549,37 +568,49 @@ class NvidiaCustomizerComponent(Component):
         """
         # Defensive checks
         if not hasattr(self, "namespace") or not self.namespace:
-            if hasattr(self, "log"):
-                self.log("Namespace not set for fetching datasets")
+            error_msg = "Namespace not set for fetching datasets"
+            logger.warning(error_msg)
             return []
 
         if not hasattr(self, "auth_token") or not self.auth_token:
-            if hasattr(self, "log"):
-                self.log("Authentication token not set for fetching datasets")
+            error_msg = "Authentication token not set for fetching datasets"
+            logger.warning(error_msg)
             return []
 
         try:
+            logger.info("Fetching datasets from namespace: %s", self.namespace)
             # Use NeMo client for dataset fetching
             nemo_client = self.get_nemo_client()
+
+            # Build filter for namespace
+            filter_params = {"namespace": self.namespace}
+
             response = await nemo_client.datasets.list(
-                namespace=self.namespace, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+                filter=filter_params, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
             )
 
             # Extract dataset names from the response
-            return [dataset.name for dataset in response.data if hasattr(dataset, "name") and dataset.name]
+            dataset_names = [dataset.name for dataset in response.data if hasattr(dataset, "name") and dataset.name]
+            logger.info("Successfully fetched %d datasets: %s", len(dataset_names), dataset_names)
 
         except NeMoMicroservicesError as exc:
-            if hasattr(self, "log"):
-                self.log(f"NeMo microservices error while fetching datasets: {exc}")
+            error_msg = f"NeMo microservices error while fetching datasets: {exc}"
+            logger.exception(error_msg)
             return []
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-            if hasattr(self, "log"):
-                self.log(f"Error response while requesting datasets: {exc}")
+            error_msg = f"HTTP error while fetching datasets: {exc}"
+            logger.exception(error_msg)
             return []
         except (ValueError, TypeError) as exc:
-            if hasattr(self, "log"):
-                self.log(f"Unexpected error while fetching datasets: {exc}")
+            error_msg = f"Unexpected error while fetching datasets: {exc}"
+            logger.exception(error_msg)
             return []
+        except Exception as exc:
+            error_msg = f"Unknown error while fetching datasets: {exc}"
+            logger.exception(error_msg)
+            return []
+        else:
+            return dataset_names
 
     async def create_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
         """Checks and creates namespace in entity-store with authentication using NeMo client."""
@@ -609,7 +640,7 @@ class NvidiaCustomizerComponent(Component):
             repo_id = f"{self.namespace}/{dataset_name}"
             # Note: We'll create the dataset in the entity registry later with the HuggingFace URL
             # For now, we just use the HuggingFace API to create the repo
-            self.log(f"Will create dataset repository: {repo_id}")
+            logger.info("Will create dataset repository: %s", repo_id)
 
             # Still use HuggingFace API for file uploads (for now)
             hf_api = AuthenticatedHfApi(
@@ -621,17 +652,17 @@ class NvidiaCustomizerComponent(Component):
             hf_api.create_repo(repo_id, repo_type="dataset", exist_ok=True)
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while creating repo: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while creating repo: {exception_str}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
         try:
             chunk_size = 100000  # Ensure chunk_size is an integer
-            self.log(f"repo_id : {repo_id}")
+            logger.info("repo_id : %s", repo_id)
 
             tasks = []
 
@@ -642,7 +673,7 @@ class NvidiaCustomizerComponent(Component):
             for data_obj in self.training_data or []:
                 # Skip non-Data objects
                 if not isinstance(data_obj, Data):
-                    self.log(f"Skipping non-Data object in training data, but got: {data_obj}")
+                    logger.warning("Skipping non-Data object in training data, but got: %s", data_obj)
                     continue
 
                 # Extract only "prompt" and "completion" fields if present
@@ -718,12 +749,12 @@ class NvidiaCustomizerComponent(Component):
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error during processing/upload: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred during processing/upload: {exception_str}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
         # =====================================================
@@ -749,12 +780,12 @@ class NvidiaCustomizerComponent(Component):
             logger.info("All data has been processed and uploaded successfully.")
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while posting to entity service: {exc}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while posting to entity service: {exception_str}"
-            self.log(error_msg)
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
         return dataset_name
