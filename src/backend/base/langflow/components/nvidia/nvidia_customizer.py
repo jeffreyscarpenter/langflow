@@ -100,15 +100,25 @@ class NvidiaCustomizerComponent(Component):
         HandleInput(
             name="dataset",
             display_name="Dataset",
-            info="Dataset from NeMo Dataset Creator (optional - if not provided, will use training_data)",
+            info="New Dataset from NeMo Dataset Creator (optional - if not provided, will use Existing Dataset)",
             required=False,
             input_types=["Data"],
+        ),
+        DropdownInput(
+            name="existing_dataset",
+            display_name="Existing Dataset",
+            info="Select an existing dataset from NeMo Data Store to use for training",
+            options=[],
+            refresh_button=True,
+            required=False,
         ),
         DataInput(
             name="training_data",
             display_name="Training Data",
+            info="Raw training data (prompt/completion pairs) - for backward compatibility",
             is_list=True,
             required=False,
+            advanced=True,
         ),
         DropdownInput(
             name="model_name",
@@ -323,6 +333,16 @@ class NvidiaCustomizerComponent(Component):
                         build_config["training_type"]["options"] = training_types
                         build_config["fine_tuning_type"]["options"] = finetuning_types
 
+            elif field_name == "existing_dataset":
+                # Refresh dataset options for existing dataset dropdown
+                logger.info("Refreshing datasets for field: %s", field_name)
+                build_config["existing_dataset"]["options"] = await self.fetch_existing_datasets()
+                dataset_options = build_config["existing_dataset"]["options"]
+                msg = f"Updated dataset options: {dataset_options}"
+                logger.info(msg)
+                if hasattr(self, "log"):
+                    self.log(f"Refreshed {len(dataset_options)} datasets for training")
+
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while fetching models: {exc}"
             self.log(error_msg)
@@ -365,15 +385,16 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Refresh and select the training type and fine tuning type"
             raise ValueError(error_msg)
 
-        # Check if we have a dataset input or training data
+            # Check if we have a dataset input, existing dataset selection, or training data
         dataset_input = getattr(self, "dataset", None)
+        existing_dataset = getattr(self, "existing_dataset", None)
         training_data = getattr(self, "training_data", None)
 
-        if dataset_input is None and training_data is None:
-            error_msg = "Either dataset or training_data must be provided"
+        if dataset_input is None and existing_dataset is None and training_data is None:
+            error_msg = "Either dataset connection, existing dataset selection, or training_data must be provided"
             raise ValueError(error_msg)
 
-        # Use dataset if provided, otherwise process training data
+        # Priority: 1. Dataset connection, 2. Existing dataset selection, 3. Training data
         if dataset_input is not None:
             # Extract dataset information from the provided dataset
             if not isinstance(dataset_input, Data):
@@ -400,7 +421,13 @@ class NvidiaCustomizerComponent(Component):
 
             # Use dataset namespace if different from component namespace
             effective_namespace = dataset_namespace
-            self.log(f"Using dataset: {dataset_name} from namespace: {effective_namespace}")
+            self.log(f"Using dataset connection: {dataset_name} from namespace: {effective_namespace}")
+
+        elif existing_dataset is not None:
+            # Use selected existing dataset
+            dataset_name = existing_dataset
+            effective_namespace = namespace
+            self.log(f"Using existing dataset: {dataset_name} from namespace: {effective_namespace}")
 
         else:
             # Process and upload the dataset if training_data is provided
@@ -513,6 +540,46 @@ class NvidiaCustomizerComponent(Component):
             raise ValueError(error_msg) from exc
         else:
             return Data(data=result_dict)
+
+    async def fetch_existing_datasets(self) -> list[str]:
+        """Fetch existing datasets from the NeMo Data Store.
+
+        Returns:
+            List of dataset names available for training
+        """
+        # Defensive checks
+        if not hasattr(self, "namespace") or not self.namespace:
+            if hasattr(self, "log"):
+                self.log("Namespace not set for fetching datasets")
+            return []
+
+        if not hasattr(self, "auth_token") or not self.auth_token:
+            if hasattr(self, "log"):
+                self.log("Authentication token not set for fetching datasets")
+            return []
+
+        try:
+            # Use NeMo client for dataset fetching
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.datasets.list(
+                namespace=self.namespace, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+            )
+
+            # Extract dataset names from the response
+            return [dataset.name for dataset in response.data if hasattr(dataset, "name") and dataset.name]
+
+        except NeMoMicroservicesError as exc:
+            if hasattr(self, "log"):
+                self.log(f"NeMo microservices error while fetching datasets: {exc}")
+            return []
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            if hasattr(self, "log"):
+                self.log(f"Error response while requesting datasets: {exc}")
+            return []
+        except (ValueError, TypeError) as exc:
+            if hasattr(self, "log"):
+                self.log(f"Unexpected error while fetching datasets: {exc}")
+            return []
 
     async def create_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
         """Checks and creates namespace in entity-store with authentication using NeMo client."""
