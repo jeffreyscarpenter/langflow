@@ -280,17 +280,15 @@ class NvidiaDatasetCreatorComponent(Component):
             logger.info(f"Successfully created dataset: {dataset_name}")
 
             return Data(
-                data=[
-                    {
-                        "dataset_name": dataset_name,
-                        "namespace": namespace,
-                        "repo_id": repo_id,
-                        "description": description,
-                        "file_url": file_url,
-                        "has_training_data": bool(training_data),
-                        "has_evaluation_data": bool(evaluation_data),
-                    }
-                ]
+                data={
+                    "dataset_name": dataset_name,
+                    "namespace": namespace,
+                    "repo_id": repo_id,
+                    "description": description,
+                    "file_url": file_url,
+                    "has_training_data": bool(training_data),
+                    "has_evaluation_data": bool(evaluation_data),
+                }
             )
 
         except Exception as exc:
