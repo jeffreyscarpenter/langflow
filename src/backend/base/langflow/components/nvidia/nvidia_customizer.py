@@ -1,6 +1,6 @@
 import asyncio
 import json
-import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -8,10 +8,10 @@ from io import BytesIO
 import httpx
 import pandas as pd
 from huggingface_hub import HfApi
-from nemo_microservices import AsyncNeMoMicroservices, NeMoMicroservicesError
 
 from langflow.custom import Component
 from langflow.io import (
+    BoolInput,
     DataInput,
     DropdownInput,
     FloatInput,
@@ -22,8 +22,14 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
+from langflow.utils.logger import logger
 
-logger = logging.getLogger(__name__)
+try:
+    from nemo_microservices import AsyncNeMoMicroservices
+    from nemo_microservices.exceptions import NeMoMicroservicesError
+except ImportError:
+    AsyncNeMoMicroservices = None
+    NeMoMicroservicesError = Exception
 
 
 class AuthenticatedHfApi(HfApi):
@@ -167,6 +173,22 @@ class NvidiaCustomizerComponent(Component):
             value=0.0001,
             advanced=True,
         ),
+        BoolInput(
+            name="wait_for_completion",
+            display_name="Wait for Job Completion",
+            info="If True, the component will wait for the job to complete before returning.",
+            required=False,
+            value=True,
+            advanced=True,
+        ),
+        IntInput(
+            name="max_wait_time_minutes",
+            display_name="Maximum Wait Time (minutes)",
+            info="Maximum time in minutes to wait for job completion. Only applicable if wait_for_completion is True.",
+            required=False,
+            value=30,
+            advanced=True,
+        ),
     ]
 
     outputs = [
@@ -266,11 +288,11 @@ class NvidiaCustomizerComponent(Component):
 
         except httpx.HTTPError as exc:
             error_msg = f"HTTP error creating datastore namespace: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             error_msg = f"Unexpected error creating datastore namespace: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
     async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
@@ -292,10 +314,9 @@ class NvidiaCustomizerComponent(Component):
                 try:
                     dataset_options = await self.fetch_existing_datasets()
                     build_config["existing_dataset"]["options"] = dataset_options
-                    msg = f"Updated dataset options: {dataset_options}"
-                    logger.info(msg)
-                except Exception:
-                    logger.exception("Error fetching datasets")
+                    logger.info("Updated dataset options: %s", dataset_options)
+                except Exception:  # noqa: BLE001
+                    logger.error("Error fetching datasets")
                     # Return empty options instead of failing completely
                     build_config["existing_dataset"]["options"] = []
 
@@ -361,20 +382,20 @@ class NvidiaCustomizerComponent(Component):
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while fetching models: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Keep httpx error handling for any remaining httpx calls
             error_msg = f"HTTP error while fetching models: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except ValueError as exc:
             error_msg = f"Error refreshing model names: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             error_msg = f"Unexpected error during build config update: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             return build_config
 
         return build_config
@@ -521,10 +542,39 @@ class NvidiaCustomizerComponent(Component):
             id_value = result_dict["id"]
             result_dict["url"] = f"{base_url}/v1/customization/jobs/{id_value}/status"
 
+            # Check if we should wait for job completion
+            wait_for_completion = getattr(self, "wait_for_completion", False)
+            logger.info(f"Wait for completion setting: {wait_for_completion}")
+            if wait_for_completion:
+                logger.info(f"Wait for completion enabled. Waiting for job {id_value} to complete...")
+                try:
+                    max_wait_time = getattr(self, "max_wait_time_minutes", 30)
+                    logger.info(f"Starting wait_for_job_completion with max_wait_time: {max_wait_time}")
+                    # Wait for job completion
+                    final_job_result = await self.wait_for_job_completion(
+                        job_id=id_value, max_wait_time_minutes=max_wait_time
+                    )
+                    # Update result_dict with final job status
+                    result_dict.update(final_job_result)
+                    logger.info(f"Job {id_value} completed successfully!")
+                except TimeoutError as exc:
+                    logger.warning(f"Job {id_value} did not complete within timeout: {exc}")
+                    # Continue with the original result (job created but not completed)
+                except ValueError as exc:
+                    logger.error(f"Job {id_value} failed: {exc}")
+                    # Re-raise the ValueError to indicate job failure
+                    error_msg = f"Job {id_value} failed: {exc}"
+                    raise ValueError(error_msg) from exc
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(f"Unexpected error while waiting for job completion: {exc}")
+                    # Continue with the original result
+            else:
+                logger.info(f"Wait for completion disabled. Job {id_value} created successfully.")
+
         except NeMoMicroservicesError as exc:
             # Log the request details for debugging
-            logger.exception("NeMo microservices error occurred during job creation")
-            logger.exception("Request payload was: %s", formatted_data)
+            logger.error("NeMo microservices error occurred during job creation")
+            logger.error("Request payload was: %s", formatted_data)
 
             # Check if the error is due to a 409 Conflict (model name already exists)
             if "409" in str(exc) or "conflict" in str(exc).lower() or "already exists" in str(exc).lower():
@@ -532,7 +582,7 @@ class NvidiaCustomizerComponent(Component):
                     "Received conflict error. Output model name already exists. "
                     "Retry with a different output model name"
                 )
-                logger.exception(conflict_msg)
+                logger.warning(conflict_msg)
                 # self.log(conflict_msg) # Removed
                 error_msg = (
                     f"There is already a fined tuned model with name {output_model}. "
@@ -541,22 +591,17 @@ class NvidiaCustomizerComponent(Component):
                 raise ValueError(error_msg) from exc
 
             error_msg = f"NeMo microservices error during job creation: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
 
         except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Keep httpx error handling for backward compatibility
             error_msg = f"HTTP error during job creation: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             # self.log(error_msg) # Removed
             raise ValueError(error_msg) from exc
 
-        except ValueError as exc:
-            exception_str = str(exc)
-            error_msg = f"An unexpected error occurred during job creation: {exception_str}"
-            # self.log(error_msg) # Removed
-            raise ValueError(error_msg) from exc
         else:
             # Return the job data as a list of Data objects to display as a table
             # Each field becomes a column in the table
@@ -572,6 +617,87 @@ class NvidiaCustomizerComponent(Component):
                     status_url=result_dict.get("url"),
                 )
             ]
+
+    async def wait_for_job_completion(
+        self, job_id: str, max_wait_time_minutes: int = 30, poll_interval_seconds: int = 15
+    ) -> dict:
+        """Wait for a NeMo customization job to complete.
+
+        Args:
+            job_id: The job ID to monitor
+            max_wait_time_minutes: Maximum time to wait in minutes
+            poll_interval_seconds: How often to check status in seconds
+
+        Returns:
+            Final job status/details when completed
+
+        Raises:
+            TimeoutError: If job doesn't complete within max_wait_time
+            ValueError: If job fails
+        """
+        max_wait_time_seconds = max_wait_time_minutes * 60
+        start_time = time.time()
+        nemo_client = self.get_nemo_client()
+        headers = {"Authorization": f"Bearer {self.auth_token}"}
+
+        logger.info(f"Starting to wait for job {job_id} completion (max wait: {max_wait_time_minutes} minutes)")
+
+        while True:
+            # Check if we've exceeded the maximum wait time
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_wait_time_seconds:
+                timeout_msg = f"Job {job_id} did not complete within {max_wait_time_minutes} minutes"
+                logger.warning(timeout_msg)
+                raise TimeoutError(timeout_msg)
+
+            try:
+                # Get job status using NeMo client
+                job_response = await nemo_client.customization.jobs.retrieve(job_id=job_id, extra_headers=headers)
+
+                status = job_response.status
+                logger.info(f"Job {job_id} status: {status} (elapsed: {elapsed_time:.1f}s)")
+
+                # Check for completion states
+                if status == "completed":
+                    logger.info(f"Job {job_id} completed successfully!")
+                    return job_response.model_dump()
+                if status == "failed":
+                    error_msg = f"Job {job_id} failed with status: {status}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from None
+                if status == "cancelled":
+                    error_msg = f"Job {job_id} was cancelled"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from None
+                logger.info(f"Job {job_id} still running with status: {status}")
+
+                # Job is still running, wait before next check
+                await asyncio.sleep(poll_interval_seconds)
+
+            except NeMoMicroservicesError as exc:
+                # Check if the error indicates the job has failed
+                error_str = str(exc).lower()
+                logger.error(f"NeMoMicroservicesError for job {job_id}: {error_str}")
+                if "failed" in error_str or "not found" in error_str or "job.*failed" in error_str:
+                    error_msg = f"Job {job_id} failed: {exc}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from exc
+
+                # Log error but continue polling for other types of errors
+                logger.error(f"Error checking job status: {exc}")
+                await asyncio.sleep(poll_interval_seconds * 2)  # Wait longer on error
+            except Exception as exc:
+                # Check if the error indicates the job has failed
+                error_str = str(exc).lower()
+                logger.error(f"Exception for job {job_id}: {error_str}")
+                if "failed" in error_str or "job.*failed" in error_str:
+                    error_msg = f"Job {job_id} failed: {exc}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg) from exc
+
+                # For other exceptions, log and continue
+                logger.error(f"Unexpected error checking job status: {exc}")
+                await asyncio.sleep(poll_interval_seconds * 2)
 
     async def fetch_existing_datasets(self) -> list[str]:
         """Fetch existing datasets from the NeMo Data Store.
@@ -608,19 +734,19 @@ class NvidiaCustomizerComponent(Component):
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while fetching datasets: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             return []
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             error_msg = f"HTTP error while fetching datasets: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             return []
         except (ValueError, TypeError) as exc:
             error_msg = f"Unexpected error while fetching datasets: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             return []
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             error_msg = f"Unknown error while fetching datasets: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             return []
         else:
             return dataset_names
@@ -665,12 +791,12 @@ class NvidiaCustomizerComponent(Component):
             hf_api.create_repo(repo_id, repo_type="dataset", exist_ok=True)
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while creating repo: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while creating repo: {exception_str}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
         try:
@@ -762,12 +888,12 @@ class NvidiaCustomizerComponent(Component):
 
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error during processing/upload: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred during processing/upload: {exception_str}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
         # =====================================================
@@ -793,12 +919,12 @@ class NvidiaCustomizerComponent(Component):
             logger.info("All data has been processed and uploaded successfully.")
         except NeMoMicroservicesError as exc:
             error_msg = f"NeMo microservices error while posting to entity service: {exc}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred while posting to entity service: {exception_str}"
-            logger.exception(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
         return dataset_name
@@ -830,5 +956,5 @@ class NvidiaCustomizerComponent(Component):
             finally:
                 training_file_obj.close()
 
-        except Exception:
-            logger.exception("An error occurred while uploading chunk %s", chunk_number)
+        except Exception:  # noqa: BLE001
+            logger.error("An error occurred while uploading chunk %s", chunk_number)
