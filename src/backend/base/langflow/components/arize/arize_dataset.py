@@ -1,6 +1,5 @@
 # Standard library imports
 import json
-import logging
 
 # Third-party imports
 import httpx
@@ -8,12 +7,11 @@ import pandas as pd
 
 # Local application imports
 from arize.experimental.datasets import ArizeDatasetsClient
+from loguru import logger
 
 from langflow.custom import Component
 from langflow.io import DictInput, DropdownInput, MessageTextInput, Output, SecretStrInput
 from langflow.schema import Data
-
-logger = logging.getLogger(__name__)
 
 
 class ArizeAIDatastoreComponent(Component):
@@ -59,23 +57,23 @@ class ArizeAIDatastoreComponent(Component):
         """Fetch and process the selected dataset, and return a list of Data objects."""
         space_id = getattr(self, "space_id", None)
         selected_dataset_name = getattr(self, "dataset_name", None)
-        self.log(f"selected_dataset_name {selected_dataset_name}")
+        logger.info(f"selected_dataset_name {selected_dataset_name}")
         dataset_metadata = getattr(self, "dataset_metadata", None)
         dataset_info = dataset_metadata.get(selected_dataset_name)
-        self.log(f"dataset_info {dataset_info}")
+        logger.info(f"dataset_info {dataset_info}")
         if not selected_dataset_name:
             logger.warning("No dataset selected. Please select a dataset from the dropdown.")
             return []
 
         try:
             dataset_id = dataset_info.get("dataset_id")
-            self.log(f"dataset_id {dataset_id}")
+            logger.info(f"dataset_id {dataset_id}")
             # Fetch the specific dataset by ID
             dataset = client.get_dataset(space_id=space_id, dataset_id=dataset_id)
             if dataset.empty:
-                self.log(f"No data found for dataset: {selected_dataset_name}")
+                logger.warning(f"No data found for dataset: {selected_dataset_name}")
                 return []
-            self.log(f"dataset {dataset}")
+            logger.info(f"dataset {dataset}")
             # Process the dataset row by row
             new_data = []
             for _, row in dataset.iterrows():
@@ -205,7 +203,7 @@ class ArizeAIDatastoreComponent(Component):
                     build_config["dataset_name"]["options"] = []
                     build_config["dataset_metadata"]["value"] = {}
                     logger.warning("No datasets found, dropdown options and metadata cleared.")
-            except Exception:
+            except (httpx.RequestError, ValueError, ImportError, AttributeError):
                 logger.exception("Error fetching datasets")
                 build_config["dataset_name"]["options"] = []
                 build_config["dataset_metadata"]["value"] = {}
@@ -218,7 +216,7 @@ class ArizeAIDatastoreComponent(Component):
             api_key = getattr(self, "api_key", None)
             client = ArizeDatasetsClient(api_key=api_key)
             logger.info("Successfully initialized ArizeDatasetsClient.")
-        except Exception:
+        except (ImportError, ValueError, AttributeError):
             logger.exception("Failed to initialize ArizeDatasetsClient")
             raise
         else:

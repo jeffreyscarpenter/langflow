@@ -1,11 +1,11 @@
 import asyncio
 import json
-import logging
 import time
 
 import httpx
 import nemo_microservices
 from huggingface_hub import HfApi
+from loguru import logger
 from nemo_microservices import AsyncNeMoMicroservices
 
 from langflow.custom import Component
@@ -20,8 +20,6 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
-
-logger = logging.getLogger(__name__)
 
 
 class AuthenticatedHfApi(HfApi):
@@ -398,7 +396,7 @@ class NvidiaCustomizerComponent(Component):
                     # Re-raise the ValueError to indicate job failure
                     error_msg = f"Job {id_value} failed: {exc}"
                     raise ValueError(error_msg) from exc
-                except Exception:
+                except (asyncio.CancelledError, RuntimeError, OSError):
                     logger.exception("Unexpected error while waiting for job completion")
                     # Continue with the original result
             else:
@@ -484,7 +482,7 @@ class NvidiaCustomizerComponent(Component):
             except nemo_microservices.APIError:
                 logger.exception("NeMo microservices error while checking job status")
                 await asyncio.sleep(poll_interval_seconds)
-            except Exception:
+            except (asyncio.CancelledError, RuntimeError, OSError):
                 logger.exception("Unexpected error while checking job status")
                 await asyncio.sleep(poll_interval_seconds)
 

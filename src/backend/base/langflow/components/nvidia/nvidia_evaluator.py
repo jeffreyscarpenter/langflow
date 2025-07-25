@@ -1,6 +1,5 @@
 import io
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -8,6 +7,7 @@ from unittest.mock import patch
 import httpx
 import requests
 from huggingface_hub import HfApi
+from loguru import logger
 from nemo_microservices import AsyncNeMoMicroservices, NeMoMicroservicesError
 
 from langflow.custom import Component
@@ -24,8 +24,6 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
-
-logger = logging.getLogger(__name__)
 
 
 def create_auth_interceptor(auth_token, namespace):
@@ -550,8 +548,8 @@ class NvidiaEvaluatorComponent(Component):
                     logger.warning("Custom evaluation input methods not available yet")
             # Note: existing_dataset is now a DropdownInput that gets populated via API call
             logger.info("Build config update completed successfully.")
-        except Exception as exc:
-            # Catch all exceptions to prevent UI crashes
+        except (ValueError, AttributeError, ImportError, RuntimeError) as exc:
+            # Catch specific exceptions to prevent UI crashes
             error_msg = f"Error during build config update: {exc}"
             logger.exception(error_msg)
             # Instead of raising, just log the error and return the original config

@@ -1,5 +1,4 @@
 import json
-import logging
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -7,6 +6,7 @@ import httpx
 import nemo_microservices
 import pandas as pd
 from huggingface_hub import HfApi
+from loguru import logger
 from nemo_microservices import AsyncNeMoMicroservices
 
 from langflow.custom import Component
@@ -17,8 +17,6 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
-
-logger = logging.getLogger(__name__)
 
 
 class AuthenticatedHfApi(HfApi):
@@ -140,19 +138,19 @@ class NvidiaDatasetCreatorComponent(Component):
         """Create namespace using NeMo client."""
         try:
             await nemo_client.datastore.namespaces.create(namespace=namespace)
-            self.log(f"Created namespace: {namespace}")
+            logger.info(f"Created namespace: {namespace}")
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Namespace might already exist, which is fine
-            self.log(f"Namespace {namespace} might already exist: {exc}")
+            logger.warning(f"Namespace {namespace} might already exist: {exc}")
 
     async def create_datastore_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
         """Create datastore namespace using NeMo client."""
         try:
             await nemo_client.datastore.namespaces.create(namespace=namespace)
-            self.log(f"Created datastore namespace: {namespace}")
+            logger.info(f"Created datastore namespace: {namespace}")
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Namespace might already exist, which is fine
-            self.log(f"Datastore namespace {namespace} might already exist: {exc}")
+            logger.warning(f"Datastore namespace {namespace} might already exist: {exc}")
 
     async def create_dataset(self) -> Data:
         """Create a dataset in NeMo Data Store."""
@@ -197,16 +195,16 @@ class NvidiaDatasetCreatorComponent(Component):
             repo_type = "dataset"
             hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
 
-            self.log(f"Created/accessed repo: {repo_id}")
+            logger.info(f"Created/accessed repo: {repo_id}")
 
             # Process and upload data
             if training_data:
                 await self.process_training_data(hf_api, repo_id, training_data)
-                self.log("Uploaded training data")
+                logger.info("Uploaded training data")
 
             if evaluation_data:
                 await self.upload_evaluation_data(hf_api, repo_id, evaluation_data)
-                self.log("Uploaded evaluation data")
+                logger.info("Uploaded evaluation data")
 
             # Register dataset in entity store
             file_url = f"hf://datasets/{repo_id}"
@@ -224,7 +222,7 @@ class NvidiaDatasetCreatorComponent(Component):
                 response = await client.post(entity_registry_url, json=create_payload, headers=self.get_auth_headers())
                 response.raise_for_status()
 
-            self.log(f"Successfully created dataset: {dataset_name}")
+            logger.info(f"Successfully created dataset: {dataset_name}")
 
             return Data(
                 data={
@@ -241,7 +239,7 @@ class NvidiaDatasetCreatorComponent(Component):
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"Error creating dataset: {exception_str}"
-            self.log(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
     async def process_training_data(self, hf_api, repo_id: str, training_data):
@@ -250,7 +248,7 @@ class NvidiaDatasetCreatorComponent(Component):
 
         try:
             chunk_size = 100000  # Ensure chunk_size is an integer
-            self.log(f"Processing training data for repo: {repo_id}")
+            logger.info(f"Processing training data for repo: {repo_id}")
 
             tasks = []
 
@@ -261,7 +259,7 @@ class NvidiaDatasetCreatorComponent(Component):
             for data_obj in training_data or []:
                 # Skip non-Data objects
                 if not isinstance(data_obj, Data):
-                    self.log(f"Skipping non-Data object in training data: {data_obj}")
+                    logger.warning(f"Skipping non-Data object in training data: {data_obj}")
                     continue
 
                 # Extract only "prompt" and "completion" fields if present
@@ -338,7 +336,7 @@ class NvidiaDatasetCreatorComponent(Component):
         except Exception as exc:
             exception_str = str(exc)
             error_msg = f"An unexpected error occurred during processing/upload: {exception_str}"
-            self.log(error_msg)
+            logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
     async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, hf_api, is_validation):
@@ -369,7 +367,7 @@ class NvidiaDatasetCreatorComponent(Component):
                 training_file_obj.close()
 
         except Exception:  # noqa: BLE001
-            self.log(f"An error occurred while uploading chunk {chunk_number}")
+            logger.error(f"An error occurred while uploading chunk {chunk_number}")
 
     async def upload_evaluation_data(self, hf_api, repo_id: str, evaluation_data):
         """Upload evaluation data to the dataset."""
@@ -378,7 +376,7 @@ class NvidiaDatasetCreatorComponent(Component):
 
         for data_obj in evaluation_data or []:
             if not isinstance(data_obj, Data):
-                self.log(f"Skipping non-Data object in evaluation data: {data_obj}")
+                logger.warning(f"Skipping non-Data object in evaluation data: {data_obj}")
                 continue
 
             filtered_data = {
