@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timezone
 from io import BytesIO
 
-import httpx
 import nemo_microservices
 import pandas as pd
 from huggingface_hub import HfApi
@@ -202,35 +201,45 @@ class NvidiaDatasetCreatorComponent(Component):
                 await self.upload_evaluation_data(hf_api, repo_id, evaluation_data)
                 logger.info("Uploaded evaluation data")
 
-            # Register dataset in entity store
+            # Register dataset in entity store using NeMo client
             file_url = f"hf://datasets/{repo_id}"
-            entity_registry_url = f"{base_url}/v1/datasets"
-            create_payload = {
-                "name": dataset_name,
-                "namespace": namespace,
-                "description": description,
-                "files_url": file_url,
-                "format": "jsonl",
-                "project": dataset_name,
-            }
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(entity_registry_url, json=create_payload, headers=self.get_auth_headers())
-                response.raise_for_status()
+            response = await nemo_client.datasets.create(
+                name=dataset_name,
+                namespace=namespace,
+                description=description,
+                files_url=file_url,
+                format="jsonl",
+                project=dataset_name,
+                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+            )
 
-            logger.info(f"Successfully created dataset: {dataset_name}")
+            # Convert response to dictionary and handle datetime objects
+            result_dict = response.model_dump()
 
-            return Data(
-                data={
-                    "dataset_name": dataset_name,
-                    "namespace": namespace,
-                    "repo_id": repo_id,
-                    "description": description,
-                    "file_url": file_url,
+            # Convert datetime objects to strings for JSON serialization
+            def convert_datetime_to_string(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_datetime_to_string(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [convert_datetime_to_string(item) for item in obj]
+                if hasattr(obj, "isoformat"):  # datetime objects
+                    return obj.isoformat()
+                return obj
+
+            result_dict = convert_datetime_to_string(result_dict)
+
+            # Add additional metadata
+            result_dict.update(
+                {
                     "has_training_data": bool(training_data),
                     "has_evaluation_data": bool(evaluation_data),
                 }
             )
+
+            logger.info(f"Successfully created dataset: {dataset_name}")
+
+            return Data(data=result_dict)
 
         except Exception as exc:
             exception_str = str(exc)
