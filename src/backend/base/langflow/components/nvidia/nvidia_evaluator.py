@@ -16,6 +16,7 @@ from langflow.io import (
     DataInput,
     DropdownInput,
     FloatInput,
+    HandleInput,
     IntInput,
     MultiselectInput,
     Output,
@@ -207,6 +208,13 @@ class NvidiaEvaluatorComponent(Component):
             advanced=True,
             value="default",
             required=True,
+        ),
+        HandleInput(
+            name="dataset",
+            display_name="Dataset",
+            info="Dataset from NeMo Dataset Creator (optional - if not provided, will use Existing Dataset)",
+            required=False,
+            input_types=["Data"],
         ),
         DropdownInput(
             name="000_llm_name",
@@ -599,7 +607,7 @@ class NvidiaEvaluatorComponent(Component):
 
                 # Create job with config and target IDs
                 response = await nemo_client.evaluation.jobs.create(
-                    namespace=self.namespace,
+                    namespace=config_data["namespace"],
                     config=config_id,
                     target=target_id,
                     extra_headers={"Authorization": f"Bearer {self.auth_token}"},
@@ -636,7 +644,7 @@ class NvidiaEvaluatorComponent(Component):
 
                 # Create job with config and target IDs
                 response = await nemo_client.evaluation.jobs.create(
-                    namespace=self.namespace,
+                    namespace=config_data["namespace"],
                     config=config_id,
                     target=target_id,
                     extra_headers={"Authorization": f"Bearer {self.auth_token}"},
@@ -675,8 +683,21 @@ class NvidiaEvaluatorComponent(Component):
 
     async def _prepare_lm_evaluation_data(self, base_url: str) -> tuple:
         """Prepare LM evaluation config and target data for SDK."""
+        # Check if we have a dataset input to determine effective namespace
+        dataset_input = getattr(self, "dataset", None)
+        effective_namespace = self.namespace
+
+        if dataset_input is not None and isinstance(dataset_input, Data):
+            # Extract dataset information from the provided dataset
+            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
+            if isinstance(dataset_data, dict):
+                dataset_namespace = dataset_data.get("namespace")
+                if dataset_namespace:
+                    effective_namespace = dataset_namespace
+                    self.log(f"Using dataset namespace for LM evaluation: {effective_namespace}")
+
         # Create target first
-        target_data = await self._create_evaluation_target(None, base_url)
+        target_data = await self._create_evaluation_target(None, base_url, effective_namespace)
 
         # Get required parameters
         hf_token = getattr(self, "100_huggingface_token", None)
@@ -687,7 +708,7 @@ class NvidiaEvaluatorComponent(Component):
         # Create config data in SDK format
         config_data = {
             "type": "lm_eval_harness",
-            "namespace": self.namespace,
+            "namespace": effective_namespace,
             "tasks": {
                 getattr(self, "110_task_name", "gsm8k"): {
                     "params": {
@@ -713,16 +734,57 @@ class NvidiaEvaluatorComponent(Component):
 
     async def _prepare_custom_evaluation_data(self, base_url: str) -> tuple:
         """Prepare custom evaluation config and target data for SDK."""
-        # Process dataset
+        # Check if we have a dataset input or existing dataset selection
+        dataset_input = getattr(self, "dataset", None)
         existing_dataset = getattr(self, "existing_dataset", None)
-        if existing_dataset:
-            self.log(f"Using existing dataset: {existing_dataset}")
-            repo_id = f"{self.namespace}/{existing_dataset}"
+
+        # Priority: 1. Dataset connection, 2. Existing dataset selection
+        if dataset_input is not None:
+            # Extract dataset information from the provided dataset
+            if not isinstance(dataset_input, Data):
+                error_msg = "Dataset input must be a Data object"
+                raise ValueError(error_msg)
+
+            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
+
+            if not isinstance(dataset_data, dict):
+                error_msg = "Dataset data must be a dictionary"
+                raise ValueError(error_msg)
+
+            # Extract required fields from dataset
+            dataset_name = dataset_data.get("name")
+            dataset_namespace = dataset_data.get("namespace")
+
+            if not dataset_name:
+                error_msg = "Dataset must contain 'name' field"
+                raise ValueError(error_msg)
+
+            if not dataset_namespace:
+                error_msg = "Dataset must contain 'namespace' field"
+                raise ValueError(error_msg)
+
+            # Use dataset namespace if different from component namespace
+            effective_namespace = dataset_namespace
+            repo_id = f"{effective_namespace}/{dataset_name}"
+            self.log(f"Using dataset connection: {dataset_name} from namespace: {effective_namespace}")
+
+        elif existing_dataset:
+            # Use selected existing dataset
+            dataset_name = existing_dataset
+            effective_namespace = self.namespace
+            repo_id = f"{effective_namespace}/{dataset_name}"
+            self.log(f"Using existing dataset: {dataset_name} from namespace: {effective_namespace}")
+
         else:
+            # Fallback to manual dataset processing (for backward compatibility)
             if self.evaluation_data is None or len(self.evaluation_data) == 0:
-                error_msg = "Either select an existing dataset or provide evaluation data to run evaluation"
+                error_msg = (
+                    "Either provide a dataset connection, select an existing dataset, "
+                    "or provide evaluation data to run evaluation"
+                )
                 raise ValueError(error_msg)
             repo_id = await self.process_eval_dataset(base_url)
+            effective_namespace = self.namespace
 
         # Use the file path with the repo ID
         input_file = f"hf://datasets/{repo_id}/input.jsonl"
@@ -732,7 +794,7 @@ class NvidiaEvaluatorComponent(Component):
         output_file = None if run_inference else f"hf://datasets/{repo_id}/output.jsonl"
 
         # Create target
-        target_data = await self._create_evaluation_target(output_file, base_url)
+        target_data = await self._create_evaluation_target(output_file, base_url, effective_namespace)
 
         # Create metrics in SDK format - use string-check for all to ensure consistent return types
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
@@ -756,7 +818,7 @@ class NvidiaEvaluatorComponent(Component):
         # Create config data in SDK format
         config_data = {
             "type": "custom",
-            "namespace": self.namespace,
+            "namespace": effective_namespace,
             "params": {"parallelism": 8},
             "tasks": {
                 "default_task": {
@@ -770,7 +832,7 @@ class NvidiaEvaluatorComponent(Component):
 
         return config_data, target_data
 
-    async def _create_evaluation_target(self, output_file, base_url: str):  # noqa: ARG002
+    async def _create_evaluation_target(self, output_file, base_url: str, namespace: str):  # noqa: ARG002
         """Create evaluation target using SDK and return the data for job creation."""
         try:
             if output_file:
@@ -791,7 +853,7 @@ class NvidiaEvaluatorComponent(Component):
             # Create target data for SDK
             target_data = {
                 "type": "model",
-                "namespace": self.namespace,
+                "namespace": namespace,
                 "model": model_data,
             }
 
