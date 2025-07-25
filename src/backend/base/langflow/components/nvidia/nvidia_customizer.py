@@ -1,18 +1,16 @@
 import asyncio
 import json
+import logging
 import time
-import uuid
-from datetime import datetime, timezone
-from io import BytesIO
 
 import httpx
-import pandas as pd
+import nemo_microservices
 from huggingface_hub import HfApi
+from nemo_microservices import AsyncNeMoMicroservices
 
 from langflow.custom import Component
 from langflow.io import (
     BoolInput,
-    DataInput,
     DropdownInput,
     FloatInput,
     HandleInput,
@@ -22,14 +20,8 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
-from langflow.utils.logger import logger
 
-try:
-    from nemo_microservices import AsyncNeMoMicroservices
-    from nemo_microservices.exceptions import NeMoMicroservicesError
-except ImportError:
-    AsyncNeMoMicroservices = None
-    NeMoMicroservicesError = Exception
+logger = logging.getLogger(__name__)
 
 
 class AuthenticatedHfApi(HfApi):
@@ -53,16 +45,10 @@ class AuthenticatedHfApi(HfApi):
         return headers
 
     def _request_wrapper(self, method, url, *args, **kwargs):
-        """Override to intercept requests and add auth headers for namespace URLs."""
-        # Check if URL contains the namespace path
-        if url and self.namespace and f"/{self.namespace}/" in url:
-            # Add authorization header for namespace requests
-            headers = kwargs.get("headers", {})
-            if "Authorization" not in headers:
-                headers["Authorization"] = f"Bearer {self.auth_token}"
-                kwargs["headers"] = headers
-                logger.info("Added Authorization header for namespace URL: %s", url)
-
+        """Override to add authentication headers to all requests."""
+        headers = kwargs.get("headers", {})
+        headers["Authorization"] = f"Bearer {self.auth_token}"
+        kwargs["headers"] = headers
         return super()._request_wrapper(method, url, *args, **kwargs)
 
 
@@ -72,8 +58,6 @@ class NvidiaCustomizerComponent(Component):
     icon = "NVIDIA"
     name = "NVIDIANeMoCustomizer"
     beta = True
-
-    chunk_number = 1
 
     inputs = [
         SecretStrInput(
@@ -106,7 +90,7 @@ class NvidiaCustomizerComponent(Component):
         HandleInput(
             name="dataset",
             display_name="Dataset",
-            info="New Dataset from NeMo Dataset Creator (optional - if not provided, will use Existing Dataset)",
+            info="Dataset from NeMo Dataset Creator (optional - if not provided, will use Existing Dataset)",
             required=False,
             input_types=["Data"],
         ),
@@ -118,14 +102,6 @@ class NvidiaCustomizerComponent(Component):
             refresh_button=True,
             combobox=True,
             required=False,
-        ),
-        DataInput(
-            name="training_data",
-            display_name="Training Data",
-            info="Raw training data (prompt/completion pairs) - for backward compatibility",
-            is_list=True,
-            required=False,
-            advanced=True,
         ),
         DropdownInput(
             name="model_name",
@@ -223,180 +199,53 @@ class NvidiaCustomizerComponent(Component):
         )
 
     async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
-        """Create entity namespace using NeMo client."""
+        """Create namespace using NeMo client."""
         try:
-            # First check if namespace exists
-            try:
-                await nemo_client.namespaces.retrieve(
-                    namespace_id=namespace, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-                )
-            except NeMoMicroservicesError:
-                # Namespace doesn't exist, create it
-                pass
-            else:
-                logger.info("Entity namespace already exists: %s", namespace)
-                return
+            await nemo_client.datastore.namespaces.create(namespace=namespace)
+            logger.info("Created namespace: %s", namespace)
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            # Namespace might already exist, which is fine
+            logger.info("Namespace %s might already exist: %s", namespace, exc)
 
-            await nemo_client.namespaces.create(
-                id=namespace,
-                description=f"Entity namespace for {namespace} resources",
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-            )
-            logger.info("Created entity namespace: %s", namespace)
-        except NeMoMicroservicesError as exc:
-            if "already exists" in str(exc).lower():
-                logger.info("Entity namespace already exists: %s", namespace)
-            else:
-                error_msg = f"Failed to create entity namespace: {exc}"
-                raise ValueError(error_msg) from exc
-
-    async def create_datastore_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):  # noqa: ARG002
-        """Create datastore namespace using direct HTTP request."""
+    async def create_datastore_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
+        """Create datastore namespace using NeMo client."""
         try:
-            # Use the correct endpoint from the last commit
-            nds_url = f"{self.base_url}/v1/datastore/namespaces"
-
-            headers = {"Authorization": f"Bearer {self.auth_token}"}
-            data = {"namespace": namespace}
-
-            async with httpx.AsyncClient() as client:
-                # First check if namespace exists
-                try:
-                    response = await client.get(f"{nds_url}/{namespace}", headers=headers)
-                    if response.status_code == 200:  # noqa: PLR2004
-                        logger.info("Datastore namespace already exists: %s", namespace)
-                        return
-                except httpx.HTTPError:
-                    # Namespace doesn't exist, create it
-                    pass
-
-                # Create the namespace
-                logger.info("Creating datastore namespace at URL: %s", nds_url)
-                response = await client.post(nds_url, headers=headers, json=data)
-
-                logger.info("Response status: %s", response.status_code)
-
-                if response.status_code in (200, 201):
-                    logger.info("Created datastore namespace: %s", namespace)
-                    return
-                if response.status_code in (409, 422):
-                    logger.info("Datastore namespace already exists: %s", namespace)
-                    return
-                error_msg = f"Failed to create datastore namespace: {response.status_code} - {response.text}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-
-        except httpx.HTTPError as exc:
-            error_msg = f"HTTP error creating datastore namespace: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:
-            error_msg = f"Unexpected error creating datastore namespace: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
+            await nemo_client.datastore.namespaces.create(namespace=namespace)
+            logger.info("Created datastore namespace: %s", namespace)
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            # Namespace might already exist, which is fine
+            logger.info("Datastore namespace %s might already exist: %s", namespace, exc)
 
     async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
-        """Updates the component's configuration based on the selected option or refresh button."""
-        try:
-            if field_name == "existing_dataset":
-                # Defensive check for auth_token
-                if not hasattr(self, "auth_token") or not self.auth_token:
-                    logger.warning("Authentication token not set, cannot fetch datasets")
-                    return build_config
+        """Update build config to fetch available options."""
+        if field_name == "base_url":
+            # Fetch available models when base_url changes
+            try:
+                models = await self.fetch_available_models()
+                build_config["model_name"]["options"] = models
+            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("Failed to fetch models: %s", exc)
 
-                # Defensive check for namespace
-                if not hasattr(self, "namespace") or not self.namespace:
-                    logger.warning("Namespace not set, cannot fetch datasets")
-                    return build_config
+            # Fetch available training types
+            try:
+                training_types = await self.fetch_available_training_types()
+                build_config["training_type"]["options"] = training_types
+            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("Failed to fetch training types: %s", exc)
 
-                # Refresh dataset options for existing dataset dropdown
-                logger.info("Refreshing datasets for field: %s", field_name)
-                try:
-                    dataset_options = await self.fetch_existing_datasets()
-                    build_config["existing_dataset"]["options"] = dataset_options
-                    logger.info("Updated dataset options: %s", dataset_options)
-                except Exception:  # noqa: BLE001
-                    logger.error("Error fetching datasets")
-                    # Return empty options instead of failing completely
-                    build_config["existing_dataset"]["options"] = []
+            # Fetch available fine tuning types
+            try:
+                fine_tuning_types = await self.fetch_available_fine_tuning_types()
+                build_config["fine_tuning_type"]["options"] = fine_tuning_types
+            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("Failed to fetch fine tuning types: %s", exc)
 
-            elif field_name == "model_name" or field_name is None:
-                # Defensive check for auth_token
-                if not hasattr(self, "auth_token") or not self.auth_token:
-                    logger.warning("Authentication token not set, cannot fetch models")
-                    return build_config
-
-                # Use NeMo client for model fetching
-                nemo_client = self.get_nemo_client()
-                response = await nemo_client.customization.configs.list(
-                    extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-                )
-
-                # Use the config name which includes version and GPU type
-                # (e.g., "llama-3.1-8b-instruct@v1.0.0+A100")
-                model_names = [model.name for model in response.data if hasattr(model, "name") and model.name]
-
-                build_config["model_name"]["options"] = model_names
-
-            elif field_name == "training_type":
-                # Use NeMo client for model fetching
-                nemo_client = self.get_nemo_client()
-                response = await nemo_client.customization.configs.list(
-                    extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-                )
-
-                # Logic to update `training_type` dropdown based on selected model
-                selected_model_name = getattr(self, "model_name", None)
-                if selected_model_name:
-                    # Find the selected model in the response
-                    # Find model by config name (which includes version and GPU type)
-                    selected_model = next(
-                        (
-                            model
-                            for model in response.data
-                            if hasattr(model, "name") and model.name == selected_model_name
-                        ),
-                        None,
-                    )
-
-                    if selected_model:
-                        # Extract training types and fine-tuning types from training_options
-                        training_options = getattr(selected_model, "training_options", [])
-                        training_types = list(
-                            {
-                                getattr(opt, "training_type", None)
-                                for opt in training_options
-                                if hasattr(opt, "training_type") and opt.training_type
-                            }
-                        )
-                        finetuning_types = list(
-                            {
-                                getattr(opt, "finetuning_type", None)
-                                for opt in training_options
-                                if hasattr(opt, "finetuning_type") and opt.finetuning_type
-                            }
-                        )
-
-                        build_config["training_type"]["options"] = training_types
-                        build_config["fine_tuning_type"]["options"] = finetuning_types
-
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error while fetching models: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            # Keep httpx error handling for any remaining httpx calls
-            error_msg = f"HTTP error while fetching models: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except ValueError as exc:
-            error_msg = f"Error refreshing model names: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:  # noqa: BLE001
-            error_msg = f"Unexpected error during build config update: {exc}"
-            logger.error(error_msg)
-            return build_config
+            # Fetch existing datasets
+            try:
+                existing_datasets = await self.fetch_existing_datasets()
+                build_config["existing_dataset"]["options"] = existing_datasets
+            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("Failed to fetch existing datasets: %s", exc)
 
         return build_config
 
@@ -426,16 +275,15 @@ class NvidiaCustomizerComponent(Component):
             error_msg = "Refresh and select the training type and fine tuning type"
             raise ValueError(error_msg)
 
-            # Check if we have a dataset input, existing dataset selection, or training data
+        # Check if we have a dataset input or existing dataset selection
         dataset_input = getattr(self, "dataset", None)
         existing_dataset = getattr(self, "existing_dataset", None)
-        training_data = getattr(self, "training_data", None)
 
-        if dataset_input is None and existing_dataset is None and training_data is None:
-            error_msg = "Either dataset connection, existing dataset selection, or training_data must be provided"
+        if dataset_input is None and existing_dataset is None:
+            error_msg = "Either dataset connection or existing dataset selection must be provided"
             raise ValueError(error_msg)
 
-        # Priority: 1. Dataset connection, 2. Existing dataset selection, 3. Training data
+        # Priority: 1. Dataset connection, 2. Existing dataset selection
         if dataset_input is not None:
             # Extract dataset information from the provided dataset
             if not isinstance(dataset_input, Data):
@@ -464,20 +312,11 @@ class NvidiaCustomizerComponent(Component):
             effective_namespace = dataset_namespace
             logger.info("Using dataset connection: %s from namespace: %s", dataset_name, effective_namespace)
 
-        elif existing_dataset is not None:
+        else:
             # Use selected existing dataset
             dataset_name = existing_dataset
             effective_namespace = namespace
             logger.info("Using existing dataset: %s from namespace: %s", dataset_name, effective_namespace)
-
-        else:
-            # Process and upload the dataset if training_data is provided
-            if training_data is None:
-                error_msg = "Training data is empty, cannot customize the model"
-                raise ValueError(error_msg)
-
-            dataset_name = await self.process_dataset(base_url)
-            effective_namespace = namespace
 
         output_model = f"{effective_namespace}/{fine_tuned_model_name}"
 
@@ -506,10 +345,6 @@ class NvidiaCustomizerComponent(Component):
             logger.info("Sending customization request using NeMo client")
             logger.info("Request payload: %s", formatted_data)
 
-            # Also use self.log for component logging
-            # self.log("Sending customization request using NeMo client") # Removed
-            # self.log(f"Request payload: {formatted_data}") # Removed
-
             # Use NeMo client for job creation
             nemo_client = self.get_nemo_client()
             response = await nemo_client.customization.jobs.create(
@@ -537,44 +372,42 @@ class NvidiaCustomizerComponent(Component):
 
             result_dict = convert_datetime_to_string(result_dict)
 
-            # self.log(f"Received successful response: {formatted_result}") # Removed
-
             id_value = result_dict["id"]
             result_dict["url"] = f"{base_url}/v1/customization/jobs/{id_value}/status"
 
             # Check if we should wait for job completion
             wait_for_completion = getattr(self, "wait_for_completion", False)
-            logger.info(f"Wait for completion setting: {wait_for_completion}")
+            logger.info("Wait for completion setting: %s", wait_for_completion)
             if wait_for_completion:
-                logger.info(f"Wait for completion enabled. Waiting for job {id_value} to complete...")
+                logger.info("Wait for completion enabled. Waiting for job %s to complete...", id_value)
                 try:
                     max_wait_time = getattr(self, "max_wait_time_minutes", 30)
-                    logger.info(f"Starting wait_for_job_completion with max_wait_time: {max_wait_time}")
+                    logger.info("Starting wait_for_job_completion with max_wait_time: %s", max_wait_time)
                     # Wait for job completion
                     final_job_result = await self.wait_for_job_completion(
                         job_id=id_value, max_wait_time_minutes=max_wait_time
                     )
                     # Update result_dict with final job status
                     result_dict.update(final_job_result)
-                    logger.info(f"Job {id_value} completed successfully!")
+                    logger.info("Job %s completed successfully!", id_value)
                 except TimeoutError as exc:
-                    logger.warning(f"Job {id_value} did not complete within timeout: {exc}")
+                    logger.warning("Job %s did not complete within timeout: %s", id_value, exc)
                     # Continue with the original result (job created but not completed)
                 except ValueError as exc:
-                    logger.error(f"Job {id_value} failed: {exc}")
+                    logger.exception("Job %s failed", id_value)
                     # Re-raise the ValueError to indicate job failure
                     error_msg = f"Job {id_value} failed: {exc}"
                     raise ValueError(error_msg) from exc
-                except Exception as exc:  # noqa: BLE001
-                    logger.error(f"Unexpected error while waiting for job completion: {exc}")
+                except Exception:
+                    logger.exception("Unexpected error while waiting for job completion")
                     # Continue with the original result
             else:
-                logger.info(f"Wait for completion disabled. Job {id_value} created successfully.")
+                logger.info("Wait for completion disabled. Job %s created successfully.", id_value)
 
-        except NeMoMicroservicesError as exc:
+        except nemo_microservices.APIError as exc:
             # Log the request details for debugging
-            logger.error("NeMo microservices error occurred during job creation")
-            logger.error("Request payload was: %s", formatted_data)
+            logger.exception("NeMo microservices error occurred during job creation")
+            logger.exception("Request payload was: %s", formatted_data)
 
             # Check if the error is due to a 409 Conflict (model name already exists)
             if "409" in str(exc) or "conflict" in str(exc).lower() or "already exists" in str(exc).lower():
@@ -583,7 +416,6 @@ class NvidiaCustomizerComponent(Component):
                     "Retry with a different output model name"
                 )
                 logger.warning(conflict_msg)
-                # self.log(conflict_msg) # Removed
                 error_msg = (
                     f"There is already a fined tuned model with name {output_model}. "
                     f"Please choose a different Output Model Name."
@@ -591,56 +423,29 @@ class NvidiaCustomizerComponent(Component):
                 raise ValueError(error_msg) from exc
 
             error_msg = f"NeMo microservices error during job creation: {exc}"
-            logger.error(error_msg)
-            # self.log(error_msg) # Removed
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
         except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
             # Keep httpx error handling for backward compatibility
             error_msg = f"HTTP error during job creation: {exc}"
-            logger.error(error_msg)
-            # self.log(error_msg) # Removed
+            logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
-        else:
-            # Return the job data as a list of Data objects to display as a table
-            # Each field becomes a column in the table
-            return [
-                Data(
-                    job_id=result_dict.get("id"),
-                    status=result_dict.get("status", "created"),
-                    name=result_dict.get("name"),
-                    description=result_dict.get("description", ""),
-                    output_model=result_dict.get("output_model"),
-                    created_at=result_dict.get("created_at"),
-                    updated_at=result_dict.get("updated_at"),
-                    status_url=result_dict.get("url"),
-                )
-            ]
+        except Exception as exc:
+            # Catch any other unexpected errors
+            error_msg = f"Unexpected error during job creation: {exc}"
+            logger.exception(error_msg)
+            raise ValueError(error_msg) from exc
+
+        return Data(data=result_dict)
 
     async def wait_for_job_completion(
         self, job_id: str, max_wait_time_minutes: int = 30, poll_interval_seconds: int = 15
     ) -> dict:
-        """Wait for a NeMo customization job to complete.
-
-        Args:
-            job_id: The job ID to monitor
-            max_wait_time_minutes: Maximum time to wait in minutes
-            poll_interval_seconds: How often to check status in seconds
-
-        Returns:
-            Final job status/details when completed
-
-        Raises:
-            TimeoutError: If job doesn't complete within max_wait_time
-            ValueError: If job fails
-        """
-        max_wait_time_seconds = max_wait_time_minutes * 60
+        """Wait for job completion with timeout."""
         start_time = time.time()
-        nemo_client = self.get_nemo_client()
-        headers = {"Authorization": f"Bearer {self.auth_token}"}
-
-        logger.info(f"Starting to wait for job {job_id} completion (max wait: {max_wait_time_minutes} minutes)")
+        max_wait_time_seconds = max_wait_time_minutes * 60
 
         while True:
             # Check if we've exceeded the maximum wait time
@@ -651,310 +456,78 @@ class NvidiaCustomizerComponent(Component):
                 raise TimeoutError(timeout_msg)
 
             try:
-                # Get job status using NeMo client
-                job_response = await nemo_client.customization.jobs.retrieve(job_id=job_id, extra_headers=headers)
+                # Get job status
+                nemo_client = self.get_nemo_client()
+                response = await nemo_client.customization.jobs.get(
+                    job_id=job_id, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+                )
+                job_status = response.model_dump()
 
-                status = job_response.status
-                logger.info(f"Job {job_id} status: {status} (elapsed: {elapsed_time:.1f}s)")
+                # Check job status
+                status = job_status.get("status", "unknown")
+                logger.info("Job %s status: %s", job_id, status)
 
-                # Check for completion states
                 if status == "completed":
-                    logger.info(f"Job {job_id} completed successfully!")
-                    return job_response.model_dump()
+                    logger.info("Job %s completed successfully!", job_id)
+                    return job_status
                 if status == "failed":
                     error_msg = f"Job {job_id} failed with status: {status}"
                     logger.error(error_msg)
-                    raise ValueError(error_msg) from None
-                if status == "cancelled":
-                    error_msg = f"Job {job_id} was cancelled"
-                    logger.error(error_msg)
-                    raise ValueError(error_msg) from None
-                logger.info(f"Job {job_id} still running with status: {status}")
+                    raise ValueError(error_msg)
+                if status in ["running", "pending", "queued"]:
+                    logger.info("Job %s is still %s. Waiting %s seconds...", job_id, status, poll_interval_seconds)
+                    await asyncio.sleep(poll_interval_seconds)
+                else:
+                    logger.warning("Unknown job status: %s. Waiting %s seconds...", status, poll_interval_seconds)
+                    await asyncio.sleep(poll_interval_seconds)
 
-                # Job is still running, wait before next check
+            except nemo_microservices.APIError:
+                logger.exception("NeMo microservices error while checking job status")
+                await asyncio.sleep(poll_interval_seconds)
+            except Exception:
+                logger.exception("Unexpected error while checking job status")
                 await asyncio.sleep(poll_interval_seconds)
 
-            except NeMoMicroservicesError as exc:
-                # Check if the error indicates the job has failed
-                error_str = str(exc).lower()
-                logger.error(f"NeMoMicroservicesError for job {job_id}: {error_str}")
-                if "failed" in error_str or "not found" in error_str or "job.*failed" in error_str:
-                    error_msg = f"Job {job_id} failed: {exc}"
-                    logger.error(error_msg)
-                    raise ValueError(error_msg) from exc
+    async def fetch_available_models(self) -> list[str]:
+        """Fetch available models from NeMo service."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.models.list(extra_headers={"Authorization": f"Bearer {self.auth_token}"})
+            return [model.name for model in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch models: %s", exc)
+            return []
 
-                # Log error but continue polling for other types of errors
-                logger.error(f"Error checking job status: {exc}")
-                await asyncio.sleep(poll_interval_seconds * 2)  # Wait longer on error
-            except Exception as exc:
-                # Check if the error indicates the job has failed
-                error_str = str(exc).lower()
-                logger.error(f"Exception for job {job_id}: {error_str}")
-                if "failed" in error_str or "job.*failed" in error_str:
-                    error_msg = f"Job {job_id} failed: {exc}"
-                    logger.error(error_msg)
-                    raise ValueError(error_msg) from exc
+    async def fetch_available_training_types(self) -> list[str]:
+        """Fetch available training types from NeMo service."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.training_types.list(
+                extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+            )
+            return [tt.name for tt in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch training types: %s", exc)
+            return []
 
-                # For other exceptions, log and continue
-                logger.error(f"Unexpected error checking job status: {exc}")
-                await asyncio.sleep(poll_interval_seconds * 2)
+    async def fetch_available_fine_tuning_types(self) -> list[str]:
+        """Fetch available fine tuning types from NeMo service."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.finetuning_types.list(
+                extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+            )
+            return [ftt.name for ftt in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch fine tuning types: %s", exc)
+            return []
 
     async def fetch_existing_datasets(self) -> list[str]:
-        """Fetch existing datasets from the NeMo Data Store.
-
-        Returns:
-            List of dataset names available for training
-        """
-        # Defensive checks
-        if not hasattr(self, "namespace") or not self.namespace:
-            error_msg = "Namespace not set for fetching datasets"
-            logger.warning(error_msg)
-            return []
-
-        if not hasattr(self, "auth_token") or not self.auth_token:
-            error_msg = "Authentication token not set for fetching datasets"
-            logger.warning(error_msg)
-            return []
-
+        """Fetch existing datasets from NeMo service."""
         try:
-            logger.info("Fetching datasets from namespace: %s", self.namespace)
-            # Use NeMo client for dataset fetching
             nemo_client = self.get_nemo_client()
-
-            # Build filter for namespace
-            filter_params = {"namespace": self.namespace}
-
-            response = await nemo_client.datasets.list(
-                filter=filter_params, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-            )
-
-            # Extract dataset names from the response
-            dataset_names = [dataset.name for dataset in response.data if hasattr(dataset, "name") and dataset.name]
-            logger.info("Successfully fetched %d datasets: %s", len(dataset_names), dataset_names)
-
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error while fetching datasets: {exc}"
-            logger.error(error_msg)
+            response = await nemo_client.datasets.list(extra_headers={"Authorization": f"Bearer {self.auth_token}"})
+            return [dataset.name for dataset in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch existing datasets: %s", exc)
             return []
-        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-            error_msg = f"HTTP error while fetching datasets: {exc}"
-            logger.error(error_msg)
-            return []
-        except (ValueError, TypeError) as exc:
-            error_msg = f"Unexpected error while fetching datasets: {exc}"
-            logger.error(error_msg)
-            return []
-        except Exception as exc:  # noqa: BLE001
-            error_msg = f"Unknown error while fetching datasets: {exc}"
-            logger.error(error_msg)
-            return []
-        else:
-            return dataset_names
-
-    async def create_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
-        """Checks and creates namespace in entity-store with authentication using NeMo client."""
-        entity_client = self.get_entity_client()
-        await self.create_namespace_with_nemo_client(entity_client, namespace)
-
-    async def create_datastore_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
-        """Checks and creates namespace in datastore with authentication using direct HTTP request."""
-        datastore_client = self.get_datastore_client()
-        await self.create_datastore_namespace_with_nemo_client(datastore_client, namespace)
-
-    async def process_dataset(self, base_url: str) -> str:
-        """Asynchronously processes and uploads the dataset with authentication."""
-        try:
-            # Inputs and repo setup
-            dataset_name = str(uuid.uuid4())
-
-            # Initialize clients for dataset operations
-            entity_client = self.get_entity_client()
-            datastore_client = self.get_datastore_client()
-
-            # Create namespaces using appropriate clients
-            await self.create_namespace_with_nemo_client(entity_client, self.namespace)
-            await self.create_datastore_namespace_with_nemo_client(datastore_client, self.namespace)
-
-            # Create dataset repository using NeMo client
-            repo_id = f"{self.namespace}/{dataset_name}"
-            # Note: We'll create the dataset in the entity registry later with the HuggingFace URL
-            # For now, we just use the HuggingFace API to create the repo
-            logger.info("Will create dataset repository: %s", repo_id)
-
-            # Still use HuggingFace API for file uploads (for now)
-            hf_api = AuthenticatedHfApi(
-                endpoint=f"{base_url}/v1/hf",
-                auth_token=self.auth_token,
-                namespace=self.namespace,
-                token=self.auth_token,
-            )
-            hf_api.create_repo(repo_id, repo_type="dataset", exist_ok=True)
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error while creating repo: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:
-            exception_str = str(exc)
-            error_msg = f"An unexpected error occurred while creating repo: {exception_str}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-
-        try:
-            chunk_size = 100000  # Ensure chunk_size is an integer
-            logger.info("repo_id : %s", repo_id)
-
-            tasks = []
-
-            # =====================================================
-            # STEP 1: Build a list of valid records from training_data
-            # =====================================================
-            valid_records = []
-            for data_obj in self.training_data or []:
-                # Skip non-Data objects
-                if not isinstance(data_obj, Data):
-                    logger.warning("Skipping non-Data object in training data, but got: %s", data_obj)
-                    continue
-
-                # Extract only "prompt" and "completion" fields if present
-                filtered_data = {
-                    "prompt": getattr(data_obj, "prompt", None),
-                    "completion": getattr(data_obj, "completion", None),
-                }
-                if filtered_data["prompt"] is not None and filtered_data["completion"] is not None:
-                    valid_records.append(filtered_data)
-
-            total_records = len(valid_records)
-            min_records_process = 2
-            min_records_validation = 10
-            if total_records < min_records_process:
-                error_msg = f"Not enough records for processing. Record count : {total_records}"
-                raise ValueError(error_msg)
-
-            # =====================================================
-            # STEP 2: Split into validation (10%) and training (90%)
-            # =====================================================
-            # If the total size is less than 10, force at least one record into validation.
-            validation_count = 1 if total_records < min_records_validation else max(1, int(round(total_records * 0.1)))
-
-            # For simplicity, we take the first validation_count records for validation.
-            # (You could also randomize the order if needed.)
-            validation_records = valid_records[:validation_count]
-            training_records = valid_records[validation_count:]
-
-            # =====================================================
-            # STEP 3: Process training data in chunks (90%)
-            # =====================================================
-            chunk = []
-            is_validation = False
-            for record in training_records:
-                chunk.append(record)
-                if len(chunk) == chunk_size:
-                    chunk_df = pd.DataFrame(chunk)
-                    task = self.upload_chunk(
-                        chunk_df,
-                        self.chunk_number,
-                        dataset_name,
-                        repo_id,
-                        hf_api,
-                        is_validation,
-                    )
-                    tasks.append(task)
-                    chunk = []  # Reset the chunk
-                    self.chunk_number += 1
-
-            # Process any remaining training records
-            if chunk:
-                chunk_df = pd.DataFrame(chunk)
-                task = self.upload_chunk(
-                    chunk_df,
-                    self.chunk_number,
-                    dataset_name,
-                    repo_id,
-                    hf_api,
-                    is_validation,
-                )
-                tasks.append(task)
-
-            # Await all training upload tasks
-            await asyncio.gather(*tasks)
-
-            # =====================================================
-            # STEP 4: Upload validation data (without chunking)
-            # =====================================================
-            if validation_records:
-                is_validation = True
-                validation_df = pd.DataFrame(validation_records)
-                await self.upload_chunk(validation_df, 1, dataset_name, repo_id, hf_api, is_validation)
-
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error during processing/upload: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:
-            exception_str = str(exc)
-            error_msg = f"An unexpected error occurred during processing/upload: {exception_str}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-
-        # =====================================================
-        # STEP 5: Post dataset info to the entity registry
-        # =====================================================
-        try:
-            file_url = f"hf://datasets/{repo_id}"
-            description = f"Dataset loaded using the input data {dataset_name}"
-
-            # Use NeMo client for entity registry operations
-            nemo_client = self.get_nemo_client()
-            _response = await nemo_client.datasets.create(
-                name=dataset_name,
-                namespace=self.namespace,
-                description=description,
-                files_url=file_url,
-                format="jsonl",
-                project=dataset_name,
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-            )
-
-            logger.info("Dataset uploaded successfully in %s chunks", self.chunk_number)
-            logger.info("All data has been processed and uploaded successfully.")
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error while posting to entity service: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:
-            exception_str = str(exc)
-            error_msg = f"An unexpected error occurred while posting to entity service: {exception_str}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-
-        return dataset_name
-
-    async def upload_chunk(self, chunk_df, chunk_number, file_name_prefix, repo_id, hf_api, is_validation):
-        """Asynchronously uploads a chunk of data using authenticated HF API."""
-        try:
-            json_data = chunk_df.to_json(orient="records", lines=True)
-
-            # Build file paths
-            if is_validation:
-                file_name_training = f"validation/{file_name_prefix}_validation.jsonl"
-            else:
-                file_name_training = f"training/{file_name_prefix}_chunk_{chunk_number}.jsonl"
-
-            # Prepare BytesIO objects
-            training_file_obj = BytesIO(json_data.encode("utf-8"))
-            commit_message = f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-
-            # Use authenticated HuggingFace API directly (no more request patching)
-            try:
-                hf_api.upload_file(
-                    path_or_fileobj=training_file_obj,
-                    path_in_repo=file_name_training,
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    commit_message=commit_message,
-                )
-            finally:
-                training_file_obj.close()
-
-        except Exception:  # noqa: BLE001
-            logger.error("An error occurred while uploading chunk %s", chunk_number)
