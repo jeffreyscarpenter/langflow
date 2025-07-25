@@ -4,7 +4,6 @@ import time
 
 import httpx
 import nemo_microservices
-from huggingface_hub import HfApi
 from loguru import logger
 from nemo_microservices import AsyncNeMoMicroservices
 
@@ -20,34 +19,6 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
-
-
-class AuthenticatedHfApi(HfApi):
-    """Custom HuggingFace API client that adds authentication headers for firewall."""
-
-    def __init__(self, endpoint, auth_token, namespace=None, **kwargs):
-        super().__init__(endpoint=endpoint, **kwargs)
-        self.auth_token = auth_token
-        self.namespace = namespace
-
-    def _build_hf_headers(self, token=None, library_name=None, library_version=None, user_agent=None):
-        """Override to add custom authentication headers."""
-        # Call parent method with only the parameters it accepts
-        headers = super()._build_hf_headers(
-            token=token, library_name=library_name, library_version=library_version, user_agent=user_agent
-        )
-
-        # Always add our custom authentication header
-        headers["Authorization"] = f"Bearer {self.auth_token}"
-
-        return headers
-
-    def _request_wrapper(self, method, url, *args, **kwargs):
-        """Override to add authentication headers to all requests."""
-        headers = kwargs.get("headers", {})
-        headers["Authorization"] = f"Bearer {self.auth_token}"
-        kwargs["headers"] = headers
-        return super()._request_wrapper(method, url, *args, **kwargs)
 
 
 class NvidiaCustomizerComponent(Component):
@@ -183,24 +154,6 @@ class NvidiaCustomizerComponent(Component):
             base_url=self.base_url,
         )
 
-    async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
-        """Create namespace using NeMo client."""
-        try:
-            await nemo_client.datastore.namespaces.create(namespace=namespace)
-            logger.info("Created namespace: %s", namespace)
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            # Namespace might already exist, which is fine
-            logger.info("Namespace %s might already exist: %s", namespace, exc)
-
-    async def create_datastore_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
-        """Create datastore namespace using NeMo client."""
-        try:
-            await nemo_client.datastore.namespaces.create(namespace=namespace)
-            logger.info("Created datastore namespace: %s", namespace)
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            # Namespace might already exist, which is fine
-            logger.info("Datastore namespace %s might already exist: %s", namespace, exc)
-
     async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
         """Update build config to fetch available options."""
         if field_name == "base_url":
@@ -238,8 +191,6 @@ class NvidiaCustomizerComponent(Component):
         if not self.auth_token:
             error_msg = "Missing authentication token"
             raise ValueError(error_msg)
-
-        base_url = self.base_url.rstrip("/")
 
         fine_tuned_model_name = self.fine_tuned_model_name
 
@@ -339,7 +290,7 @@ class NvidiaCustomizerComponent(Component):
                 dataset=data["dataset"],
                 hyperparameters=data["hyperparameters"],
                 output_model=data["output_model"],
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
+                extra_headers=self.get_auth_headers(),
             )
 
             # Process a successful response
@@ -358,7 +309,7 @@ class NvidiaCustomizerComponent(Component):
             result_dict = convert_datetime_to_string(result_dict)
 
             id_value = result_dict["id"]
-            result_dict["url"] = f"{base_url}/v1/customization/jobs/{id_value}/status"
+            self.log(f"Customization job created successfully with ID: {id_value}")
 
             # Check if we should wait for job completion
             wait_for_completion = getattr(self, "wait_for_completion", False)
@@ -375,16 +326,20 @@ class NvidiaCustomizerComponent(Component):
                     # Update result_dict with final job status
                     result_dict.update(final_job_result)
                     logger.info("Job %s completed successfully!", id_value)
+                    self.log(f"Customization job {id_value} completed successfully!")
                 except TimeoutError as exc:
                     logger.warning("Job %s did not complete within timeout: %s", id_value, exc)
+                    self.log(f"Customization job {id_value} did not complete within {max_wait_time} minutes timeout")
                     # Continue with the original result (job created but not completed)
                 except ValueError as exc:
                     logger.exception("Job %s failed", id_value)
+                    self.log(f"Customization job {id_value} failed: {exc}")
                     # Re-raise the ValueError to indicate job failure
                     error_msg = f"Job {id_value} failed: {exc}"
                     raise ValueError(error_msg) from exc
                 except (asyncio.CancelledError, RuntimeError, OSError):
                     logger.exception("Unexpected error while waiting for job completion")
+                    self.log(f"Unexpected error while waiting for customization job {id_value} completion")
                     # Continue with the original result
             else:
                 logger.info("Wait for completion disabled. Job %s created successfully.", id_value)
@@ -444,7 +399,7 @@ class NvidiaCustomizerComponent(Component):
                 # Get job status
                 nemo_client = self.get_nemo_client()
                 response = await nemo_client.customization.jobs.get(
-                    job_id=job_id, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
+                    job_id=job_id, extra_headers=self.get_auth_headers()
                 )
                 job_status = response.model_dump()
 
@@ -477,7 +432,7 @@ class NvidiaCustomizerComponent(Component):
         """Fetch available models from NeMo service."""
         try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.models.list(extra_headers={"Authorization": f"Bearer {self.auth_token}"})
+            response = await nemo_client.models.list(extra_headers=self.get_auth_headers())
             return [model.name for model in response.data] if hasattr(response, "data") else []
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch models: %s", exc)
@@ -487,9 +442,7 @@ class NvidiaCustomizerComponent(Component):
         """Fetch available training types from NeMo service."""
         try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.training_types.list(
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-            )
+            response = await nemo_client.customization.training_types.list(extra_headers=self.get_auth_headers())
             return [tt.name for tt in response.data] if hasattr(response, "data") else []
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch training types: %s", exc)
@@ -499,9 +452,7 @@ class NvidiaCustomizerComponent(Component):
         """Fetch available fine tuning types from NeMo service."""
         try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.finetuning_types.list(
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-            )
+            response = await nemo_client.customization.finetuning_types.list(extra_headers=self.get_auth_headers())
             return [ftt.name for ftt in response.data] if hasattr(response, "data") else []
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch fine tuning types: %s", exc)
@@ -511,7 +462,7 @@ class NvidiaCustomizerComponent(Component):
         """Fetch existing datasets from NeMo service."""
         try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.datasets.list(extra_headers={"Authorization": f"Bearer {self.auth_token}"})
+            response = await nemo_client.datasets.list(extra_headers=self.get_auth_headers())
             return [dataset.name for dataset in response.data] if hasattr(response, "data") else []
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch existing datasets: %s", exc)
