@@ -150,51 +150,6 @@ class NvidiaDatasetCreatorComponent(Component):
                 error_msg = f"Failed to create entity namespace: {exc}"
                 raise ValueError(error_msg) from exc
 
-    async def create_datastore_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):  # noqa: ARG002
-        """Create datastore namespace using direct HTTP request."""
-        try:
-            # Use the correct endpoint from the evaluator pattern
-            nds_url = f"{self.base_url}/v1/datastore/namespaces"
-
-            headers = {"Authorization": f"Bearer {self.auth_token}"}
-            data = {"namespace": namespace}
-
-            async with httpx.AsyncClient() as client:
-                # First check if namespace exists
-                try:
-                    response = await client.get(f"{nds_url}/{namespace}", headers=headers)
-                    if response.status_code == 200:  # noqa: PLR2004
-                        logger.info(f"Datastore namespace already exists: {namespace}")
-                        return
-                except httpx.HTTPError:
-                    # Namespace doesn't exist, create it
-                    pass
-
-                # Create the namespace
-                logger.info(f"Creating datastore namespace at URL: {nds_url}")
-                response = await client.post(nds_url, headers=headers, json=data)
-
-                logger.info(f"Response status: {response.status_code}")
-
-                if response.status_code in (200, 201):
-                    logger.info(f"Created datastore namespace: {namespace}")
-                    return
-                if response.status_code in (409, 422):
-                    logger.info(f"Datastore namespace already exists: {namespace}")
-                    return
-                error_msg = f"Failed to create datastore namespace: {response.status_code} - {response.text}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-
-        except httpx.HTTPError as exc:
-            error_msg = f"HTTP error creating datastore namespace: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-        except Exception as exc:
-            error_msg = f"Unexpected error creating datastore namespace: {exc}"
-            logger.error(error_msg)
-            raise ValueError(error_msg) from exc
-
     async def create_dataset(self) -> Data:
         """Create a dataset in NeMo Data Store."""
         if not self.auth_token:
@@ -224,7 +179,6 @@ class NvidiaDatasetCreatorComponent(Component):
 
             # Create namespaces using the client
             await self.create_namespace_with_nemo_client(nemo_client, namespace)
-            await self.create_datastore_namespace_with_nemo_client(nemo_client, namespace)
 
             # Create HuggingFace repo
             hf_api = AuthenticatedHfApi(
