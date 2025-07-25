@@ -181,19 +181,6 @@ class NvidiaCustomizerComponent(Component):
         """Get an authenticated NeMo microservices client."""
         return AsyncNeMoMicroservices(
             base_url=self.base_url,
-            # No inference_base_url needed for dataset operations
-        )
-
-    def get_entity_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo entity client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
-        )
-
-    def get_datastore_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo datastore client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
         )
 
     async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):

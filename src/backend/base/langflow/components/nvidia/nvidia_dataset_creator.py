@@ -122,18 +122,6 @@ class NvidiaDatasetCreatorComponent(Component):
             base_url=self.base_url,
         )
 
-    def get_entity_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo entity client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
-        )
-
-    def get_datastore_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo datastore client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
-        )
-
     async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
         """Create entity namespace using NeMo client."""
         try:
@@ -231,13 +219,12 @@ class NvidiaDatasetCreatorComponent(Component):
             raise ValueError(error_msg)
 
         try:
-            # Initialize clients for dataset operations
-            entity_client = self.get_entity_client()
-            datastore_client = self.get_datastore_client()
+            # Initialize client for dataset operations
+            nemo_client = self.get_nemo_client()
 
-            # Create namespaces using appropriate clients
-            await self.create_namespace_with_nemo_client(entity_client, namespace)
-            await self.create_datastore_namespace_with_nemo_client(datastore_client, namespace)
+            # Create namespaces using the client
+            await self.create_namespace_with_nemo_client(nemo_client, namespace)
+            await self.create_datastore_namespace_with_nemo_client(nemo_client, namespace)
 
             # Create HuggingFace repo
             hf_api = AuthenticatedHfApi(

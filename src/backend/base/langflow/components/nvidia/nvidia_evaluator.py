@@ -136,18 +136,6 @@ class NvidiaEvaluatorComponent(Component):
             base_url=self.base_url,
         )
 
-    def get_entity_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo entity client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
-        )
-
-    def get_datastore_client(self) -> AsyncNeMoMicroservices:
-        """Get an authenticated NeMo datastore client."""
-        return AsyncNeMoMicroservices(
-            base_url=self.base_url,
-        )
-
     def convert_datetime_to_string(self, obj):
         """Convert datetime objects to strings for JSON serialization."""
         if isinstance(obj, dict):
@@ -1081,13 +1069,12 @@ class NvidiaEvaluatorComponent(Component):
             # Inputs and repo setup
             dataset_name = str(uuid.uuid4())
 
-            # Initialize clients for dataset operations
-            entity_client = self.get_entity_client()
-            datastore_client = self.get_datastore_client()
+            # Initialize client for dataset operations
+            nemo_client = self.get_nemo_client()
 
-            # Create namespaces using appropriate clients
-            await self.create_namespace_with_nemo_client(entity_client, self.namespace)
-            await self.create_datastore_namespace_with_nemo_client(datastore_client, self.namespace)
+            # Create namespaces using the client
+            await self.create_namespace_with_nemo_client(nemo_client, self.namespace)
+            await self.create_datastore_namespace_with_nemo_client(nemo_client, self.namespace)
 
             # Create dataset repository using authenticated HuggingFace API
             hf_endpoint = f"{base_url}/v1/hf"
@@ -1316,13 +1303,13 @@ class NvidiaEvaluatorComponent(Component):
 
     async def create_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
         """Checks and creates namespace in entity-store with authentication using NeMo client."""
-        entity_client = self.get_entity_client()
-        await self.create_namespace_with_nemo_client(entity_client, namespace)
+        nemo_client = self.get_nemo_client()
+        await self.create_namespace_with_nemo_client(nemo_client, namespace)
 
     async def create_datastore_namespace(self, namespace: str, base_url: str):  # noqa: ARG002
         """Checks and creates namespace in datastore with authentication using direct HTTP request."""
-        datastore_client = self.get_datastore_client()
-        await self.create_datastore_namespace_with_nemo_client(datastore_client, namespace)
+        nemo_client = self.get_nemo_client()
+        await self.create_datastore_namespace_with_nemo_client(nemo_client, namespace)
 
     async def fetch_existing_datasets(self, base_url: str) -> list[str]:  # noqa: ARG002
         """Fetch existing datasets from the NeMo Data Store.
