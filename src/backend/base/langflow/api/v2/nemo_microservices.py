@@ -27,6 +27,7 @@ Note: This implementation requires proper NeMo configuration via global variable
 
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 
 from langflow.api.utils import CurrentActiveUser, DbSession
@@ -149,9 +150,9 @@ async def get_dataset(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         dataset = await nemo_service.get_dataset(dataset_name, namespace=namespace)
-        if not dataset:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        return dataset
+        if dataset:
+            return dataset
+        raise HTTPException(status_code=404, detail="Dataset not found")
     except HTTPException:
         raise
     except ValueError as e:
@@ -213,6 +214,8 @@ async def delete_dataset(
         session: Database session
         dataset_name: NeMo Entity Store dataset name
         namespace: Dataset namespace (optional, defaults to 'default')
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Success message
@@ -222,9 +225,9 @@ async def delete_dataset(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         deleted = await nemo_service.delete_dataset(dataset_name, namespace=namespace)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        return {"message": "Dataset deleted successfully"}
+        if deleted:
+            return {"message": "Dataset deleted successfully"}
+        raise HTTPException(status_code=404, detail="Dataset not found")
     except HTTPException:
         raise
     except ValueError as e:
@@ -251,6 +254,8 @@ async def upload_files(
         session: Database session
         dataset_id: NeMo Data Store dataset ID
         files: List of files to upload
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Upload result with file information
@@ -260,7 +265,7 @@ async def upload_files(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         return await nemo_service.upload_files(dataset_id=dataset_id, files=files)
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload files: {e}") from e
 
 
@@ -278,6 +283,8 @@ async def get_dataset_files(
         dataset_id: NeMo Data Store dataset ID
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         List of files in the dataset
@@ -287,7 +294,7 @@ async def get_dataset_files(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         return await nemo_service.get_dataset_files(dataset_id)
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to get dataset files: {e}") from e
 
 
@@ -315,6 +322,8 @@ async def upload_dataset_files(
         path: Path within the dataset (e.g., 'training', 'validation')
         namespace: Dataset namespace
         files: List of files to upload
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Upload result with file information and paths
@@ -326,7 +335,7 @@ async def upload_dataset_files(
         return await nemo_service.upload_dataset_files_with_path(
             dataset_name=dataset_name, path=path, namespace=namespace, files=files
         )
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload files: {e}") from e
 
 
@@ -358,7 +367,7 @@ async def get_customization_configs(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         return await nemo_service.get_customization_configs()
-    except Exception as e:
+    except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e}") from e
 
 
@@ -379,6 +388,8 @@ async def get_job_status(
         job_id: NeMo Customizer job ID
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Job status with timestamped training and validation loss values
@@ -388,9 +399,9 @@ async def get_job_status(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         job_status = await nemo_service.get_customizer_job_status(job_id)
-        if not job_status:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return job_status
+        if job_status:
+            return job_status
+        raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:
         raise
     except Exception as e:
@@ -414,6 +425,8 @@ async def create_customization_job(
         job_data: Job configuration data
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Created job information
@@ -423,7 +436,7 @@ async def create_customization_job(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         return await nemo_service.create_customization_job(job_data)
-    except Exception as e:
+    except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to create customization job: {e}") from e
 
 
@@ -444,6 +457,8 @@ async def get_job_details(
         job_id: NeMo Customizer job ID
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Detailed job information
@@ -453,9 +468,9 @@ async def get_job_details(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         job_details = await nemo_service.get_customizer_job_details(job_id)
-        if not job_details:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return job_details
+        if job_details:
+            return job_details
+        raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:
         raise
     except Exception as e:
@@ -479,6 +494,8 @@ async def cancel_customization_job(
         job_id: NeMo Customizer job ID to cancel
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Cancellation confirmation
@@ -498,6 +515,81 @@ async def cancel_customization_job(
         raise HTTPException(status_code=500, detail=f"Failed to cancel customization job: {e}") from e
 
 
+@router.delete("/v1/customization/jobs/{job_id}", response_model=dict)
+async def delete_customization_job(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    # Add print statement to ensure we see this even if logging is not working
+    """Delete a customization job.
+
+    This endpoint provides delete functionality for customization jobs.
+    If direct deletion is not supported, it will fall back to cancellation.
+
+    Args:
+        job_id: NeMo Customizer job ID to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    logger.info("Delete customization job request - Job ID: %s", job_id)
+
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        logger.info("Attempting to delete customization job: %s", job_id)
+        result = await nemo_service.cancel_customization_job(job_id)
+        logger.info("Successfully deleted customization job: %s, Result: %s", job_id, result)
+        if True:  # Always true since we got here
+            return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.exception("ValueError deleting customization job %s", job_id)
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to delete customization job: {e}") from e
+    except Exception as e:
+        logger.exception("Exception deleting customization job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Failed to delete customization job: {e}") from e
+
+
+@router.get("/v1/customization/jobs/{job_id}/container-logs", response_model=dict)
+async def get_customization_job_container_logs(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get container logs for a customization job."""
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_customization_job_container_logs(job_id)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get customization job container logs: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get customization job container logs: {e}") from e
+
+
 @router.get("/v1/customization/jobs", response_model=dict)
 async def list_all_customizer_jobs(
     current_user: CurrentActiveUser,
@@ -513,8 +605,12 @@ async def list_all_customizer_jobs(
     GET /v1/customization/jobs
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         page: Page number (1-based)
         page_size: Number of jobs per page (default: 10)
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Paginated list of customization jobs
@@ -524,7 +620,7 @@ async def list_all_customizer_jobs(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         return await nemo_service.list_customizer_jobs(page=page, page_size=page_size)
-    except Exception as e:
+    except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to list customization jobs: {e}") from e
 
 
@@ -550,6 +646,8 @@ async def create_evaluation_job(
         job_data: Evaluation job configuration data
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Created evaluation job information
@@ -580,6 +678,8 @@ async def create_evaluation_config(
         config_data: Evaluation configuration data
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Created evaluation configuration information
@@ -610,6 +710,8 @@ async def create_evaluation_target(
         target_data: Evaluation target configuration data
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Created evaluation target information
@@ -640,6 +742,8 @@ async def get_evaluation_job(
         job_id: NeMo Evaluator job ID
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Evaluation job details
@@ -649,16 +753,16 @@ async def get_evaluation_job(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         job_details = await nemo_service.get_evaluation_job(job_id)
-        if not job_details:
-            raise HTTPException(status_code=404, detail="Evaluation job not found")
-        return job_details
+        if job_details:
+            return job_details
+        raise HTTPException(status_code=404, detail="Evaluation job not found")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get evaluation job: {e}") from e
 
 
-@router.get("/v1/evaluation/jobs", response_model=list[dict])
+@router.get("/v1/evaluation/jobs", response_model=dict)
 async def list_evaluation_jobs(
     current_user: CurrentActiveUser,
     session: DbSession,
@@ -674,12 +778,16 @@ async def list_evaluation_jobs(
     GET /v1/evaluation/jobs
 
     Args:
+        current_user: Current authenticated user
+        session: Database session
         page: Page number (1-based)
         page_size: Number of jobs per page (default: 10)
-        x_nemo_namespace: Optional namespace from frontend headers
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+        x_nemo_namespace: NeMo namespace (optional, from header)
 
     Returns:
-        Paginated list of evaluation jobs
+        Paginated response with evaluation jobs data and metadata
     """
     try:
         nemo_service = await get_nemo_service(
@@ -689,6 +797,129 @@ async def list_evaluation_jobs(
         return await nemo_service.list_evaluation_jobs(page=page, page_size=page_size, namespace=x_nemo_namespace)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list evaluation jobs: {e}") from e
+
+
+@router.delete("/v1/evaluation/jobs/{job_id}", response_model=dict)
+async def delete_evaluation_job(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+    x_nemo_namespace: Annotated[str | None, Header(alias="X-NeMo-Namespace")] = None,
+):
+    """Delete an evaluation job.
+
+    This endpoint provides delete functionality for evaluation jobs using the NeMo SDK.
+
+    Args:
+        job_id: NeMo Evaluator job ID to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+        x_nemo_namespace: NeMo namespace (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    logger.info("Delete evaluation job request - Job ID: %s, Namespace: %s", job_id, x_nemo_namespace)
+
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        logger.info("Attempting to delete evaluation job: %s", job_id)
+        result = await nemo_service.delete_evaluation_job(job_id)
+        logger.info("Successfully deleted evaluation job: %s, Result: %s", job_id, result)
+        if True:  # Always true since we got here
+            return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.exception("ValueError deleting evaluation job %s", job_id)
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to delete evaluation job: {e}") from e
+    except Exception as e:
+        logger.exception("Exception deleting evaluation job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Failed to delete evaluation job: {e}") from e
+
+
+@router.get("/v1/evaluation/jobs/{job_id}/logs", response_model=dict)
+async def get_evaluation_job_logs(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get logs for an evaluation job."""
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_evaluation_job_logs(job_id)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job logs: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job logs: {e}") from e
+
+
+@router.get("/v1/evaluation/jobs/{job_id}/results", response_model=dict)
+async def get_evaluation_job_results(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get results for a completed evaluation job."""
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_evaluation_job_results(job_id)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job results: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation job results: {e}") from e
+
+
+@router.get("/v1/evaluation/jobs/{job_id}/download-results")
+async def download_evaluation_job_results(
+    job_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Download results for a completed evaluation job."""
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.download_evaluation_job_results(job_id)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "configuration is incomplete" in str(e):
+            raise HTTPException(status_code=503, detail=f"NeMo service unavailable: {e}") from e
+        raise HTTPException(status_code=500, detail=f"Failed to download evaluation job results: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download evaluation job results: {e}") from e
 
 
 # =============================================================================
@@ -712,6 +943,8 @@ async def track_job(
         current_user: Current authenticated user
         session: Database session
         metadata: Optional metadata for tracking
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Tracking confirmation
@@ -760,6 +993,8 @@ async def stop_tracking_job(
         job_id: Job ID to stop tracking
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Confirmation message
@@ -794,6 +1029,8 @@ async def store_job_for_tracking_legacy(
         job_data: Job information from NeMo Customizer component
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Stored job data
@@ -802,7 +1039,6 @@ async def store_job_for_tracking_legacy(
         job_id = job_data.get("job_info", {}).get("id")
         if not job_id:
             raise HTTPException(status_code=400, detail="Missing job ID in job_data")
-
         metadata = {"legacy_data": job_data, "source": "legacy_endpoint"}
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
@@ -851,6 +1087,8 @@ async def get_customizer_job_legacy(
         job_id: NeMo Customizer job ID
         current_user: Current authenticated user
         session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Job details
@@ -860,9 +1098,9 @@ async def get_customizer_job_legacy(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
         job = await nemo_service.get_customizer_job_details(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return job
+        if job:
+            return job
+        raise HTTPException(status_code=404, detail="Job not found")
     except HTTPException:
         raise
     except Exception as e:

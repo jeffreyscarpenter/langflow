@@ -10,3 +10,9 @@ export { useUploadDatasetFiles } from "./use-upload-dataset-files";
 export { useGetTrackedJobs } from "./use-get-tracked-jobs";
 export { useGetJobStatus } from "./use-get-job-status";
 export { useCancelJob } from "./use-cancel-job";
+export { useDeleteCustomizerJob } from "./use-delete-customizer-job";
+export { useDeleteEvaluatorJob } from "./use-delete-evaluator-job";
+
+// New job action hooks
+export { useCancelCustomizerJob, useGetCustomizerJobLogs } from "./use-customizer-job-actions";
+export { useGetEvaluatorJobLogs, useGetEvaluatorJobResults, useDownloadEvaluatorJobResults } from "./use-evaluator-job-actions";

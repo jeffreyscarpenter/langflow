@@ -113,6 +113,48 @@ class RealNeMoMicroservicesService:
             return obj.isoformat()
         return obj
 
+    def _force_json_serializable(self, obj: Any) -> Any:
+        """Force an object to be JSON serializable by converting complex types."""
+        try:
+            # Try simple types first
+            if obj is None or isinstance(obj, bool | int | float | str):
+                return obj
+
+            # Handle lists and tuples
+            if isinstance(obj, list | tuple):
+                return [self._force_json_serializable(item) for item in obj]
+
+            # Handle dictionaries
+            if isinstance(obj, dict):
+                return {str(k): self._force_json_serializable(v) for k, v in obj.items()}
+
+            # Handle datetime objects
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+
+            # Handle objects with model_dump (Pydantic models)
+            if hasattr(obj, "model_dump"):
+                return self._force_json_serializable(obj.model_dump())
+
+            # Handle objects with __dict__
+            if hasattr(obj, "__dict__"):
+                # Filter out methods and non-serializable attributes
+                result = {}
+                for key, value in obj.__dict__.items():
+                    if not key.startswith("_") and not callable(value):
+                        try:
+                            result[key] = self._force_json_serializable(value)
+                        except (TypeError, ValueError, AttributeError):
+                            result[key] = str(value)
+                return result
+
+            # For other objects, convert to string
+            return str(obj)
+
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.warning("Error serializing object of type %s: %s", type(obj), e)
+            return f"<{type(obj).__name__}: {str(obj)[:100]}>"
+
     # =============================================================================
     # Dataset Management (Data Store)
     # =============================================================================
@@ -180,11 +222,10 @@ class RealNeMoMicroservicesService:
                 "has_prev": current_page > 1,
             }
 
-            logger.info(f"Retrieved {len(datasets)} datasets from entity store (page {page}, size {page_size})")
-            return response
+            logger.info("Retrieved %s datasets from entity store (page %s, size %s)", len(datasets), page, page_size)
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while listing datasets: %s", exc)
+            logger.exception("NeMo microservices error while listing datasets")
 
             # Handle 401 Unauthorized gracefully
             if "401" in str(exc) or "Unauthorized" in str(exc):
@@ -202,12 +243,15 @@ class RealNeMoMicroservicesService:
 
             msg = f"NeMo microservices error while listing datasets: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to list datasets")
-            raise
+            msg = f"Failed to list datasets: {e}"
+            raise ValueError(msg) from e
+        else:
+            return response
 
     async def create_dataset(
-        self, name: str, description: str | None = None, dataset_type: str = "fileset", namespace: str = "default"
+        self, name: str, description: str | None = None, _dataset_type: str = "fileset", namespace: str = "default"
     ) -> dict[str, Any]:
         """Create a new dataset in NeMo Entity Store."""
         try:
@@ -228,16 +272,18 @@ class RealNeMoMicroservicesService:
             result = dataset_response.model_dump()
             result = self._serialize_datetime_objects(result)
 
-            logger.info(f"Created dataset {name} in namespace {namespace}")
-            return result
+            logger.info("Created dataset %s in namespace %s", name, namespace)
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while creating dataset: %s", exc)
+            logger.exception("NeMo microservices error while creating dataset")
             msg = f"NeMo microservices error while creating dataset: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to create dataset")
-            raise
+            msg = f"Failed to create dataset: {e}"
+            raise ValueError(msg) from e
+        else:
+            return result
 
     async def create_dataset_with_namespace(
         self, name: str, namespace: str, description: str | None = None, dataset_type: str = "fileset"
@@ -279,7 +325,7 @@ class RealNeMoMicroservicesService:
             repo_type = "dataset"
             hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
 
-            logger.info(f"Created HuggingFace repo: {repo_id}")
+            logger.info("Created HuggingFace repo: %s", repo_id)
 
             # Register dataset in entity registry using SDK
             file_url = f"hf://datasets/{repo_id}"
@@ -300,10 +346,10 @@ class RealNeMoMicroservicesService:
             result = dataset_response.model_dump()
             result = self._serialize_datetime_objects(result)
 
-            logger.info(f"Successfully registered dataset {name} in entity registry using SDK")
+            logger.info("Successfully registered dataset %s in entity registry using SDK", name)
 
-            # Return structured response
-            return {
+            # Prepare structured response
+            response_data = {
                 "name": name,
                 "namespace": namespace,
                 "description": description_text,
@@ -316,12 +362,15 @@ class RealNeMoMicroservicesService:
             }
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while creating dataset: %s", exc)
+            logger.exception("NeMo microservices error while creating dataset")
             msg = f"NeMo microservices error while creating dataset: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to create dataset with namespace")
-            raise
+            msg = f"Failed to create dataset with namespace: {e}"
+            raise ValueError(msg) from e
+        else:
+            return response_data
 
     async def create_namespace(self, namespace: str):
         """Create namespace in entity-store with authentication."""
@@ -331,7 +380,7 @@ class RealNeMoMicroservicesService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(f"{url}/{namespace}", headers=self._get_auth_headers())
                 if response.status_code == codes.NOT_FOUND:
-                    logger.info(f"Namespace not found, creating namespace: {namespace}")
+                    logger.info("Namespace not found, creating namespace: %s", namespace)
                     create_payload = {"namespace": namespace}
                     create_response = await client.post(url, json=create_payload, headers=self._get_auth_headers())
                     create_response.raise_for_status()
@@ -339,7 +388,7 @@ class RealNeMoMicroservicesService:
                     response.raise_for_status()
 
         except httpx.HTTPStatusError as e:
-            logger.exception(f"Error processing namespace: {e}")
+            logger.exception("Error processing namespace")
             msg = f"Error processing namespace: {e}"
             raise ValueError(msg) from e
 
@@ -351,7 +400,7 @@ class RealNeMoMicroservicesService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(f"{url}/{namespace}", headers=self._get_auth_headers())
                 if response.status_code == codes.NOT_FOUND:
-                    logger.info(f"Datastore namespace not found, creating namespace: {namespace}")
+                    logger.info("Datastore namespace not found, creating namespace: %s", namespace)
                     create_payload = {"namespace": namespace}
                     create_response = await client.post(url, json=create_payload, headers=self._get_auth_headers())
                     create_response.raise_for_status()
@@ -359,7 +408,7 @@ class RealNeMoMicroservicesService:
                     response.raise_for_status()
 
         except httpx.HTTPStatusError as e:
-            logger.exception(f"Error processing datastore namespace: {e}")
+            logger.exception("Error processing datastore namespace")
             msg = f"Error processing datastore namespace: {e}"
             raise ValueError(msg) from e
 
@@ -387,24 +436,26 @@ class RealNeMoMicroservicesService:
             dataset_dict = dataset.model_dump()
             dataset_dict = self._serialize_datetime_objects(dataset_dict)
 
-            logger.info(f"Retrieved dataset {dataset_name} from namespace {ns}")
-            return dataset_dict
+            logger.info("Retrieved dataset %s from namespace %s", dataset_name, ns)
 
         except NeMoMicroservicesError as exc:
             # Check if it's a 404 (not found) error
             if "404" in str(exc) or "not found" in str(exc).lower():
-                logger.info(f"Dataset {dataset_name} not found in namespace {ns}")
+                logger.info("Dataset %s not found in namespace %s", dataset_name, ns)
                 return None
             # Handle 401 Unauthorized gracefully
             if "401" in str(exc) or "Unauthorized" in str(exc):
                 logger.warning("Authentication failed for NeMo microservices - cannot get dataset")
                 return None
-            logger.exception("NeMo microservices error while getting dataset: %s", exc)
+            logger.exception("NeMo microservices error while getting dataset")
             msg = f"NeMo microservices error while getting dataset: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to get dataset")
-            raise
+            msg = f"Failed to get dataset: {e}"
+            raise ValueError(msg) from e
+        else:
+            return dataset_dict
 
     async def delete_dataset(self, dataset_name: str, namespace: str | None = None) -> bool:
         """Delete a dataset from NeMo Entity Store.
@@ -427,20 +478,22 @@ class RealNeMoMicroservicesService:
             )
 
             # SDK returns DeleteResponse object, check if successful
-            logger.info(f"Deleted dataset {dataset_name} from namespace {ns}")
-            return True
+            logger.info("Deleted dataset %s from namespace %s", dataset_name, ns)
 
         except NeMoMicroservicesError as exc:
             # Check if it's a 404 (not found) error
             if "404" in str(exc) or "not found" in str(exc).lower():
-                logger.info(f"Dataset {dataset_name} not found in namespace {ns} for deletion")
+                logger.info("Dataset %s not found in namespace %s for deletion", dataset_name, ns)
                 return False
-            logger.exception("NeMo microservices error while deleting dataset: %s", exc)
+            logger.exception("NeMo microservices error while deleting dataset")
             msg = f"NeMo microservices error while deleting dataset: {exc}"
             raise ValueError(msg) from exc
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to delete dataset")
-            raise
+            msg = f"Failed to delete dataset: {e}"
+            raise ValueError(msg) from e
+        else:
+            return True
 
     async def upload_files(self, dataset_id: str, files: list[UploadFile]) -> dict[str, Any]:
         """Upload files to a NeMo dataset."""
@@ -456,10 +509,13 @@ class RealNeMoMicroservicesService:
                     headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {},
                 )
                 response.raise_for_status()
-                return response.json()
-        except Exception:
+                response_data = response.json()
+        except (httpx.HTTPError, OSError, ValueError) as e:
             logger.exception("Failed to upload files")
-            raise
+            msg = f"Failed to upload files: {e}"
+            raise ValueError(msg) from e
+        else:
+            return response_data
 
     async def upload_dataset_files_with_path(
         self, dataset_name: str, path: str, namespace: str, files: list[UploadFile]
@@ -494,7 +550,7 @@ class RealNeMoMicroservicesService:
             # Ensure repo exists
             try:
                 hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
-            except Exception as e:
+            except (ValueError, RuntimeError, OSError) as e:
                 logger.warning("Failed to create/verify repo %s: %s", repo_id, e)
 
             uploaded_files = []
@@ -539,7 +595,7 @@ class RealNeMoMicroservicesService:
                 finally:
                     file_obj.close()
 
-            return {
+            result_data = {
                 "message": f"Successfully uploaded {len(uploaded_files)} file(s) to {path}/",
                 "dataset_name": dataset_name,
                 "namespace": namespace,
@@ -551,6 +607,8 @@ class RealNeMoMicroservicesService:
         except Exception:
             logger.exception("Failed to upload files with path")
             raise
+        else:
+            return result_data
 
     async def get_dataset_files(self, dataset_id: str) -> list[dict[str, Any]]:
         """Get list of files in a NeMo dataset."""
@@ -560,10 +618,12 @@ class RealNeMoMicroservicesService:
                     f"{self.base_url}/v1/datasets/{dataset_id}/files", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
-                return response.json().get("data", [])
+                response_data = response.json().get("data", [])
         except Exception:
             logger.exception("Failed to get dataset files")
             raise
+        else:
+            return response_data
 
     # =============================================================================
     # Job Management (Customizer)
@@ -577,10 +637,12 @@ class RealNeMoMicroservicesService:
                     f"{self.base_url}/v1/customization/configs", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
-                return response.json()
+                response_data = response.json()
         except Exception:
             logger.exception("Failed to get customization configs")
             raise
+        else:
+            return response_data
 
     async def create_customization_job(self, job_data: dict) -> dict[str, Any]:
         """Create a new customization job."""
@@ -590,10 +652,12 @@ class RealNeMoMicroservicesService:
                     f"{self.base_url}/v1/customization/jobs", json=job_data, headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
-                return response.json()
+                response_data = response.json()
         except Exception:
             logger.exception("Failed to create customization job")
             raise
+        else:
+            return response_data
 
     async def get_customizer_job_status(self, job_id: str) -> dict[str, Any] | None:
         """Get customization job status."""
@@ -603,7 +667,7 @@ class RealNeMoMicroservicesService:
                     f"{self.base_url}/v1/customization/jobs/{job_id}/status", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
-                return response.json()
+                response_data = response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == codes.NOT_FOUND:
                 return None
@@ -611,6 +675,8 @@ class RealNeMoMicroservicesService:
         except Exception:
             logger.exception("Failed to get job status")
             raise
+        else:
+            return response_data
 
     async def get_customizer_job_details(self, job_id: str) -> dict[str, Any] | None:
         """Get customization job details."""
@@ -620,7 +686,7 @@ class RealNeMoMicroservicesService:
                     f"{self.base_url}/v1/customization/jobs/{job_id}", headers=self._get_auth_headers()
                 )
                 response.raise_for_status()
-                return response.json()
+                response_data = response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == codes.NOT_FOUND:
                 return None
@@ -628,6 +694,8 @@ class RealNeMoMicroservicesService:
         except Exception:
             logger.exception("Failed to get job details")
             raise
+        else:
+            return response_data
 
     async def list_customizer_jobs(self, page: int = 1, page_size: int = 10) -> dict[str, Any]:
         """List customization jobs with pagination."""
@@ -647,7 +715,7 @@ class RealNeMoMicroservicesService:
             total_pages = (total_jobs + page_size - 1) // page_size
 
             # Return paginated response in the same format as datasets
-            return {
+            return {  # noqa: TRY300
                 "data": paginated_jobs,
                 "page": page,
                 "page_size": page_size,
@@ -673,19 +741,437 @@ class RealNeMoMicroservicesService:
                     "error": "Authentication failed. Please check your NeMo credentials.",
                 }
 
-            raise
+            msg = f"Failed to list customization jobs: {exc}"
+            raise ValueError(msg) from exc
 
     async def cancel_customization_job(self, job_id: str) -> dict[str, Any]:
-        """Cancel a customization job."""
+        """Cancel a customization job using NeMo Python SDK."""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/customization/jobs/{job_id}/cancel", headers=self._get_auth_headers()
-                )
-                response.raise_for_status()
-                return response.json()
+            # Use NeMo client for customization job cancellation
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to cancel customization job: %s", job_id)
+            # Cancel customization job using SDK
+            result = await nemo_client.customization.jobs.cancel(
+                job_id=job_id,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+
+            # Convert SDK response to dict and serialize datetime objects
+            result_dict = result.model_dump()
+            result_dict = self._serialize_datetime_objects(result_dict)
+
+            logger.info("Successfully cancelled customization job %s", job_id)
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error cancelling customization job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Customization job %s not found for cancellation", job_id)
+                return {"message": f"Customization job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot cancel customization job")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while cancelling customization job")
+            msg = f"NeMo microservices error while cancelling customization job: {exc}"
+            raise ValueError(msg) from exc
         except Exception:
-            logger.exception("Failed to cancel customization job")
+            logger.exception("Exception cancelling customization job %s", job_id)
+            raise
+        else:
+            return result_dict
+
+    async def delete_customization_job_custom(self, job_id: str) -> dict[str, Any]:
+        """Delete a customization job using cancel since customizer jobs don't support direct deletion.
+
+        Note: Customizer jobs don't have a delete endpoint, only cancel.
+        This method will always use the cancel endpoint via the NeMo SDK.
+        """
+        logger.info("Service layer: Attempting to cancel customization job %s (no delete endpoint available)", job_id)
+        try:
+            # Customizer jobs don't support deletion, only cancellation
+            # Use the cancel method directly
+            result = await self.cancel_customization_job(job_id)
+
+            # Update the message to reflect that this was a cancellation, not deletion
+            if isinstance(result, dict) and "message" not in result:
+                result["message"] = (
+                    f"Customization job {job_id} cancelled successfully (jobs cannot be deleted, only cancelled)"
+                )
+
+            logger.info("Successfully cancelled customization job %s", job_id)
+
+        except Exception:
+            logger.exception("Exception cancelling customization job %s", job_id)
+            raise
+        else:
+            return result
+
+    async def get_customization_job_container_logs(self, job_id: str) -> dict[str, Any]:
+        """Get container logs for a customization job using NeMo Python SDK."""
+        try:
+            # Use NeMo client for customization job logs
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to get container logs for customization job: %s", job_id)
+            # Get customization job logs using SDK
+            try:
+                result = await nemo_client.customization.jobs.logs(
+                    job_id=job_id,
+                    extra_headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+
+                # Convert SDK response to dict and serialize datetime objects
+                if hasattr(result, "model_dump"):
+                    result_dict = result.model_dump()
+                    return self._serialize_datetime_objects(result_dict)
+                else:  # noqa: RET505
+                    # If SDK returns raw data, return as is
+                    return result
+
+            except AttributeError:
+                # Fallback to direct HTTP call if SDK doesn't support logs method
+                logger.info("SDK doesn't support logs method, falling back to HTTP call")
+                logs_url = f"{self.base_url}/v1/customization/jobs/{job_id}/container-logs"
+                logger.info("Getting container logs from: %s", logs_url)
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(logs_url, headers=self._get_auth_headers())
+                    response.raise_for_status()
+                    try:
+                        return response.json()
+                    except (UnicodeDecodeError, ValueError):
+                        # Handle binary or non-JSON response
+                        content = response.content.decode("utf-8", errors="replace") if response.content else ""
+                        return {"logs": content}
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error getting container logs for job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Customization job %s not found for logs", job_id)
+                return {"message": f"Customization job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot get customization job logs")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while getting customization job logs")
+            msg = f"NeMo microservices error while getting customization job logs: {exc}"
+            raise ValueError(msg) from exc
+        except httpx.HTTPStatusError as e:
+            logger.exception(
+                "HTTP error getting container logs for job %s: %s - %s", job_id, e.response.status_code, e.response.text
+            )
+            raise
+        except Exception:
+            logger.exception("Exception getting container logs for job %s", job_id)
+            raise
+
+    async def get_evaluation_job_logs(self, job_id: str) -> dict[str, Any]:
+        """Get logs for an evaluation job using NeMo Python SDK."""
+        try:
+            # Use NeMo client for evaluation job logs
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to get logs for evaluation job: %s", job_id)
+            # Get evaluation job logs using SDK
+            try:
+                result = await nemo_client.evaluation.jobs.logs(
+                    job_id=job_id,
+                    extra_headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+
+                # Convert SDK response to dict and serialize datetime objects
+                if hasattr(result, "model_dump"):
+                    result_dict = result.model_dump()
+                    return self._serialize_datetime_objects(result_dict)
+                else:  # noqa: RET505
+                    # If SDK returns raw data, return as is
+                    return result
+
+            except AttributeError:
+                # Fallback to direct HTTP call if SDK doesn't support logs method
+                logger.info("SDK doesn't support logs method, falling back to HTTP call")
+                logs_url = f"{self.base_url}/v1/evaluation/jobs/{job_id}/logs"
+                logger.info("Getting evaluation logs from: %s", logs_url)
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(logs_url, headers=self._get_auth_headers())
+                    response.raise_for_status()
+                    try:
+                        return response.json()
+                    except (UnicodeDecodeError, ValueError):
+                        # Handle binary or non-JSON response
+                        content = response.content.decode("utf-8", errors="replace") if response.content else ""
+                        return {"logs": content}
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error getting evaluation logs for job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Evaluation job %s not found for logs", job_id)
+                return {"message": f"Evaluation job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot get evaluation job logs")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while getting evaluation job logs")
+            msg = f"NeMo microservices error while getting evaluation job logs: {exc}"
+            raise ValueError(msg) from exc
+        except httpx.HTTPStatusError as e:
+            logger.exception(
+                "HTTP error getting evaluation logs for job %s: %s - %s",
+                job_id,
+                e.response.status_code,
+                e.response.text,
+            )
+            raise
+        except Exception:
+            logger.exception("Exception getting evaluation logs for job %s", job_id)
+            raise
+
+    async def get_evaluation_job_results(self, job_id: str) -> dict[str, Any]:
+        """Get results for a completed evaluation job using NeMo Python SDK."""
+        try:
+            # Use NeMo client for evaluation job results
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to get results for evaluation job: %s", job_id)
+            # Get evaluation job results using SDK
+            try:
+                result = await nemo_client.evaluation.jobs.results(
+                    job_id=job_id,
+                    extra_headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+
+                # Convert SDK response to dict and serialize datetime objects
+                if hasattr(result, "model_dump"):
+                    result_dict = result.model_dump()
+                    return self._serialize_datetime_objects(result_dict)
+                else:  # noqa: RET505
+                    # If SDK returns raw data, return as is
+                    return result
+
+            except AttributeError:
+                # Fallback to direct HTTP call if SDK doesn't support results method
+                logger.info("SDK doesn't support results method, falling back to HTTP call")
+                results_url = f"{self.base_url}/v1/evaluation/jobs/{job_id}/results"
+                logger.info("Getting evaluation results from: %s", results_url)
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(results_url, headers=self._get_auth_headers())
+                    response.raise_for_status()
+                    return response.json()
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error getting evaluation results for job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Evaluation job %s not found for results", job_id)
+                return {"message": f"Evaluation job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot get evaluation job results")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while getting evaluation job results")
+            msg = f"NeMo microservices error while getting evaluation job results: {exc}"
+            raise ValueError(msg) from exc
+        except httpx.HTTPStatusError as e:
+            logger.exception(
+                "HTTP error getting evaluation results for job %s: %s - %s",
+                job_id,
+                e.response.status_code,
+                e.response.text,
+            )
+            raise
+        except Exception:
+            logger.exception("Exception getting evaluation results for job %s", job_id)
+            raise
+
+    async def download_evaluation_job_results(self, job_id: str) -> dict[str, Any]:
+        """Download results for a completed evaluation job using NeMo Python SDK."""
+        try:
+            # Use NeMo client for evaluation job results download
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to download results for evaluation job: %s", job_id)
+            # Download evaluation job results using SDK
+            try:
+                result = await nemo_client.evaluation.jobs.download_results(
+                    job_id=job_id,
+                    extra_headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+
+                logger.info("Download result type: %s", type(result))
+                logger.info("Download result has model_dump: %s", hasattr(result, "model_dump"))
+                logger.info(
+                    "Download result attributes: %s", dir(result) if hasattr(result, "__dict__") else "No __dict__"
+                )
+
+                # Check if result is an HTTP response-like object
+                if hasattr(result, "http_response") and hasattr(result.http_response, "content"):
+                    logger.info("Found http_response with content, extracting content")
+                    content = result.http_response.content
+                    if isinstance(content, bytes):
+                        # Check if it's a ZIP file (starts with PK signature)
+                        if content.startswith(b"PK"):
+                            logger.info("Detected ZIP file content")
+                            import base64
+
+                            return {
+                                "content": base64.b64encode(content).decode("utf-8"),
+                                "content_type": "application/zip",
+                                "encoding": "base64",
+                                "filename": f"evaluation_results_{job_id}.zip",
+                            }
+
+                        try:
+                            # Try to decode as JSON
+                            import json
+
+                            content_str = content.decode("utf-8")
+                            return json.loads(content_str)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            # If not JSON, return as base64 encoded string
+                            import base64
+
+                            return {
+                                "content": base64.b64encode(content).decode("utf-8"),
+                                "content_type": "application/octet-stream",
+                                "encoding": "base64",
+                            }
+                    elif isinstance(content, str):
+                        try:
+                            import json
+
+                            return json.loads(content)
+                        except json.JSONDecodeError:
+                            return {"content": content, "content_type": "text"}
+                    else:
+                        return self._force_json_serializable(content)
+
+                # Check if result has response content directly
+                elif hasattr(result, "content"):
+                    logger.info("Found content attribute directly on result")
+                    content = result.content
+                    if isinstance(content, bytes):
+                        # Check if it's a ZIP file (starts with PK signature)
+                        if content.startswith(b"PK"):
+                            logger.info("Detected ZIP file content (direct access)")
+                            import base64
+
+                            return {
+                                "content": base64.b64encode(content).decode("utf-8"),
+                                "content_type": "application/zip",
+                                "encoding": "base64",
+                                "filename": f"evaluation_results_{job_id}.zip",
+                            }
+
+                        try:
+                            import json
+
+                            content_str = content.decode("utf-8")
+                            return json.loads(content_str)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            import base64
+
+                            return {
+                                "content": base64.b64encode(content).decode("utf-8"),
+                                "content_type": "application/octet-stream",
+                                "encoding": "base64",
+                            }
+                    else:
+                        return self._force_json_serializable(content)
+
+                # Convert SDK response to dict and serialize datetime objects
+                elif hasattr(result, "model_dump"):
+                    result_dict = result.model_dump()
+                    return self._serialize_datetime_objects(result_dict)
+                elif isinstance(result, dict | list | str | int | float | bool) or result is None:
+                    # If result is already a JSON-serializable type, serialize datetime objects
+                    return self._serialize_datetime_objects(result)
+                else:
+                    # Use the robust JSON serializer for complex objects
+                    logger.info("Using robust serialization for object of type: %s", type(result))
+                    # For HTTP response objects, try to extract useful information
+                    if hasattr(result, "status_code"):
+                        logger.warning(
+                            "Received HTTP response object with status %s but no accessible content", result.status_code
+                        )
+                        return {
+                            "error": "Download endpoint returned HTTP response metadata instead of file content",
+                            "status_code": getattr(result, "status_code", None),
+                            "message": "The NeMo API may not support direct file downloads through the SDK",
+                        }
+                    return self._force_json_serializable(result)
+
+            except AttributeError:
+                # Fallback to direct HTTP call if SDK doesn't support download_results method
+                logger.info("SDK doesn't support download_results method, falling back to HTTP call")
+                download_url = f"{self.base_url}/v1/evaluation/jobs/{job_id}/download-results"
+                logger.info("Downloading evaluation results from: %s", download_url)
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(download_url, headers=self._get_auth_headers())
+                    response.raise_for_status()
+
+                    # Handle different content types
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "application/json" in content_type:
+                        return response.json()
+                    if content_type.startswith(("application/", "text/")):
+                        # For binary or text files, return content with metadata
+                        content = response.content
+                        if isinstance(content, bytes):
+                            try:
+                                # Try to decode as text first
+                                content_str = content.decode("utf-8")
+                            except UnicodeDecodeError:
+                                # Return as base64 for binary content
+                                import base64
+
+                                return {
+                                    "content": base64.b64encode(content).decode("utf-8"),
+                                    "content_type": content_type,
+                                    "encoding": "base64",
+                                }
+                            else:
+                                return {"content": content_str, "content_type": content_type, "encoding": "text"}
+                        else:
+                            return {"content": str(content), "content_type": content_type}
+                    else:
+                        # Default to JSON parsing
+                        return response.json()
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error downloading evaluation results for job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Evaluation job %s not found for download", job_id)
+                return {"message": f"Evaluation job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot download evaluation job results")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while downloading evaluation job results")
+            msg = f"NeMo microservices error while downloading evaluation job results: {exc}"
+            raise ValueError(msg) from exc
+        except httpx.HTTPStatusError as e:
+            logger.exception(
+                "HTTP error downloading evaluation results for job %s: %s - %s",
+                job_id,
+                e.response.status_code,
+                e.response.text,
+            )
+            raise
+        except Exception:
+            logger.exception("Exception downloading evaluation results for job %s", job_id)
             raise
 
     # =============================================================================
@@ -764,16 +1250,17 @@ class RealNeMoMicroservicesService:
             job_dict = job.model_dump()
             job_dict = self._serialize_datetime_objects(job_dict)
 
-            logger.info(f"Created evaluation job {job_dict.get('id')}")
-            return job_dict
+            logger.info("Created evaluation job %s", job_dict.get("id"))
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while creating evaluation job: %s", exc)
+            logger.exception("NeMo microservices error while creating evaluation job")
             msg = f"NeMo microservices error while creating evaluation job: {exc}"
             raise ValueError(msg) from exc
         except Exception:
             logger.exception("Failed to create evaluation job")
             raise
+        else:
+            return job_dict
 
     async def create_evaluation_config(self, config_data: dict) -> dict[str, Any]:
         """Create a new evaluation config using NeMo Python SDK."""
@@ -794,16 +1281,17 @@ class RealNeMoMicroservicesService:
             config_dict = config.model_dump()
             config_dict = self._serialize_datetime_objects(config_dict)
 
-            logger.info(f"Created evaluation config {config_dict.get('id')}")
-            return config_dict
+            logger.info("Created evaluation config %s", config_dict.get("id"))
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while creating evaluation config: %s", exc)
+            logger.exception("NeMo microservices error while creating evaluation config")
             msg = f"NeMo microservices error while creating evaluation config: {exc}"
             raise ValueError(msg) from exc
         except Exception:
             logger.exception("Failed to create evaluation config")
             raise
+        else:
+            return config_dict
 
     async def create_evaluation_target(self, target_data: dict) -> dict[str, Any]:
         """Create a new evaluation target using NeMo Python SDK."""
@@ -823,16 +1311,17 @@ class RealNeMoMicroservicesService:
             target_dict = target.model_dump()
             target_dict = self._serialize_datetime_objects(target_dict)
 
-            logger.info(f"Created evaluation target {target_dict.get('id')}")
-            return target_dict
+            logger.info("Created evaluation target %s", target_dict.get("id"))
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while creating evaluation target: %s", exc)
+            logger.exception("NeMo microservices error while creating evaluation target")
             msg = f"NeMo microservices error while creating evaluation target: {exc}"
             raise ValueError(msg) from exc
         except Exception:
             logger.exception("Failed to create evaluation target")
             raise
+        else:
+            return target_dict
 
     async def get_evaluation_job(self, job_id: str) -> dict[str, Any] | None:
         """Get evaluation job details using NeMo Python SDK."""
@@ -850,62 +1339,154 @@ class RealNeMoMicroservicesService:
             job_dict = job.model_dump()
             job_dict = self._serialize_datetime_objects(job_dict)
 
-            logger.info(f"Retrieved evaluation job {job_id}")
-            return job_dict
+            logger.info("Retrieved evaluation job %s", job_id)
 
         except NeMoMicroservicesError as exc:
             # Check if it's a 404 (not found) error
             if "404" in str(exc) or "not found" in str(exc).lower():
-                logger.info(f"Evaluation job {job_id} not found")
+                logger.info("Evaluation job %s not found", job_id)
                 return None
             # Handle 401 Unauthorized gracefully
             if "401" in str(exc) or "Unauthorized" in str(exc):
                 logger.warning("Authentication failed for NeMo microservices - cannot get evaluation job")
                 return None
-            logger.exception("NeMo microservices error while getting evaluation job: %s", exc)
+            logger.exception("NeMo microservices error while getting evaluation job")
             msg = f"NeMo microservices error while getting evaluation job: {exc}"
             raise ValueError(msg) from exc
         except Exception:
             logger.exception("Failed to get evaluation job")
             raise
+        else:
+            return job_dict
 
     async def list_evaluation_jobs(
         self, page: int = 1, page_size: int = 10, namespace: str | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """List evaluation jobs using NeMo Python SDK."""
         logger.info(
-            f"Starting list_evaluation_jobs with params: page={page}, page_size={page_size}, namespace={namespace}"
+            "Starting list_evaluation_jobs with params: page=%s, page_size=%s, namespace=%s", page, page_size, namespace
         )
 
         try:
             # Use NeMo client for evaluation jobs
             nemo_client = self.get_nemo_client()
-            logger.info(f"Created NeMo client with base_url={self.base_url}")
+            logger.info("Created NeMo client with base_url=%s", self.base_url)
 
-            # Build headers for SDK call
+            # Build headers for SDK call with authentication
             headers = {"Authorization": f"Bearer {self.api_key}"}
 
             # Add namespace to headers if provided
             if namespace:
-                # Try multiple possible header formats for namespace
                 headers["X-Namespace"] = namespace
                 headers["X-NeMo-Namespace"] = namespace
-                logger.info(f"Using namespace filter in headers: {namespace}")
+                logger.info("Using namespace filter in headers: %s", namespace)
             else:
                 logger.info("No namespace filter provided")
 
-            logger.info(f"Calling SDK evaluation.jobs.list with headers: {headers}")
+            # Debug logging to check auth token
+            api_key_preview_length = 10
+            api_key_preview = (
+                f"{self.api_key[:api_key_preview_length]}..."
+                if self.api_key and len(self.api_key) > api_key_preview_length
+                else "None"
+            )
+            logger.info("Calling SDK evaluation.jobs.list with auth token: %s", api_key_preview)
+            logger.info("Headers being sent to SDK: %s", list(headers.keys()))
 
-            # Get evaluation jobs using SDK (try minimal parameters first)
+            # Get evaluation jobs using SDK with proper auth headers
             try:
-                # First try with just headers
+                # Pass authentication headers to SDK
                 response = await nemo_client.evaluation.jobs.list(extra_headers=headers)
-                logger.info("SDK call successful with basic headers")
+                logger.info("SDK call successful")
             except Exception as e:
-                logger.error(f"SDK call failed even with minimal parameters: {e}")
-                # If SDK fails, return empty list gracefully
-                return []
-            logger.info(f"SDK returned response with {len(response.data) if response.data else 0} jobs")
+                logger.exception("SDK call failed with error")
+                # Fallback to direct HTTP call if SDK fails
+                logger.info("Falling back to direct HTTP call for evaluation jobs")
+                try:
+                    jobs_url = f"{self.base_url}/v1/evaluation/jobs"
+                    logger.info("Getting evaluation jobs from: %s", jobs_url)
+
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.get(jobs_url, headers=self._get_auth_headers())
+                        response.raise_for_status()
+                        response_data = response.json()
+
+                        # Handle different response formats from direct API
+                        if isinstance(response_data, dict) and "data" in response_data:
+                            all_jobs_raw = response_data["data"]
+                        elif isinstance(response_data, list):
+                            all_jobs_raw = response_data
+                        else:
+                            all_jobs_raw = []
+
+                        # Convert to consistent format
+                        all_jobs = []
+                        for job in all_jobs_raw:
+                            if isinstance(job, dict):
+                                # Apply datetime serialization
+                                job_dict = self._serialize_datetime_objects(job)
+
+                                # Filter by namespace if provided
+                                if namespace and job_dict.get("namespace") != namespace:
+                                    continue
+
+                                all_jobs.append(job_dict)
+
+                        # Apply client-side pagination
+                        total_jobs = len(all_jobs)
+                        start_index = (page - 1) * page_size
+                        end_index = start_index + page_size
+                        paginated_jobs = all_jobs[start_index:end_index]
+
+                        # Calculate pagination metadata
+                        total_pages = (total_jobs + page_size - 1) // page_size if total_jobs > 0 else 1
+
+                        # Return paginated response
+                        result = {
+                            "data": paginated_jobs,
+                            "page": page,
+                            "page_size": page_size,
+                            "total": total_jobs,
+                            "total_pages": total_pages,
+                            "has_next": page < total_pages,
+                            "has_prev": page > 1,
+                        }
+
+                        logger.info(
+                            "HTTP fallback: Successfully retrieved %s total evaluation jobs, returning %s for page %s",
+                            len(all_jobs),
+                            len(paginated_jobs),
+                            page,
+                        )
+                        return result
+
+                except httpx.HTTPStatusError as http_e:
+                    logger.exception(
+                        "HTTP fallback also failed: %s - %s", http_e.response.status_code, http_e.response.text
+                    )
+                    return {
+                        "data": [],
+                        "page": page,
+                        "page_size": page_size,
+                        "total": 0,
+                        "total_pages": 0,
+                        "has_next": False,
+                        "has_prev": False,
+                        "error": f"Both SDK and HTTP calls failed. SDK: {e}, HTTP: {http_e}",
+                    }
+                except Exception as http_e:
+                    logger.exception("HTTP fallback failed with exception")
+                    return {
+                        "data": [],
+                        "page": page,
+                        "page_size": page_size,
+                        "total": 0,
+                        "total_pages": 0,
+                        "has_next": False,
+                        "has_prev": False,
+                        "error": f"Both SDK and HTTP calls failed. SDK: {e}, HTTP: {http_e}",
+                    }
+            logger.info("SDK returned response with %s jobs", len(response.data) if response.data else 0)
 
             # Convert SDK response to list format for frontend
             all_jobs = []
@@ -916,12 +1497,14 @@ class RealNeMoMicroservicesService:
 
                 # Filter by namespace if provided (client-side filtering)
                 if namespace and job_dict.get("namespace") != namespace:
-                    logger.debug(f"Skipping job {job_dict.get('id', 'unknown')} - namespace mismatch")
+                    logger.debug("Skipping job %s - namespace mismatch", job_dict.get("id", "unknown"))
                     continue
 
                 all_jobs.append(job_dict)
                 logger.debug(
-                    f"Processed job: {job_dict.get('id', 'unknown')} with status: {job_dict.get('status', 'unknown')}"
+                    "Processed job: %s with status: %s",
+                    job_dict.get("id", "unknown"),
+                    job_dict.get("status", "unknown"),
                 )
 
             # Apply client-side pagination since SDK might not support it
@@ -929,24 +1512,91 @@ class RealNeMoMicroservicesService:
             end_index = start_index + page_size
             paginated_jobs = all_jobs[start_index:end_index]
 
+            # Calculate pagination metadata
+            total_jobs = len(all_jobs)
+            total_pages = (total_jobs + page_size - 1) // page_size if total_jobs > 0 else 1
+
+            # Return paginated response in the same format as customizer jobs
+            result = {
+                "data": paginated_jobs,
+                "page": page,
+                "page_size": page_size,
+                "total": total_jobs,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            }
+
             logger.info(
-                f"Successfully retrieved {len(all_jobs)} total evaluation jobs, returning {len(paginated_jobs)} for page {page} (namespace={namespace})"
+                "Successfully retrieved %s total evaluation jobs, returning %s for page %s (namespace=%s)",
+                len(all_jobs),
+                len(paginated_jobs),
+                page,
+                namespace,
             )
-            return paginated_jobs
 
         except NeMoMicroservicesError as exc:
-            logger.exception("NeMo microservices error while listing evaluation jobs: %s", exc)
+            logger.exception("NeMo microservices error while listing evaluation jobs")
 
             # Handle 401 Unauthorized gracefully
             if "401" in str(exc) or "Unauthorized" in str(exc):
                 logger.warning("Authentication failed for NeMo microservices - returning empty jobs list")
-                return []
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials.",
+                }
 
             msg = f"NeMo microservices error while listing evaluation jobs: {exc}"
             raise ValueError(msg) from exc
-        except Exception as e:
-            logger.exception("Failed to list evaluation jobs: %s", e)
+        except Exception:
+            logger.exception("Failed to list evaluation jobs")
             raise
+        else:
+            return result
+
+    async def delete_evaluation_job(self, job_id: str) -> dict[str, Any]:
+        """Delete an evaluation job using NeMo Python SDK."""
+        logger.info("Service layer: Attempting to delete evaluation job %s", job_id)
+        try:
+            # Use NeMo client for evaluation job deletion
+            nemo_client = self.get_nemo_client()
+
+            logger.info("Using NeMo SDK to delete evaluation job: %s", job_id)
+            # Delete evaluation job using SDK
+            result = await nemo_client.evaluation.jobs.delete(
+                job_id=job_id,
+                extra_headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+
+            logger.info("SDK delete result for evaluation job %s: %s", job_id, result)
+            logger.info("Successfully deleted evaluation job %s", job_id)
+            delete_result = {"message": f"Evaluation job {job_id} deleted successfully"}
+
+        except NeMoMicroservicesError as exc:
+            logger.exception("NeMo SDK error deleting evaluation job %s", job_id)
+            # Check if it's a 404 (not found) error
+            if "404" in str(exc) or "not found" in str(exc).lower():
+                logger.info("Evaluation job %s not found for deletion", job_id)
+                return {"message": f"Evaluation job {job_id} not found"}
+            # Handle 401 Unauthorized gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - cannot delete evaluation job")
+                msg = f"Authentication failed for NeMo microservices: {exc}"
+                raise ValueError(msg) from exc
+            logger.exception("NeMo microservices error while deleting evaluation job")
+            msg = f"NeMo microservices error while deleting evaluation job: {exc}"
+            raise ValueError(msg) from exc
+        except Exception:
+            logger.exception("Exception deleting evaluation job %s", job_id)
+            raise
+        else:
+            return delete_result
 
     async def get_dataset_details(self, dataset_name: str, namespace: str | None = None) -> dict[str, Any]:
         """Get detailed dataset information including files from HuggingFace API.
@@ -968,10 +1618,12 @@ class RealNeMoMicroservicesService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url, headers=self._get_auth_headers())
                 response.raise_for_status()
-                return response.json()
+                response_data = response.json()
         except Exception:
             logger.exception("Failed to get dataset details")
             raise
+        else:
+            return response_data
 
     def cleanup(self):
         """Cleanup resources."""

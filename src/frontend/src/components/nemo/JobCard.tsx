@@ -14,13 +14,24 @@ import {
   Calendar,
   Database,
   Cpu,
-  Settings
+  Settings,
+  Trash2,
+  Square,
+  FileText,
+  BarChart3,
+  Download
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface JobCardProps {
   job: TrackedJob;
+  jobType: 'customizer' | 'evaluator'; // New prop to determine job type
   onViewDetails?: (jobId: string) => void;
+  onDelete?: (jobId: string) => void;
+  onCancel?: (jobId: string) => void;
+  onViewLogs?: (jobId: string) => void;
+  onViewResults?: (jobId: string) => void;
+  onDownloadResults?: (jobId: string) => void;
 }
 
 const getStatusIcon = (status: NeMoJobStatus) => {
@@ -66,7 +77,16 @@ const getProgressColor = (status: NeMoJobStatus): string => {
   }
 };
 
-const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
+const JobCard: React.FC<JobCardProps> = ({
+  job,
+  jobType,
+  onViewDetails,
+  onDelete,
+  onCancel,
+  onViewLogs,
+  onViewResults,
+  onDownloadResults
+}) => {
   const formattedCreatedAt = formatDistanceToNow(new Date(job.created_at), { addSuffix: true });
   const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), { addSuffix: true });
 
@@ -167,11 +187,11 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
         </div>
 
         {/* Actions */}
-        <div className="pt-2">
+        <div className="pt-2 flex gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
-            className="w-full"
+            className="flex-1"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -183,6 +203,125 @@ const JobCard: React.FC<JobCardProps> = ({ job, onViewDetails }) => {
             <Eye className="h-4 w-4 mr-2" />
             View Details
           </Button>
+
+          {/* Customizer job actions */}
+          {jobType === 'customizer' && (
+            <>
+              {/* Cancel/Stop button for non-completed jobs */}
+              {job.status !== 'completed' && onCancel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (confirm(`Are you sure you want to cancel job ${job.job_id.slice(-8)}?`)) {
+                      onCancel(job.job_id);
+                    }
+                  }}
+                >
+                  <Square className="h-4 w-4 mr-1" />
+                  Stop
+                </Button>
+              )}
+
+              {/* Logs button for all customizer jobs */}
+              {onViewLogs && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onViewLogs(job.job_id);
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-1" />
+                  Logs
+                </Button>
+              )}
+            </>
+          )}
+
+          {/* Evaluator job actions */}
+          {jobType === 'evaluator' && (
+            <>
+              {/* Delete button for evaluator jobs */}
+              {onDelete && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (confirm(`Are you sure you want to delete job ${job.job_id.slice(-8)}?`)) {
+                      onDelete(job.job_id);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              )}
+
+              {/* Logs button for all evaluator jobs */}
+              {onViewLogs && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onViewLogs(job.job_id);
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-1" />
+                  Logs
+                </Button>
+              )}
+
+              {/* Results and Download buttons for completed evaluator jobs */}
+              {job.status === 'completed' && (
+                <>
+                  {onViewResults && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onViewResults(job.job_id);
+                      }}
+                    >
+                      <BarChart3 className="h-4 w-4 mr-1" />
+                      Results
+                    </Button>
+                  )}
+
+                  {onDownloadResults && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDownloadResults(job.job_id);
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Download
+                    </Button>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       </CardContent>
     </Card>

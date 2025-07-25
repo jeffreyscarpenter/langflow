@@ -70,6 +70,15 @@ class NeMoApiClient {
     return response.data;
   }
 
+  async getDatasetByName(namespace: string, datasetName: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(`/nemo/datasets/${datasetName}`, {
+      headers: this.getHeaders(),
+      params: { namespace }
+    });
+    return response.data;
+  }
+
   async createDataset(data: any) {
     this.loadConfig(); // Refresh config
 
@@ -208,9 +217,19 @@ class NeMoApiClient {
   }
 
   // Customizer job operations
-  async getCustomizerJobs() {
+  async getCustomizerJobs(page: number = 1, pageSize: number = 10) {
     this.loadConfig(); // Refresh config
+    const params = { page, page_size: pageSize };
     const response = await this.client.get('/nemo/v1/customization/jobs', {
+      headers: this.getHeaders(),
+      params
+    });
+    return response.data;
+  }
+
+  async getCustomizerJob(jobId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}`, {
       headers: this.getHeaders()
     });
     return response.data;
@@ -248,11 +267,26 @@ class NeMoApiClient {
     return response.data;
   }
 
-  // Evaluator job operations
-  async getEvaluatorJobs() {
+  async deleteCustomizerJob(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get('/nemo/v1/evaluation/jobs', {
+
+    console.log('DELETE CUSTOMIZER JOB - URL:', `/nemo/v1/customization/jobs/${jobId}`);
+    console.log('DELETE CUSTOMIZER JOB - Headers:', this.getHeaders());
+
+    const response = await this.client.delete(`/nemo/v1/customization/jobs/${jobId}`, {
       headers: this.getHeaders()
+    });
+    console.log('DELETE CUSTOMIZER JOB - Response:', response.data);
+    return response.data;
+  }
+
+  // Evaluator job operations
+  async getEvaluatorJobs(page: number = 1, pageSize: number = 10) {
+    this.loadConfig(); // Refresh config
+    const params = { page, page_size: pageSize };
+    const response = await this.client.get('/nemo/v1/evaluation/jobs', {
+      headers: this.getHeaders(),
+      params
     });
     return response.data;
   }
@@ -268,6 +302,52 @@ class NeMoApiClient {
   async getEvaluatorJobStatus(jobId: string) {
     this.loadConfig(); // Refresh config
     const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/status`, {
+      headers: this.getHeaders()
+    });
+    return response.data;
+  }
+
+  async deleteEvaluatorJob(jobId: string) {
+    this.loadConfig(); // Refresh config
+
+    console.log('DELETE EVALUATOR JOB - URL:', `/nemo/v1/evaluation/jobs/${jobId}`);
+    console.log('DELETE EVALUATOR JOB - Headers:', this.getHeaders());
+
+    const response = await this.client.delete(`/nemo/v1/evaluation/jobs/${jobId}`, {
+      headers: this.getHeaders()
+    });
+    console.log('DELETE EVALUATOR JOB - Response:', response.data);
+    return response.data;
+  }
+
+  // New methods for logs, results, and downloads
+  async getCustomizerJobContainerLogs(jobId: string) {
+    this.loadConfig();
+    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}/container-logs`, {
+      headers: this.getHeaders()
+    });
+    return response.data;
+  }
+
+  async getEvaluatorJobLogs(jobId: string) {
+    this.loadConfig();
+    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/logs`, {
+      headers: this.getHeaders()
+    });
+    return response.data;
+  }
+
+  async getEvaluatorJobResults(jobId: string) {
+    this.loadConfig();
+    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/results`, {
+      headers: this.getHeaders()
+    });
+    return response.data;
+  }
+
+  async downloadEvaluatorJobResults(jobId: string) {
+    this.loadConfig();
+    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/download-results`, {
       headers: this.getHeaders()
     });
     return response.data;

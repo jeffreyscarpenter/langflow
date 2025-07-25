@@ -8,11 +8,20 @@
 export interface NeMoDataset {
   id: string;
   name: string;
+  namespace: string;
   description: string | null;
-  type: string;
+  format: string;
   created_at: string;
   updated_at: string;
-  metadata: {
+  files_url: string;
+  hf_endpoint: string | null;
+  split: string | null;
+  limit: string | null;
+  project: string;
+  custom_fields: Record<string, any>;
+  // Legacy fields for backward compatibility
+  type?: string;
+  metadata?: {
     file_count: number;
     total_size: string;
     format: string;
@@ -281,11 +290,13 @@ export interface NeMoEvaluatorJob {
   created_at: string;
   updated_at: string;
   namespace: string;
-  target: string;
-  config: string;
-  tags: string[];
+  target: any; // API returns object, not string
+  config: any; // API returns object, not string
+  tags?: string[]; // Optional since it might not be in response
   status: NeMoEvaluatorJobStatus;
   status_details: NeMoEvaluatorJobStatusDetails;
 }
 
-export type NeMoEvaluatorJobList = NeMoEvaluatorJob[];
+export interface NeMoEvaluatorJobList {
+  data: NeMoEvaluatorJob[];
+}

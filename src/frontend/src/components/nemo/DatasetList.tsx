@@ -18,6 +18,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { useGetDatasets } from "@/controllers/API/queries/nemo/use-get-datasets";
+import { useGetDatasetByName } from "@/controllers/API/queries/nemo/use-get-dataset-by-name";
 import { useDeleteDataset } from "@/controllers/API/queries/nemo/use-delete-dataset";
 import { NeMoDataset } from "@/types/nemo";
 import CreateDatasetDialog from "./CreateDatasetDialog";
@@ -34,34 +35,59 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
   const [addFilesDataset, setAddFilesDataset] = useState<NeMoDataset | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState("");
 
-  // Debounce search query
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-      setCurrentPage(1); // Reset to first page when searching
-    }, 500);
+  const handleSearch = () => {
+    setActiveSearchQuery(searchQuery.trim());
+    setCurrentPage(1); // Reset to first page when searching
+  };
 
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setActiveSearchQuery("");
+    setCurrentPage(1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
 
   const { data: response, isLoading, error, refetch } = useGetDatasets({
     page: currentPage,
     pageSize: 10,
-    datasetName: debouncedSearchQuery || undefined
+    datasetName: undefined // Remove datasetName filtering from paginated call
+  });
+
+  // Search for specific dataset by name using direct API call (only when actively searching)
+  const {
+    data: searchedDataset,
+    isLoading: isSearchLoading,
+    error: searchError
+  } = useGetDatasetByName({
+    namespace: 'default',
+    datasetName: activeSearchQuery,
+    enabled: !!activeSearchQuery // Only run when there's an active search query
   });
 
 
-  const datasets = response?.data || [];
+  // Determine which datasets to show: search result or paginated list
+  const datasets = activeSearchQuery ?
+    (searchedDataset ? [searchedDataset] : []) :
+    (response?.data || []);
+
   const pagination = {
-    page: response?.page || 1,
-    pageSize: response?.page_size || 10,
-    total: response?.total || 0,
-    hasNext: response?.has_next || false,
-    hasPrev: response?.has_prev || false
+    page: activeSearchQuery ? 1 : (response?.page || 1),
+    pageSize: activeSearchQuery ? 1 : (response?.page_size || 10),
+    total: activeSearchQuery ? (searchedDataset ? 1 : 0) : (response?.total || 0),
+    hasNext: activeSearchQuery ? false : (response?.has_next || false),
+    hasPrev: activeSearchQuery ? false : (response?.has_prev || false)
   };
   const authError = response?.error;
+  const currentLoading = activeSearchQuery ? isSearchLoading : isLoading;
+  const currentError = activeSearchQuery ? searchError : error;
+
 
   const deleteDatasetMutation = useDeleteDataset();
 
@@ -92,9 +118,6 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
     }
   };
 
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -106,7 +129,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
     });
   };
 
-  if (isLoading) {
+  if (currentLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -115,11 +138,11 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
     );
   }
 
-  if (error) {
+  if (currentError) {
     return (
       <Alert variant="destructive">
         <AlertDescription>
-          Failed to load datasets: {error.message}
+          Failed to load datasets: {currentError.message}
         </AlertDescription>
       </Alert>
     );
@@ -149,16 +172,36 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
         </Alert>
       )}
 
-      {/* Search and Filter Controls */}
+      {/* Find Dataset Controls */}
       <div className="flex items-center space-x-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-          <Input
-            placeholder="Search datasets by name..."
-            value={searchQuery}
-            onChange={handleSearch}
-            className="pl-10"
-          />
+        <div className="flex items-center space-x-2 flex-1 max-w-md">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Enter dataset name to find..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="pl-10"
+            />
+          </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleSearch}
+            disabled={!searchQuery.trim() || currentLoading}
+          >
+            Find
+          </Button>
+          {activeSearchQuery && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearSearch}
+            >
+              Clear
+            </Button>
+          )}
         </div>
         <div className="text-sm text-muted-foreground">
           {pagination.total > 0 && (
@@ -228,6 +271,17 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
             </Card>
           ))}
         </div>
+      ) : debouncedSearchQuery ? (
+        <Card className="p-8 text-center">
+          <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Dataset not found</h3>
+          <p className="text-muted-foreground mb-4">
+            No dataset named "{activeSearchQuery}" found in the "default" namespace.
+          </p>
+          <Button variant="outline" onClick={handleClearSearch}>
+            Clear search
+          </Button>
+        </Card>
       ) : (
         <Card className="p-8 text-center">
           <Database className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -256,7 +310,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
               variant="outline"
               size="sm"
               onClick={handlePrevPage}
-              disabled={!pagination.hasPrev || isLoading}
+              disabled={!pagination.hasPrev || currentLoading}
               className="flex items-center space-x-1"
               type="button"
             >
@@ -267,7 +321,7 @@ const DatasetList: React.FC<DatasetListProps> = ({ onDatasetSelect }) => {
               variant="outline"
               size="sm"
               onClick={handleNextPage}
-              disabled={!pagination.hasNext || isLoading}
+              disabled={!pagination.hasNext || currentLoading}
               className="flex items-center space-x-1"
               type="button"
             >
