@@ -1,4 +1,6 @@
 import json
+import asyncio
+import time
 
 import httpx
 from loguru import logger
@@ -7,6 +9,7 @@ from nemo_microservices import AsyncNeMoMicroservices, NeMoMicroservicesError
 from langflow.custom import Component
 from langflow.field_typing.range_spec import RangeSpec
 from langflow.io import (
+    BoolInput,
     DropdownInput,
     FloatInput,
     HandleInput,
@@ -219,6 +222,22 @@ class NvidiaEvaluatorComponent(Component):
             options=[],
             refresh_button=True,
             required=False,
+        ),
+        BoolInput(
+            name="wait_for_completion",
+            display_name="Wait for Job Completion",
+            info="If True, the component will wait for the job to complete before returning.",
+            required=False,
+            value=True,
+            advanced=True,
+        ),
+        IntInput(
+            name="max_wait_time_minutes",
+            display_name="Maximum Wait Time (minutes)",
+            info="Maximum time in minutes to wait for job completion. Only applicable if wait_for_completion is True.",
+            required=False,
+            value=30,
+            advanced=True,
         ),
     ]
 
@@ -654,6 +673,43 @@ class NvidiaEvaluatorComponent(Component):
             msg = f"Received successful evaluation response: {formatted_result}"
             self.log(msg)
 
+            # Extract job ID for wait-for-completion logic
+            id_value = result_dict["id"]
+            self.log(f"Evaluation job created successfully with ID: {id_value}")
+
+            # Check if we should wait for job completion
+            wait_for_completion = getattr(self, "wait_for_completion", False)
+            logger.info("Wait for completion setting: %s", wait_for_completion)
+            if wait_for_completion:
+                logger.info("Wait for completion enabled. Waiting for evaluation job %s to complete...", id_value)
+                try:
+                    max_wait_time = getattr(self, "max_wait_time_minutes", 30)
+                    logger.info("Starting wait_for_job_completion with max_wait_time: %s", max_wait_time)
+                    # Wait for job completion
+                    final_job_result = await self.wait_for_job_completion(
+                        job_id=id_value, max_wait_time_minutes=max_wait_time
+                    )
+                    # Update result_dict with final job status
+                    result_dict.update(final_job_result)
+                    logger.info("Evaluation job %s completed successfully!", id_value)
+                    self.log(f"Evaluation job {id_value} completed successfully!")
+                except TimeoutError as exc:
+                    logger.warning("Evaluation job %s did not complete within timeout: %s", id_value, exc)
+                    self.log(f"Evaluation job {id_value} did not complete within {max_wait_time} minutes timeout")
+                    # Continue with the original result (job created but not completed)
+                except ValueError as exc:
+                    logger.exception("Evaluation job %s failed", id_value)
+                    self.log(f"Evaluation job {id_value} failed: {exc}")
+                    # Re-raise the ValueError to indicate job failure
+                    error_msg = f"Evaluation job {id_value} failed: {exc}"
+                    raise ValueError(error_msg) from exc
+                except (asyncio.CancelledError, RuntimeError, OSError):
+                    logger.exception("Unexpected error while waiting for evaluation job completion")
+                    self.log(f"Unexpected error while waiting for evaluation job {id_value} completion")
+                    # Continue with the original result
+            else:
+                logger.info("Wait for completion disabled. Evaluation job %s created successfully.", id_value)
+
             return Data(data=result_dict)
 
         except NeMoMicroservicesError as exc:
@@ -959,3 +1015,55 @@ class NvidiaEvaluatorComponent(Component):
             if hasattr(self, "log"):
                 self.log(f"Unexpected error while fetching datasets: {exc}")
             return []
+
+    async def wait_for_job_completion(
+        self, job_id: str, max_wait_time_minutes: int = 30, poll_interval_seconds: int = 15
+    ) -> dict:
+        """Wait for evaluation job completion with timeout."""
+        start_time = time.time()
+        max_wait_time_seconds = max_wait_time_minutes * 60
+
+        while True:
+            # Check if we've exceeded the maximum wait time
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_wait_time_seconds:
+                timeout_msg = f"Evaluation job {job_id} did not complete within {max_wait_time_minutes} minutes"
+                logger.warning(timeout_msg)
+                raise TimeoutError(timeout_msg)
+
+            try:
+                # Get job status using NeMo SDK - use the status() method
+                nemo_client = self.get_nemo_client()
+                response = await nemo_client.evaluation.jobs.status(
+                    job_id=job_id, extra_headers=self.get_auth_headers()
+                )
+                job_status = response.model_dump()
+
+                # Check job status using the correct uppercase values
+                status = job_status.get("status", "UNKNOWN")
+                logger.info("Evaluation job %s status: %s", job_id, status)
+
+                if status == "COMPLETED":
+                    logger.info("Evaluation job %s completed successfully!", job_id)
+                    return job_status
+                if status == "FAILED":
+                    error_msg = f"Evaluation job {job_id} failed with status: {status}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                if status == "CANCELLED":
+                    error_msg = f"Evaluation job {job_id} was cancelled"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                if status in ["CREATED", "PENDING", "RUNNING"]:
+                    logger.info("Evaluation job %s is still %s. Waiting %s seconds...", job_id, status, poll_interval_seconds)
+                    await asyncio.sleep(poll_interval_seconds)
+                else:
+                    logger.warning("Unknown evaluation job status: %s. Waiting %s seconds...", status, poll_interval_seconds)
+                    await asyncio.sleep(poll_interval_seconds)
+
+            except NeMoMicroservicesError:
+                logger.exception("NeMo microservices error while checking evaluation job status")
+                await asyncio.sleep(poll_interval_seconds)
+            except (asyncio.CancelledError, RuntimeError, OSError):
+                logger.exception("Unexpected error while checking evaluation job status")
+                await asyncio.sleep(poll_interval_seconds)

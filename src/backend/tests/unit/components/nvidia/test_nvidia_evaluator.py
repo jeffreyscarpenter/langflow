@@ -226,6 +226,8 @@ class TestNvidiaEvaluatorErrorHandling:
         evaluator.inference_model_url = "https://test.inference.com"
         setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
         setattr(evaluator, "100_huggingface_token", "test_token")
+        # Disable wait_for_completion for this test
+        evaluator.wait_for_completion = False
 
         # Mock the NeMo client and its methods
         mock_response = Mock()
@@ -257,3 +259,273 @@ class TestNvidiaEvaluatorErrorHandling:
 
             # Verify that the customized model was used (check the logs or verify the calls)
             # The customized model should have been extracted and used in the evaluation
+            assert result.data["id"] == "test_job_id"
+            assert result.data["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_enabled(self, evaluator):
+        """Test wait-for-completion functionality when enabled."""
+        # Set up the component with wait_for_completion enabled
+        evaluator.wait_for_completion = True
+        evaluator.max_wait_time_minutes = 30
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+        evaluator.namespace = "default"
+        evaluator.inference_model_url = "https://test.com/v1/completions"
+        setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
+        setattr(evaluator, "000_llm_name", "test-model")
+        setattr(evaluator, "001_tag", "test-tag")
+        setattr(evaluator, "100_huggingface_token", "test-hf-token")
+
+        # Mock the NeMo client and responses
+        mock_response = Mock()
+        mock_response.id = "test_job_id"
+        mock_response.model_dump.return_value = {"id": "test_job_id", "status": "CREATED"}
+
+        mock_target_response = Mock()
+        mock_target_response.id = "test_target_id"
+
+        mock_config_response = Mock()
+        mock_config_response.id = "test_config_id"
+
+        # Mock status responses for polling
+        mock_status_responses = [
+            Mock(model_dump=lambda: {"status": "RUNNING", "message": "Job is running"}),
+            Mock(model_dump=lambda: {"status": "COMPLETED", "message": "Job completed successfully"}),
+        ]
+
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock the async methods
+            mock_client.evaluation.configs.create = AsyncMock(return_value=mock_config_response)
+            mock_client.evaluation.targets.create = AsyncMock(return_value=mock_target_response)
+            mock_client.evaluation.jobs.create = AsyncMock(return_value=mock_response)
+            mock_client.evaluation.jobs.status = AsyncMock(side_effect=mock_status_responses)
+
+            # Call the evaluate method
+            result = await evaluator.evaluate()
+
+            # Verify the result includes the final job status
+            assert result.data["id"] == "test_job_id"
+            assert result.data["status"] == "COMPLETED"
+            assert result.data["message"] == "Job completed successfully"
+
+            # Verify that status was polled multiple times
+            assert mock_client.evaluation.jobs.status.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_disabled(self, evaluator):
+        """Test wait-for-completion functionality when disabled."""
+        # Set up the component with wait_for_completion disabled
+        evaluator.wait_for_completion = False
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+        evaluator.namespace = "default"
+        evaluator.inference_model_url = "https://test.com/v1/completions"
+        setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
+        setattr(evaluator, "000_llm_name", "test-model")
+        setattr(evaluator, "001_tag", "test-tag")
+        setattr(evaluator, "100_huggingface_token", "test-hf-token")
+
+        # Mock the NeMo client and responses
+        mock_response = Mock()
+        mock_response.id = "test_job_id"
+        mock_response.model_dump.return_value = {"id": "test_job_id", "status": "CREATED"}
+
+        mock_target_response = Mock()
+        mock_target_response.id = "test_target_id"
+
+        mock_config_response = Mock()
+        mock_config_response.id = "test_config_id"
+
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock the async methods
+            mock_client.evaluation.configs.create = AsyncMock(return_value=mock_config_response)
+            mock_client.evaluation.targets.create = AsyncMock(return_value=mock_target_response)
+            mock_client.evaluation.jobs.create = AsyncMock(return_value=mock_response)
+
+            # Call the evaluate method
+            result = await evaluator.evaluate()
+
+            # Verify the result is returned immediately without polling
+            assert result.data["id"] == "test_job_id"
+            assert result.data["status"] == "CREATED"
+
+            # Verify that status was not polled
+            mock_client.evaluation.jobs.status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_timeout(self, evaluator):
+        """Test wait-for-completion timeout functionality."""
+        # Set up the component with a short timeout
+        evaluator.wait_for_completion = True
+        evaluator.max_wait_time_minutes = 0.01  # Very short timeout for testing
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+        evaluator.namespace = "default"
+        evaluator.inference_model_url = "https://test.com/v1/completions"
+        setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
+        setattr(evaluator, "000_llm_name", "test-model")
+        setattr(evaluator, "001_tag", "test-tag")
+        setattr(evaluator, "100_huggingface_token", "test-hf-token")
+
+        # Mock the NeMo client and responses
+        mock_response = Mock()
+        mock_response.id = "test_job_id"
+        mock_response.model_dump.return_value = {"id": "test_job_id", "status": "CREATED"}
+
+        mock_target_response = Mock()
+        mock_target_response.id = "test_target_id"
+
+        mock_config_response = Mock()
+        mock_config_response.id = "test_config_id"
+
+        # Mock status responses that keep the job running
+        mock_status_response = Mock(model_dump=lambda: {"status": "RUNNING", "message": "Job is running"})
+
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock the async methods
+            mock_client.evaluation.configs.create = AsyncMock(return_value=mock_config_response)
+            mock_client.evaluation.targets.create = AsyncMock(return_value=mock_target_response)
+            mock_client.evaluation.jobs.create = AsyncMock(return_value=mock_response)
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Call the evaluate method - should timeout
+            result = await evaluator.evaluate()
+
+            # Verify the result is returned with original status (timeout occurred)
+            assert result.data["id"] == "test_job_id"
+            assert result.data["status"] == "CREATED"
+
+            # Verify that status was polled at least once
+            assert mock_client.evaluation.jobs.status.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_job_failed(self, evaluator):
+        """Test wait-for-completion when job fails."""
+        # Set up the component
+        evaluator.wait_for_completion = True
+        evaluator.max_wait_time_minutes = 30
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+        evaluator.namespace = "default"
+        evaluator.inference_model_url = "https://test.com/v1/completions"
+        setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
+        setattr(evaluator, "000_llm_name", "test-model")
+        setattr(evaluator, "001_tag", "test-tag")
+        setattr(evaluator, "100_huggingface_token", "test-hf-token")
+
+        # Mock the NeMo client and responses
+        mock_response = Mock()
+        mock_response.id = "test_job_id"
+        mock_response.model_dump.return_value = {"id": "test_job_id", "status": "CREATED"}
+
+        mock_target_response = Mock()
+        mock_target_response.id = "test_target_id"
+
+        mock_config_response = Mock()
+        mock_config_response.id = "test_config_id"
+
+        # Mock status response indicating job failure
+        mock_status_response = Mock(model_dump=lambda: {"status": "FAILED", "message": "Job failed"})
+
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock the async methods
+            mock_client.evaluation.configs.create = AsyncMock(return_value=mock_config_response)
+            mock_client.evaluation.targets.create = AsyncMock(return_value=mock_target_response)
+            mock_client.evaluation.jobs.create = AsyncMock(return_value=mock_response)
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Call the evaluate method - should raise ValueError
+            with pytest.raises(ValueError, match="Evaluation job test_job_id failed"):
+                await evaluator.evaluate()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_job_cancelled(self, evaluator):
+        """Test wait-for-completion when job is cancelled."""
+        # Set up the component
+        evaluator.wait_for_completion = True
+        evaluator.max_wait_time_minutes = 30
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+        evaluator.namespace = "default"
+        evaluator.inference_model_url = "https://test.com/v1/completions"
+        setattr(evaluator, "002_evaluation_type", "LM Evaluation Harness")
+        setattr(evaluator, "000_llm_name", "test-model")
+        setattr(evaluator, "001_tag", "test-tag")
+        setattr(evaluator, "100_huggingface_token", "test-hf-token")
+
+        # Mock the NeMo client and responses
+        mock_response = Mock()
+        mock_response.id = "test_job_id"
+        mock_response.model_dump.return_value = {"id": "test_job_id", "status": "CREATED"}
+
+        mock_target_response = Mock()
+        mock_target_response.id = "test_target_id"
+
+        mock_config_response = Mock()
+        mock_config_response.id = "test_config_id"
+
+        # Mock status response indicating job cancellation
+        mock_status_response = Mock(model_dump=lambda: {"status": "CANCELLED", "message": "Job was cancelled"})
+
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock the async methods
+            mock_client.evaluation.configs.create = AsyncMock(return_value=mock_config_response)
+            mock_client.evaluation.targets.create = AsyncMock(return_value=mock_target_response)
+            mock_client.evaluation.jobs.create = AsyncMock(return_value=mock_response)
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Call the evaluate method - should raise ValueError
+            with pytest.raises(ValueError, match="Evaluation job test_job_id was cancelled"):
+                await evaluator.evaluate()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_job_completion_method(self, evaluator):
+        """Test the wait_for_job_completion method directly."""
+        evaluator.auth_token = "test_token"  # noqa: S105
+        evaluator.base_url = "https://test.com"
+
+        # Mock the NeMo client
+        with patch.object(evaluator, "get_nemo_client") as mock_get_client:
+            mock_client = Mock()
+            mock_get_client.return_value = mock_client
+
+            # Mock successful completion
+            mock_status_response = Mock(model_dump=lambda: {"status": "COMPLETED", "message": "Success"})
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Test successful completion
+            result = await evaluator.wait_for_job_completion("test_job_id", max_wait_time_minutes=1)
+            assert result["status"] == "COMPLETED"
+            assert result["message"] == "Success"
+
+            # Mock job failure
+            mock_status_response = Mock(model_dump=lambda: {"status": "FAILED", "message": "Job failed"})
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Test job failure
+            with pytest.raises(ValueError, match="Evaluation job test_job_id failed"):
+                await evaluator.wait_for_job_completion("test_job_id", max_wait_time_minutes=1)
+
+            # Mock job cancellation
+            mock_status_response = Mock(model_dump=lambda: {"status": "CANCELLED", "message": "Job cancelled"})
+            mock_client.evaluation.jobs.status = AsyncMock(return_value=mock_status_response)
+
+            # Test job cancellation
+            with pytest.raises(ValueError, match="Evaluation job test_job_id was cancelled"):
+                await evaluator.wait_for_job_completion("test_job_id", max_wait_time_minutes=1)
