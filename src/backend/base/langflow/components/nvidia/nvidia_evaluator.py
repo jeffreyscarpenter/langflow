@@ -73,6 +73,45 @@ class NvidiaEvaluatorComponent(Component):
             return obj.isoformat()
         return obj
 
+    def extract_customized_model_info(self, customized_model_data):
+        """Extract model information from customized model Data object.
+
+        Args:
+            customized_model_data: Data object from customizer component
+
+        Returns:
+            tuple: (model_name, namespace) or (None, None) if extraction fails
+        """
+        try:
+            if not isinstance(customized_model_data, Data):
+                self.log("Customized model input must be a Data object")
+                return None, None
+
+            data = customized_model_data.data if hasattr(customized_model_data, "data") else customized_model_data
+
+            if not isinstance(data, dict):
+                self.log("Customized model data must be a dictionary")
+                return None, None
+
+            # Extract output_model from customizer result
+            output_model = data.get("output_model")
+            if not output_model:
+                self.log("Customized model data does not contain 'output_model' field")
+                return None, None
+
+            # Parse namespace/model_name format
+            if "/" in output_model:
+                namespace, model_name = output_model.split("/", 1)
+                self.log(f"Extracted model name: {model_name}, namespace: {namespace}")
+                return model_name, namespace
+            # If no namespace in output_model, use the model name as-is
+            self.log(f"Using output_model as model name: {output_model}")
+            return output_model, None
+
+        except (ValueError, TypeError, AttributeError) as exc:
+            self.log(f"Error extracting customized model info: {exc}")
+            return None, None
+
     def normalize_nim_url(self, base_url: str) -> str:
         """Normalize NIM inference URL to avoid duplicate path components.
 
@@ -139,6 +178,13 @@ class NvidiaEvaluatorComponent(Component):
             name="dataset",
             display_name="Dataset",
             info="Dataset from NeMo Dataset Creator (optional - if not provided, will use Existing Dataset)",
+            required=False,
+            input_types=["Data"],
+        ),
+        HandleInput(
+            name="customized_model",
+            display_name="Customized Model",
+            info="Customized model from NeMo Customizer (optional - if not provided, will use Model dropdown)",
             required=False,
             input_types=["Data"],
         ),
@@ -481,10 +527,30 @@ class NvidiaEvaluatorComponent(Component):
             error_msg = "Missing namespace"
             raise ValueError(error_msg)
 
-        model_name = getattr(self, "000_llm_name", "")
-        if not model_name:
-            error_msg = "Refresh and select the model name to be evaluated"
-            raise ValueError(error_msg)
+        # Prioritize customized_model input over 000_llm_name dropdown
+        customized_model_input = getattr(self, "customized_model", None)
+        effective_namespace = self.namespace
+        if customized_model_input is not None and isinstance(customized_model_input, Data):
+            model_name, customized_namespace = self.extract_customized_model_info(customized_model_input)
+            if model_name:
+                self.log(f"Using customized model: {model_name}")
+                # Use customized model namespace if available, otherwise use component namespace
+                if customized_namespace:
+                    effective_namespace = customized_namespace
+                    self.log(f"Using customized model namespace: {effective_namespace}")
+            else:
+                self.log("Failed to extract model name from customized model input")
+                model_name = getattr(self, "000_llm_name", "")
+                if not model_name:
+                    error_msg = "Refresh and select the model name to be evaluated"
+                    raise ValueError(error_msg)
+                self.log(f"Using model from dropdown: {model_name}")
+        else:
+            model_name = getattr(self, "000_llm_name", "")
+            if not model_name:
+                error_msg = "Refresh and select the model name to be evaluated"
+                raise ValueError(error_msg)
+            self.log(f"Using model from dropdown: {model_name}")
 
         if not self.base_url:
             error_msg = "Missing base URL"
@@ -498,7 +564,9 @@ class NvidiaEvaluatorComponent(Component):
 
             if evaluation_type == "LM Evaluation Harness":
                 # Create LM evaluation config and target, then create job with IDs
-                config_data, target_data = await self._prepare_lm_evaluation_data(base_url)
+                config_data, target_data = await self._prepare_lm_evaluation_data(
+                    base_url, effective_namespace, model_name
+                )
 
                 # Create config first
                 config_response = await nemo_client.evaluation.configs.create(
@@ -535,7 +603,9 @@ class NvidiaEvaluatorComponent(Component):
 
             elif evaluation_type == "Similarity Metrics":
                 # Create custom evaluation config and target, then create job with IDs
-                config_data, target_data = await self._prepare_custom_evaluation_data(base_url)
+                config_data, target_data = await self._prepare_custom_evaluation_data(
+                    base_url, effective_namespace, model_name
+                )
 
                 # Create config first
                 config_response = await nemo_client.evaluation.configs.create(
@@ -601,11 +671,11 @@ class NvidiaEvaluatorComponent(Component):
             self.log(error_msg)
             raise ValueError(error_msg) from exc
 
-    async def _prepare_lm_evaluation_data(self, base_url: str) -> tuple:
+    async def _prepare_lm_evaluation_data(self, base_url: str, namespace: str, model_name: str) -> tuple:
         """Prepare LM evaluation config and target data for SDK."""
         # Check if we have a dataset input to determine effective namespace
         dataset_input = getattr(self, "dataset", None)
-        effective_namespace = self.namespace
+        effective_namespace = namespace
 
         if dataset_input is not None and isinstance(dataset_input, Data):
             # Extract dataset information from the provided dataset
@@ -617,7 +687,7 @@ class NvidiaEvaluatorComponent(Component):
                     self.log(f"Using dataset namespace for LM evaluation: {effective_namespace}")
 
         # Create target first
-        target_data = await self._create_evaluation_target(None, base_url, effective_namespace)
+        target_data = await self._create_evaluation_target(None, base_url, effective_namespace, model_name)
 
         # Get required parameters
         hf_token = getattr(self, "100_huggingface_token", None)
@@ -652,7 +722,7 @@ class NvidiaEvaluatorComponent(Component):
 
         return config_data, target_data
 
-    async def _prepare_custom_evaluation_data(self, base_url: str) -> tuple:
+    async def _prepare_custom_evaluation_data(self, base_url: str, namespace: str, model_name: str) -> tuple:
         """Prepare custom evaluation config and target data for SDK."""
         # Check if we have a dataset input or existing dataset selection
         dataset_input = getattr(self, "dataset", None)
@@ -691,7 +761,7 @@ class NvidiaEvaluatorComponent(Component):
         elif existing_dataset:
             # Use selected existing dataset
             dataset_name = existing_dataset
-            effective_namespace = self.namespace
+            effective_namespace = namespace
             repo_id = f"{effective_namespace}/{dataset_name}"
             self.log(f"Using existing dataset: {dataset_name} from namespace: {effective_namespace}")
 
@@ -708,7 +778,7 @@ class NvidiaEvaluatorComponent(Component):
         output_file = None if run_inference else f"hf://datasets/{repo_id}/output.jsonl"
 
         # Create target
-        target_data = await self._create_evaluation_target(output_file, base_url, effective_namespace)
+        target_data = await self._create_evaluation_target(output_file, base_url, effective_namespace, model_name)
 
         # Create metrics in SDK format - use string-check for all to ensure consistent return types
         scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
@@ -746,7 +816,7 @@ class NvidiaEvaluatorComponent(Component):
 
         return config_data, target_data
 
-    async def _create_evaluation_target(self, output_file, base_url: str, namespace: str):  # noqa: ARG002
+    async def _create_evaluation_target(self, output_file, base_url: str, namespace: str, model_name: str):  # noqa: ARG002
         """Create evaluation target using SDK and return the data for job creation."""
         try:
             if output_file:
@@ -760,7 +830,7 @@ class NvidiaEvaluatorComponent(Component):
                 model_data = {
                     "api_endpoint": {
                         "url": self.normalize_nim_url(self.inference_model_url),
-                        "model_id": getattr(self, "000_llm_name", ""),
+                        "model_id": model_name,
                     }
                 }
 
