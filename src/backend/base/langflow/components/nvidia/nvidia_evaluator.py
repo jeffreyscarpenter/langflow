@@ -38,7 +38,6 @@ class NvidiaEvaluatorComponent(Component):
                 self.base_url = None
             if not hasattr(self, "namespace"):
                 self.namespace = None
-            logger.info("NvidiaEvaluatorComponent initialized successfully")
         except Exception:
             logger.exception("Error during NvidiaEvaluatorComponent initialization")
             # Re-raise the exception to prevent silent failures
