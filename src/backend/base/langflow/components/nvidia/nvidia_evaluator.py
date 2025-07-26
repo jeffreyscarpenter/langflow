@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 import time
 
 import httpx
@@ -107,9 +107,10 @@ class NvidiaEvaluatorComponent(Component):
                 namespace, model_name = output_model.split("/", 1)
                 self.log(f"Extracted model name: {model_name}, namespace: {namespace}")
                 return model_name, namespace
+
             # If no namespace in output_model, use the model name as-is
             self.log(f"Using output_model as model name: {output_model}")
-            return output_model, None
+            return output_model, None  # noqa: TRY300
 
         except (ValueError, TypeError, AttributeError) as exc:
             self.log(f"Error extracting customized model info: {exc}")
@@ -1055,10 +1056,19 @@ class NvidiaEvaluatorComponent(Component):
                     logger.error(error_msg)
                     raise ValueError(error_msg)
                 if status in ["CREATED", "PENDING", "RUNNING"]:
-                    logger.info("Evaluation job %s is still %s. Waiting %s seconds...", job_id, status, poll_interval_seconds)
+                    logger.info(
+                        "Evaluation job %s is still %s. Waiting %s seconds...",
+                        job_id,
+                        status,
+                        poll_interval_seconds,
+                    )
                     await asyncio.sleep(poll_interval_seconds)
                 else:
-                    logger.warning("Unknown evaluation job status: %s. Waiting %s seconds...", status, poll_interval_seconds)
+                    logger.warning(
+                        "Unknown evaluation job status: %s. Waiting %s seconds...",
+                        status,
+                        poll_interval_seconds,
+                    )
                     await asyncio.sleep(poll_interval_seconds)
 
             except NeMoMicroservicesError:
