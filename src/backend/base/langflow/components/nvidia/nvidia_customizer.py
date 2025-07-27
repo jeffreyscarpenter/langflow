@@ -1,11 +1,10 @@
 import asyncio
-import json
+import logging
 import time
+from dataclasses import asdict, dataclass, field
 
 import httpx
 import nemo_microservices
-from loguru import logger
-from nemo_microservices import AsyncNeMoMicroservices
 
 from langflow.custom import Component
 from langflow.io import (
@@ -20,8 +19,121 @@ from langflow.io import (
 )
 from langflow.schema import Data
 
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NewConfigInput:
+    """Input structure for creating new customization configs with conditional logic."""
+
+    functionality: str = "create"
+    fields: dict[str, dict] = field(
+        default_factory=lambda: {
+            "data": {
+                "node": {
+                    "name": "create_config",
+                    "description": "Create a new training configuration for the selected target",
+                    "display_name": "Create New Config",
+                    "field_order": [
+                        "01_config_name",
+                        "02_training_type",
+                        "03_finetuning_type",
+                        "04_max_seq_length",
+                        "05_prompt_template",
+                        "06_training_precision",
+                        "07_lora_adapter_dim",
+                        "08_lora_alpha",
+                        "09_lora_target_modules",
+                    ],
+                    "template": {
+                        "01_config_name": StrInput(
+                            name="config_name",
+                            display_name="Config Name",
+                            info="Name for the new configuration (e.g., my-custom-config@v1.0.0+L40)",
+                            required=True,
+                        ),
+                        "02_training_type": DropdownInput(
+                            name="training_type",
+                            display_name="Training Type",
+                            options=["sft"],
+                            value="sft",
+                            required=True,
+                            refresh_button=True,
+                        ),
+                        "03_finetuning_type": DropdownInput(
+                            name="finetuning_type",
+                            display_name="Fine-tuning Type",
+                            options=["all_weights", "lora"],
+                            value="lora",
+                            required=True,
+                        ),
+                        "04_max_seq_length": IntInput(
+                            name="max_seq_length",
+                            display_name="Max Sequence Length",
+                            info="Maximum sequence length for training",
+                            value=4096,
+                            required=True,
+                        ),
+                        "05_prompt_template": StrInput(
+                            name="prompt_template",
+                            display_name="Prompt Template",
+                            info="Template for formatting prompts and completions",
+                            value="{prompt} {completion}",
+                            required=True,
+                        ),
+                        "06_training_precision": DropdownInput(
+                            name="training_precision",
+                            display_name="Training Precision",
+                            options=["bf16-mixed", "fp16-mixed", "fp32"],
+                            value="bf16-mixed",
+                            required=True,
+                        ),
+                        "07_lora_adapter_dim": IntInput(
+                            name="lora_adapter_dim",
+                            display_name="LoRA Adapter Dimension",
+                            info="LoRA adapter dimension (only shown for LoRA fine-tuning)",
+                            value=32,
+                            required=False,
+                            advanced=True,
+                        ),
+                        "08_lora_alpha": IntInput(
+                            name="lora_alpha",
+                            display_name="LoRA Alpha",
+                            info="LoRA alpha parameter (only shown for LoRA fine-tuning)",
+                            value=16,
+                            required=False,
+                            advanced=True,
+                        ),
+                        "09_lora_target_modules": StrInput(
+                            name="lora_target_modules",
+                            display_name="LoRA Target Modules",
+                            info="Comma-separated list of target modules for LoRA (e.g., q_proj,v_proj)",
+                            value="q_proj,v_proj",
+                            required=False,
+                            advanced=True,
+                        ),
+                    },
+                }
+            }
+        }
+    )
+
 
 class NvidiaCustomizerComponent(Component):
+    """NeMo Customizer component for LLM fine-tuning.
+
+    This component provides:
+    1. **Target Selection**: Fetches available base models for customization
+    2. **Config Selection**: Shows existing training configurations or allows creating new ones
+    3. **Job Creation**: Creates customization jobs using selected targets and configurations
+
+    Features:
+    - Reusable training configurations
+    - Enhanced LoRA support with conditional parameters
+    - Dataset integration (connected or existing)
+    - Job monitoring with completion tracking
+    """
+
     display_name = "NeMo Customizer"
     description = "LLM fine-tuning using NeMo customizer microservice"
     icon = "NVIDIA"
@@ -50,6 +162,25 @@ class NvidiaCustomizerComponent(Component):
             value="default",
             required=True,
         ),
+        DropdownInput(
+            name="target",
+            display_name="Base Model",
+            info="Select a base model for customization",
+            options=[],
+            refresh_button=True,
+            required=True,
+            combobox=True,
+        ),
+        DropdownInput(
+            name="config",
+            display_name="Training Configuration",
+            info="Select an existing configuration or create a new one",
+            options=[],
+            refresh_button=True,
+            required=True,
+            combobox=True,
+            dialog_inputs=asdict(NewConfigInput()),
+        ),
         StrInput(
             name="fine_tuned_model_name",
             display_name="Output Model Name",
@@ -72,32 +203,6 @@ class NvidiaCustomizerComponent(Component):
             combobox=True,
             required=False,
         ),
-        DropdownInput(
-            name="model_name",
-            display_name="Base Model Name",
-            info="Base model to fine tune",
-            refresh_button=True,
-            required=True,
-            options=[],
-            combobox=True,
-        ),
-        DropdownInput(
-            name="training_type",
-            display_name="Training Type",
-            info="Select the type of training to use",
-            refresh_button=True,
-            required=True,
-            options=[],
-            combobox=True,
-        ),
-        DropdownInput(
-            name="fine_tuning_type",
-            display_name="Fine Tuning Type",
-            info="Select the fine tuning type to use",
-            required=True,
-            options=[],
-            combobox=True,
-        ),
         IntInput(
             name="epochs",
             display_name="Fine tuning cycles",
@@ -114,8 +219,29 @@ class NvidiaCustomizerComponent(Component):
         FloatInput(
             name="learning_rate",
             display_name="Learning Rate",
-            info="The number of samples used in each training iteration",
+            info="The learning rate for training",
             value=0.0001,
+            advanced=True,
+        ),
+        IntInput(
+            name="adapter_dim",
+            display_name="LoRA Adapter Dimension",
+            info="LoRA adapter dimension (only for LoRA fine-tuning)",
+            value=32,
+            advanced=True,
+        ),
+        IntInput(
+            name="alpha",
+            display_name="LoRA Alpha",
+            info="LoRA alpha parameter (only for LoRA fine-tuning)",
+            value=16,
+            advanced=True,
+        ),
+        BoolInput(
+            name="sequence_packing_enabled",
+            display_name="Enable Sequence Packing",
+            info="Enable sequence packing for training",
+            value=False,
             advanced=True,
         ),
         BoolInput(
@@ -141,214 +267,396 @@ class NvidiaCustomizerComponent(Component):
     ]
 
     def get_auth_headers(self):
-        """Get headers with authentication token."""
+        """Get authentication headers for API requests."""
+        if not hasattr(self, "auth_token") or not self.auth_token:
+            return {
+                "accept": "application/json",
+                "Content-Type": "application/json",
+            }
         return {
             "accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.auth_token}",
         }
 
-    def get_nemo_client(self) -> AsyncNeMoMicroservices:
+    def get_nemo_client(self) -> nemo_microservices.AsyncNeMoMicroservices:
         """Get an authenticated NeMo microservices client."""
-        return AsyncNeMoMicroservices(
+        return nemo_microservices.AsyncNeMoMicroservices(
             base_url=self.base_url,
         )
 
-    async def update_build_config(self, build_config, field_value=None, field_name=None):  # noqa: ARG002
+    async def update_build_config(self, build_config, field_value=None, field_name=None):
         """Update build config to fetch available options."""
-        if field_name == "base_url":
-            # Fetch available models when base_url changes
-            try:
-                models = await self.fetch_available_models()
-                build_config["model_name"]["options"] = models
-            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning("Failed to fetch models: %s", exc)
+        if not hasattr(self, "auth_token") or not self.auth_token:
+            return build_config
 
-            # Fetch available training types
-            try:
-                training_types = await self.fetch_available_training_types()
-                build_config["training_type"]["options"] = training_types
-            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning("Failed to fetch training types: %s", exc)
+        try:
+            if field_name == "base_url":
+                # Fetch targets when base_url changes
+                targets = await self.fetch_available_targets()
+                build_config["target"]["options"] = targets
 
-            # Fetch available fine tuning types
-            try:
-                fine_tuning_types = await self.fetch_available_fine_tuning_types()
-                build_config["fine_tuning_type"]["options"] = fine_tuning_types
-            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning("Failed to fetch fine tuning types: %s", exc)
-
-            # Fetch existing datasets
-            try:
+                # Fetch existing datasets
                 existing_datasets = await self.fetch_existing_datasets()
                 build_config["existing_dataset"]["options"] = existing_datasets
-            except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning("Failed to fetch existing datasets: %s", exc)
+
+            elif field_name == "target":
+                # Fetch targets when target field is refreshed
+                targets = await self.fetch_available_targets()
+                build_config["target"]["options"] = targets
+
+                # Fetch configs when target changes
+                if field_value:
+                    configs = await self.fetch_available_configs(field_value)
+                    build_config["config"]["options"] = configs
+
+            elif field_name == "config":
+                # Fetch configs when config field is refreshed
+                # If a target is selected, filter configs by that target
+                target_value = getattr(self, "target", None)
+                configs = await self.fetch_available_configs(target_value)
+                build_config["config"]["options"] = configs
+
+            elif field_name == "existing_dataset":
+                # Fetch existing datasets when existing_dataset field is refreshed
+                existing_datasets = await self.fetch_existing_datasets()
+                build_config["existing_dataset"]["options"] = existing_datasets
+
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error updating build config: {exc}"
+            logger.exception(error_msg)
+            self.log(error_msg)
 
         return build_config
 
-    async def customize(self) -> Data:
-        if not self.auth_token:
-            error_msg = "Missing authentication token"
-            raise ValueError(error_msg)
-
-        fine_tuned_model_name = self.fine_tuned_model_name
-
-        if not fine_tuned_model_name:
-            error_msg = "Missing Output Model Name"
-            raise ValueError(error_msg)
-
-        namespace = self.namespace
-        if not self.namespace:
-            error_msg = "Missing Namespace"
-            raise ValueError(error_msg)
-
-        if not self.model_name:
-            error_msg = "Missing Base Model Name"
-            raise ValueError(error_msg)
-
-        if not (self.training_type and self.fine_tuning_type):
-            error_msg = "Refresh and select the training type and fine tuning type"
-            raise ValueError(error_msg)
-
-        # Check if we have a dataset input or existing dataset selection
-        dataset_input = getattr(self, "dataset", None)
-        existing_dataset = getattr(self, "existing_dataset", None)
-
-        if dataset_input is None and existing_dataset is None:
-            error_msg = "Either dataset connection or existing dataset selection must be provided"
-            raise ValueError(error_msg)
-
-        # Priority: 1. Dataset connection, 2. Existing dataset selection
-        if dataset_input is not None:
-            # Extract dataset information from the provided dataset
-            if not isinstance(dataset_input, Data):
-                error_msg = "Dataset input must be a Data object"
-                raise ValueError(error_msg)
-
-            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
-
-            if not isinstance(dataset_data, dict):
-                error_msg = "Dataset data must be a dictionary"
-                raise ValueError(error_msg)
-
-            # Extract required fields from dataset
-            dataset_name = dataset_data.get("dataset_name")
-            dataset_namespace = dataset_data.get("namespace")
-
-            if not dataset_name:
-                error_msg = "Dataset must contain 'dataset_name' field"
-                raise ValueError(error_msg)
-
-            if not dataset_namespace:
-                error_msg = "Dataset must contain 'namespace' field"
-                raise ValueError(error_msg)
-
-            # Use dataset namespace if different from component namespace
-            effective_namespace = dataset_namespace
-            logger.info("Using dataset connection: %s from namespace: %s", dataset_name, effective_namespace)
-
-        else:
-            # Use selected existing dataset
-            dataset_name = existing_dataset
-            effective_namespace = namespace
-            logger.info("Using existing dataset: %s from namespace: %s", dataset_name, effective_namespace)
-
-        output_model = f"{effective_namespace}/{fine_tuned_model_name}"
-
-        description = f"Fine tuning base model {self.model_name} using dataset {dataset_name}"
-        # Build the data payload following API spec
-        data = {
-            "name": f"customization-{fine_tuned_model_name}",
-            "description": description,
-            "config": f"meta/{self.model_name}",
-            "dataset": {"name": dataset_name, "namespace": effective_namespace},
-            "hyperparameters": {
-                "training_type": self.training_type,
-                "finetuning_type": self.fine_tuning_type,
-                "epochs": int(self.epochs),
-                "batch_size": int(self.batch_size),
-                "learning_rate": float(self.learning_rate),
-            },
-            "output_model": output_model,
-        }
-
-        # Add `adapter_dim` if fine tuning type is "lora"
-        if self.fine_tuning_type == "lora":
-            data["hyperparameters"]["lora"] = {"adapter_dim": 16}  # type: ignore[index]
+    async def update_dialog_config(self, dialog_config, field_value=None, field_name=None):
+        """Update dialog config for conditional field visibility in popup."""
         try:
-            formatted_data = json.dumps(data, indent=2)
-            logger.info("Sending customization request using NeMo client")
-            logger.info("Request payload: %s", formatted_data)
+            if field_name == "03_finetuning_type":
+                # Show/hide LoRA-specific fields based on fine-tuning type
+                if field_value == "lora":
+                    # Show LoRA fields
+                    dialog_config["template"]["07_lora_adapter_dim"]["required"] = True
+                    dialog_config["template"]["08_lora_alpha"]["required"] = True
+                    dialog_config["template"]["09_lora_target_modules"]["required"] = True
+                else:
+                    # Hide LoRA fields
+                    dialog_config["template"]["07_lora_adapter_dim"]["required"] = False
+                    dialog_config["template"]["08_lora_alpha"]["required"] = False
+                    dialog_config["template"]["09_lora_target_modules"]["required"] = False
 
-            # Use NeMo client for job creation
+            elif field_name == "02_training_type":
+                # Update fine-tuning type options based on training type
+                if field_value == "sft":
+                    dialog_config["template"]["03_finetuning_type"]["options"] = ["all_weights", "lora"]
+                elif field_value == "dpo":
+                    dialog_config["template"]["03_finetuning_type"]["options"] = ["all_weights"]
+                # Add more training types as needed
+
+            elif field_name == "init":
+                # Initialize training type options from API
+                try:
+                    training_types = await self.fetch_available_training_types()
+                    if training_types:
+                        dialog_config["template"]["02_training_type"]["options"] = training_types
+                except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+                    logger.warning("Failed to fetch training types for dialog: %s", exc)
+
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error updating dialog config: {exc}"
+            logger.exception(error_msg)
+
+        return dialog_config
+
+    async def fetch_available_targets(self) -> list[str]:
+        """Fetch available base models for customization."""
+        try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.jobs.create(
-                name=data["name"],
-                description=data["description"],
-                config=data["config"],
-                dataset=data["dataset"],
-                hyperparameters=data["hyperparameters"],
-                output_model=data["output_model"],
+            response = await nemo_client.customization.targets.list(extra_headers=self.get_auth_headers())
+            targets = []
+            if hasattr(response, "data") and response.data:
+                for target in response.data:
+                    # Format: "target_name@version" or just "target_name"
+                    target_name = getattr(target, "name", "")
+                    if target_name:
+                        targets.append(target_name)
+            return targets
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch targets: %s", exc)
+            return []
+
+    async def fetch_available_configs(self, target_name: str | None = None) -> list[str]:
+        """Fetch available configurations for customization."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.configs.list(extra_headers=self.get_auth_headers())
+            configs = []
+            if hasattr(response, "data") and response.data:
+                for config in response.data:
+                    config_name = getattr(config, "name", "")
+                    config_target = getattr(config, "target", None)
+
+                    # If target_name is provided, filter by target
+                    if target_name and config_target:
+                        target_id = getattr(config_target, "id", "")
+                        # Get the target ID for the selected target name
+                        target_id_for_selection = await self._get_target_id(target_name)
+                        if target_id == target_id_for_selection:
+                            configs.append(config_name)
+                    # If no target_name provided, return all configs
+                    elif config_name:
+                        configs.append(config_name)
+            return configs
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch configs: %s", exc)
+            return []
+
+    async def fetch_available_training_types(self) -> list[str]:
+        """Fetch available training types from NeMo service."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.training_types.list(extra_headers=self.get_auth_headers())
+            return [tt.name for tt in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch training types: %s", exc)
+            return []
+
+    async def fetch_existing_datasets(self) -> list[str]:
+        """Fetch existing datasets from NeMo service."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.datasets.list(extra_headers=self.get_auth_headers())
+            return [dataset.name for dataset in response.data] if hasattr(response, "data") else []
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to fetch existing datasets: %s", exc)
+            return []
+
+    async def _validate_config_target_compatibility(self, config_id: str, target_id: str):
+        """Validate that the selected config is compatible with the selected target."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.configs.get(
+                config_id=config_id, extra_headers=self.get_auth_headers()
+            )
+            config_target_id = getattr(response, "target", {}).get("id", "")
+
+            if config_target_id != target_id:
+                error_msg = (
+                    f"Selected configuration is not compatible with the selected target. "
+                    f"Config target ID: {config_target_id}, Selected target ID: {target_id}"
+                )
+                raise ValueError(error_msg)
+
+        except ValueError:
+            raise
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Could not validate config-target compatibility: %s", exc)
+
+    async def _create_new_config(self, config_data: dict) -> str:
+        """Create a new training configuration and return its ID."""
+        try:
+            nemo_client = self.get_nemo_client()
+
+            # Extract config parameters from dialog data
+            config_name = config_data.get("01_config_name", "new-config")
+            training_type = config_data.get("02_training_type", "sft")
+            finetuning_type = config_data.get("03_finetuning_type", "lora")
+            max_seq_length = config_data.get("04_max_seq_length", 4096)
+            prompt_template = config_data.get("05_prompt_template", "{prompt} {completion}")
+            training_precision = config_data.get("06_training_precision", "bf16-mixed")
+
+            # Build config parameters
+            config_params = {
+                "training_type": training_type,
+                "finetuning_type": finetuning_type,
+                "max_seq_length": max_seq_length,
+                "prompt_template": prompt_template,
+                "training_precision": training_precision,
+            }
+
+            # Add LoRA parameters if using LoRA
+            if finetuning_type == "lora":
+                lora_adapter_dim = config_data.get("07_lora_adapter_dim", 32)
+                lora_alpha = config_data.get("08_lora_alpha", 16)
+                lora_target_modules = config_data.get("09_lora_target_modules", "q_proj,v_proj")
+
+                config_params["lora"] = {
+                    "adapter_dim": lora_adapter_dim,
+                    "alpha": lora_alpha,
+                    "target_modules": lora_target_modules.split(",") if lora_target_modules else ["q_proj", "v_proj"],
+                }
+
+            # Create the config
+            response = await nemo_client.customization.configs.create(
+                name=config_name,
+                namespace=getattr(self, "namespace", "default"),
+                params=config_params,
                 extra_headers=self.get_auth_headers(),
             )
 
-            # Process a successful response
-            result_dict = response.model_dump()
+            config_id = response.id
+            self.log(f"Created new config with ID: {config_id}")
+            return config_id
+
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error creating config: {exc}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+
+    def extract_dataset_info(self, dataset_input):
+        """Extract dataset information from the provided dataset."""
+        dataset_type_error = "Dataset input must be a Data object"
+        dataset_dict_error = "Dataset data must be a dictionary"
+        dataset_name_error = "Dataset must contain 'dataset_name' field"
+        dataset_namespace_error = "Dataset must contain 'namespace' field"
+
+        if not isinstance(dataset_input, Data):
+            raise TypeError(dataset_type_error)
+
+        dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
+
+        if not isinstance(dataset_data, dict):
+            raise TypeError(dataset_dict_error)
+
+        # Extract required fields from dataset
+        dataset_name = dataset_data.get("dataset_name")
+        dataset_namespace = dataset_data.get("namespace")
+
+        if not dataset_name:
+            raise ValueError(dataset_name_error)
+
+        if not dataset_namespace:
+            raise ValueError(dataset_namespace_error)
+
+        return dataset_name, dataset_namespace
+
+    async def customize(self) -> Data:
+        """Create a customization job using the selected target and configuration."""
+        # Validate required fields
+        auth_token_error = "Authentication token is required"
+        base_url_error = "Base URL is required"
+        target_error = "Target selection is required"
+        config_error = "Configuration selection is required"
+        output_model_error = "Output model name is required"
+        dataset_error = "Either a connected dataset or existing dataset must be provided"
+        existing_dataset_error = "Existing dataset selection is required"
+
+        if not hasattr(self, "auth_token") or not self.auth_token:
+            raise ValueError(auth_token_error)
+
+        if not hasattr(self, "base_url") or not self.base_url:
+            raise ValueError(base_url_error)
+
+        if not hasattr(self, "target") or not self.target:
+            raise ValueError(target_error)
+
+        if not hasattr(self, "config") or not self.config:
+            raise ValueError(config_error)
+
+        if not hasattr(self, "fine_tuned_model_name") or not self.fine_tuned_model_name:
+            raise ValueError(output_model_error)
+
+        # Check if we have a dataset (either connected or existing)
+        if not hasattr(self, "dataset") and not hasattr(self, "existing_dataset"):
+            raise ValueError(dataset_error)
+
+        try:
+            nemo_client = self.get_nemo_client()
+            # Get target ID
+            target_id = await self._get_target_id(self.target)
+
+            # Handle configuration (existing or new)
+            if isinstance(self.config, dict):
+                # Create new configuration
+                config_id = await self._create_new_config(self.config)
+            else:
+                # Use existing configuration
+                config_id = await self._get_target_id(self.config)
+                # Validate that the selected config is compatible with the selected target
+                await self._validate_config_target_compatibility(config_id, target_id)
+
+            # Prepare dataset information
+            if hasattr(self, "dataset") and self.dataset:
+                # Use connected dataset
+                dataset_name, dataset_namespace = self.extract_dataset_info(self.dataset)
+            else:
+                # Use existing dataset
+                if not hasattr(self, "existing_dataset") or not self.existing_dataset:
+                    raise ValueError(existing_dataset_error)
+                dataset_name = self.existing_dataset
+                dataset_namespace = getattr(self, "namespace", "default")
+
+            # Build job data
+            job_data = {
+                "name": f"customization-{int(time.time())}",
+                "description": f"Customization job for {self.target} using {self.config}",
+                "target_id": target_id,
+                "config_id": config_id,
+                "dataset_name": dataset_name,
+                "dataset_namespace": dataset_namespace,
+                "output_model_name": self.fine_tuned_model_name,
+                "epochs": getattr(self, "epochs", 5),
+                "batch_size": getattr(self, "batch_size", 16),
+                "learning_rate": getattr(self, "learning_rate", 0.0001),
+                "adapter_dim": getattr(self, "adapter_dim", 32),
+                "alpha": getattr(self, "alpha", 16),
+                "sequence_packing_enabled": getattr(self, "sequence_packing_enabled", False),
+            }
+
+            # Create the job using base model and configuration IDs
+            response = await nemo_client.customization.jobs.create(
+                name=job_data["name"],
+                description=job_data["description"],
+                target_id=job_data["target_id"],
+                config_id=job_data["config_id"],
+                dataset_name=job_data["dataset_name"],
+                dataset_namespace=job_data["dataset_namespace"],
+                output_model_name=job_data["output_model_name"],
+                epochs=job_data["epochs"],
+                batch_size=job_data["batch_size"],
+                learning_rate=job_data["learning_rate"],
+                adapter_dim=job_data["adapter_dim"],
+                alpha=job_data["alpha"],
+                sequence_packing_enabled=job_data["sequence_packing_enabled"],
+                extra_headers=self.get_auth_headers(),
+            )
+
+            job_id = response.id
+            self.log(f"Created customization job with ID: {job_id}")
+
+            # Wait for completion if requested
+            if getattr(self, "wait_for_completion", True):
+                max_wait_time = getattr(self, "max_wait_time_minutes", 30)
+                job_result = await self.wait_for_job_completion(job_id, max_wait_time)
+                result_dict = {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "result": job_result,
+                }
+            else:
+                result_dict = {
+                    "job_id": job_id,
+                    "status": "created",
+                    "message": "Job created successfully. Use wait_for_completion=True to wait for completion.",
+                }
 
             # Convert datetime objects to strings for JSON serialization
             def convert_datetime_to_string(obj):
-                if isinstance(obj, dict):
-                    return {k: convert_datetime_to_string(v) for k, v in obj.items()}
-                if isinstance(obj, list):
-                    return [convert_datetime_to_string(item) for item in obj]
-                if hasattr(obj, "isoformat"):  # datetime objects
+                if hasattr(obj, "isoformat"):
                     return obj.isoformat()
-                return obj
+                return str(obj)
 
-            result_dict = convert_datetime_to_string(result_dict)
+            # Recursively convert datetime objects in the result
+            if isinstance(result_dict, dict):
+                for key, value in result_dict.items():
+                    if isinstance(value, dict):
+                        result_dict[key] = convert_datetime_to_string(value)
+                    elif hasattr(value, "isoformat"):
+                        result_dict[key] = value.isoformat()
 
-            id_value = result_dict["id"]
-            self.log(f"Customization job created successfully with ID: {id_value}")
-
-            # Check if we should wait for job completion
-            wait_for_completion = getattr(self, "wait_for_completion", False)
-            logger.info("Wait for completion setting: %s", wait_for_completion)
-            if wait_for_completion:
-                logger.info("Wait for completion enabled. Waiting for job %s to complete...", id_value)
-                try:
-                    max_wait_time = getattr(self, "max_wait_time_minutes", 30)
-                    logger.info("Starting wait_for_job_completion with max_wait_time: %s", max_wait_time)
-                    # Wait for job completion
-                    final_job_result = await self.wait_for_job_completion(
-                        job_id=id_value, max_wait_time_minutes=max_wait_time
-                    )
-                    # Update result_dict with final job status
-                    result_dict.update(final_job_result)
-                    logger.info("Job %s completed successfully!", id_value)
-                    self.log(f"Customization job {id_value} completed successfully!")
-                except TimeoutError as exc:
-                    logger.warning("Job %s did not complete within timeout: %s", id_value, exc)
-                    self.log(f"Customization job {id_value} did not complete within {max_wait_time} minutes timeout")
-                    # Continue with the original result (job created but not completed)
-                except ValueError as exc:
-                    logger.exception("Job %s failed", id_value)
-                    self.log(f"Customization job {id_value} failed: {exc}")
-                    # Re-raise the ValueError to indicate job failure
-                    error_msg = f"Job {id_value} failed: {exc}"
-                    raise ValueError(error_msg) from exc
-                except (asyncio.CancelledError, RuntimeError, OSError):
-                    logger.exception("Unexpected error while waiting for job completion")
-                    self.log(f"Unexpected error while waiting for customization job {id_value} completion")
-                    # Continue with the original result
-            else:
-                logger.info("Wait for completion disabled. Job %s created successfully.", id_value)
+            return Data(data=result_dict)
 
         except nemo_microservices.APIError as exc:
-            # Log the request details for debugging
-            logger.exception("NeMo microservices error occurred during job creation")
-            logger.exception("Request payload was: %s", formatted_data)
-
             # Check if the error is due to a 409 Conflict (model name already exists)
             if "409" in str(exc) or "conflict" in str(exc).lower() or "already exists" in str(exc).lower():
                 conflict_msg = (
@@ -357,28 +665,46 @@ class NvidiaCustomizerComponent(Component):
                 )
                 logger.warning(conflict_msg)
                 error_msg = (
-                    f"There is already a fined tuned model with name {output_model}. "
-                    f"Please choose a different Output Model Name."
+                    f"There is already a fined tuned model with name {self.fine_tuned_model_name}. "
+                    f"Please use a different name for the output model."
                 )
                 raise ValueError(error_msg) from exc
-
+            # Handle other API errors
             error_msg = f"NeMo microservices error during job creation: {exc}"
             logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
-        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            # Keep httpx error handling for backward compatibility
+        except httpx.HTTPStatusError as exc:
+            # Handle HTTP errors
             error_msg = f"HTTP error during job creation: {exc}"
             logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
-        except Exception as exc:
+        except httpx.RequestError as exc:
             # Catch any other unexpected errors
             error_msg = f"Unexpected error during job creation: {exc}"
             logger.exception(error_msg)
             raise ValueError(error_msg) from exc
 
-        return Data(data=result_dict)
+    async def _get_target_id(self, target_name: str) -> str:
+        """Get target ID from target name."""
+        try:
+            nemo_client = self.get_nemo_client()
+            response = await nemo_client.customization.targets.list(extra_headers=self.get_auth_headers())
+
+            if hasattr(response, "data") and response.data:
+                for target in response.data:
+                    if getattr(target, "name", "") == target_name:
+                        return getattr(target, "id", target_name)
+                # If not found, assume the target_name is already an ID
+                return target_name
+            # If no data, assume the target_name is already an ID
+            return target_name
+
+        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Failed to get target ID for %s: %s", target_name, exc)
+            # Fallback to using the name as ID
+            return target_name
 
     async def wait_for_job_completion(
         self, job_id: str, max_wait_time_minutes: int = 30, poll_interval_seconds: int = 15
@@ -427,43 +753,3 @@ class NvidiaCustomizerComponent(Component):
             except (asyncio.CancelledError, RuntimeError, OSError):
                 logger.exception("Unexpected error while checking job status")
                 await asyncio.sleep(poll_interval_seconds)
-
-    async def fetch_available_models(self) -> list[str]:
-        """Fetch available models from NeMo service."""
-        try:
-            nemo_client = self.get_nemo_client()
-            response = await nemo_client.models.list(extra_headers=self.get_auth_headers())
-            return [model.name for model in response.data] if hasattr(response, "data") else []
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.warning("Failed to fetch models: %s", exc)
-            return []
-
-    async def fetch_available_training_types(self) -> list[str]:
-        """Fetch available training types from NeMo service."""
-        try:
-            nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.training_types.list(extra_headers=self.get_auth_headers())
-            return [tt.name for tt in response.data] if hasattr(response, "data") else []
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.warning("Failed to fetch training types: %s", exc)
-            return []
-
-    async def fetch_available_fine_tuning_types(self) -> list[str]:
-        """Fetch available fine tuning types from NeMo service."""
-        try:
-            nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.finetuning_types.list(extra_headers=self.get_auth_headers())
-            return [ftt.name for ftt in response.data] if hasattr(response, "data") else []
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.warning("Failed to fetch fine tuning types: %s", exc)
-            return []
-
-    async def fetch_existing_datasets(self) -> list[str]:
-        """Fetch existing datasets from NeMo service."""
-        try:
-            nemo_client = self.get_nemo_client()
-            response = await nemo_client.datasets.list(extra_headers=self.get_auth_headers())
-            return [dataset.name for dataset in response.data] if hasattr(response, "data") else []
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.warning("Failed to fetch existing datasets: %s", exc)
-            return []
