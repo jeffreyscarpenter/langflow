@@ -437,6 +437,9 @@ class NvidiaCustomizerComponent(Component):
         """Validate that the selected config is compatible with the selected target."""
         try:
             nemo_client = self.get_nemo_client()
+            # NOTE: The use of _get here is a workaround due to the lack of a public get method
+            # on AsyncConfigsResource in the current nemo_microservices SDK. If a public get method
+            # becomes available in a future SDK version, this should be updated to use it instead.
             response = await nemo_client.customization.configs._get(
                 config_id=config_id, extra_headers=self.get_auth_headers()
             )
