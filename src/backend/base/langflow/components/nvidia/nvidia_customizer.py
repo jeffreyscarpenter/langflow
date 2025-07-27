@@ -380,7 +380,8 @@ class NvidiaCustomizerComponent(Component):
                     target_name = getattr(target, "name", "")
                     if target_name:
                         targets.append(target_name)
-            return targets
+                return targets
+            return targets  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch targets: %s", exc)
             return []
@@ -406,7 +407,8 @@ class NvidiaCustomizerComponent(Component):
                     # If no target_name provided, return all configs
                     elif config_name:
                         configs.append(config_name)
-            return configs
+                return configs
+            return configs  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch configs: %s", exc)
             return []
@@ -435,7 +437,7 @@ class NvidiaCustomizerComponent(Component):
         """Validate that the selected config is compatible with the selected target."""
         try:
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.customization.configs.get(
+            response = await nemo_client.customization.configs._get(
                 config_id=config_id, extra_headers=self.get_auth_headers()
             )
             config_target_id = getattr(response, "target", {}).get("id", "")
@@ -496,7 +498,7 @@ class NvidiaCustomizerComponent(Component):
 
             config_id = response.id
             self.log(f"Created new config with ID: {config_id}")
-            return config_id
+            return config_id  # noqa: TRY300
 
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             error_msg = f"Error creating config: {exc}"
@@ -533,7 +535,7 @@ class NvidiaCustomizerComponent(Component):
     async def customize(self) -> Data:
         """Create a customization job using the selected target and configuration."""
         # Validate required fields
-        auth_token_error = "Authentication token is required"
+        auth_token_error = "Authentication token is required"  # noqa: S105
         base_url_error = "Base URL is required"
         target_error = "Target selection is required"
         config_error = "Configuration selection is required"
@@ -691,19 +693,14 @@ class NvidiaCustomizerComponent(Component):
         try:
             nemo_client = self.get_nemo_client()
             response = await nemo_client.customization.targets.list(extra_headers=self.get_auth_headers())
-
             if hasattr(response, "data") and response.data:
                 for target in response.data:
                     if getattr(target, "name", "") == target_name:
                         return getattr(target, "id", target_name)
-                # If not found, assume the target_name is already an ID
-                return target_name
-            # If no data, assume the target_name is already an ID
-            return target_name
-
+                return target_name  # Not found, assume already an ID
+            return target_name  # No data, assume already an ID  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to get target ID for %s: %s", target_name, exc)
-            # Fallback to using the name as ID
             return target_name
 
     async def wait_for_job_completion(
