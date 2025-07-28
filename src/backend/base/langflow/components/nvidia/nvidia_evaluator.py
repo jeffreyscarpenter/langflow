@@ -259,9 +259,8 @@ class NvidiaEvaluatorComponent(Component):
             if model_name:
                 self.log(f"Extracted model name: {model_name}, namespace: {namespace}")
                 return model_name, namespace
-            else:
-                self.log("Customized model data does not contain 'output_model' or 'model_name' field")
-                return None, None
+            self.log("Customized model data does not contain 'output_model' or 'model_name' field")
+            return None, None  # noqa: TRY300
 
         except (ValueError, TypeError, AttributeError) as exc:
             self.log(f"Error extracting customized model info: {exc}")
@@ -369,6 +368,7 @@ class NvidiaEvaluatorComponent(Component):
             options=[],
             refresh_button=True,
             required=False,
+            combobox=True,
         ),
         BoolInput(
             name="wait_for_completion",
@@ -627,8 +627,9 @@ class NvidiaEvaluatorComponent(Component):
                 build_config["config"]["options_metadata"] = configs_metadata
 
                 # Fetch existing datasets
-                existing_datasets = await self.fetch_existing_datasets(base_url)
+                existing_datasets, existing_datasets_metadata = await self.fetch_existing_datasets(base_url)
                 build_config["existing_dataset"]["options"] = existing_datasets
+                build_config["existing_dataset"]["options_metadata"] = existing_datasets_metadata
 
                 # Debug logging
                 logger.debug("Updated build_config for base_url change:")
@@ -695,7 +696,9 @@ class NvidiaEvaluatorComponent(Component):
                 base_url = self.base_url.rstrip("/")
                 # Refresh dataset options for existing dataset dropdown
                 logger.info("Refreshing datasets for field: %s", field_name)
-                build_config["existing_dataset"]["options"] = await self.fetch_existing_datasets(base_url)
+                existing_datasets, existing_datasets_metadata = await self.fetch_existing_datasets(base_url)
+                build_config["existing_dataset"]["options"] = existing_datasets
+                build_config["existing_dataset"]["options_metadata"] = existing_datasets_metadata
                 dataset_options = build_config["existing_dataset"]["options"]
                 msg = f"Updated dataset options: {dataset_options}"
                 logger.info(msg)
@@ -967,7 +970,7 @@ class NvidiaEvaluatorComponent(Component):
 
             config_id = response.id
             self.log(f"Created new evaluation config with ID: {config_id}")
-            return config_id
+            return config_id  # noqa: TRY300
 
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             error_msg = f"Error creating evaluation config: {exc}"
@@ -985,9 +988,8 @@ class NvidiaEvaluatorComponent(Component):
                         return getattr(target, "id", target_name)
                 # Not found, assume already an ID
                 return target_name
-            else:
-                # No data, assume already an ID
-                return target_name
+            # No data, assume already an ID
+            return target_name  # noqa: TRY300
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to get target ID for %s: %s", target_name, exc)
             return target_name
@@ -1003,9 +1005,8 @@ class NvidiaEvaluatorComponent(Component):
                         return getattr(config, "id", config_name)
                 # Not found, assume already an ID
                 return config_name
-            else:
-                # No data, assume already an ID
-                return config_name
+            # No data, assume already an ID
+            return config_name  # noqa: TRY300
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to get config ID for %s: %s", config_name, exc)
             return config_name
@@ -1038,48 +1039,99 @@ class NvidiaEvaluatorComponent(Component):
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Could not validate target-config compatibility: %s", exc)
 
-    async def fetch_existing_datasets(self, base_url: str) -> list[str]:  # noqa: ARG002
-        """Fetch existing datasets from the NeMo Data Store.
+    async def fetch_existing_datasets(self, base_url: str | None = None) -> tuple[list[str], list[dict[str, Any]]]:  # noqa: ARG002
+        """Fetch existing datasets from the NeMo Data Store with metadata.
 
         Args:
-            base_url (str): Base URL for the NeMo services
+            base_url (str): Base URL for the NeMo services (unused, kept for compatibility)
 
         Returns:
-            List of dataset names available for evaluation
+            Tuple of (dataset names, dataset metadata) available for evaluation
         """
         # Defensive checks
         if not hasattr(self, "namespace") or not self.namespace:
             if hasattr(self, "log"):
                 self.log("Namespace not set for fetching datasets")
-            return []
+            return [], []
 
         if not hasattr(self, "auth_token") or not self.auth_token:
             if hasattr(self, "log"):
                 self.log("Authentication token not set for fetching datasets")
-            return []
+            return [], []
 
         try:
             # Use NeMo client for dataset fetching
             nemo_client = self.get_nemo_client()
-            response = await nemo_client.datasets.list(
-                namespace=self.namespace, extra_headers={"Authorization": f"Bearer {self.auth_token}"}
-            )
+            response = await nemo_client.datasets.list(extra_headers=self.get_auth_headers())
 
-            # Extract dataset names from the response
-            return [dataset.name for dataset in response.data if hasattr(dataset, "name") and dataset.name]
+            datasets = []
+            datasets_metadata = []
 
+            if hasattr(response, "data") and response.data:
+                for dataset in response.data:
+                    dataset_name = getattr(dataset, "name", "")
+                    dataset_created = getattr(dataset, "created", None)
+                    dataset_updated = getattr(dataset, "updated", None)
+                    dataset_size = getattr(dataset, "size", None)
+                    dataset_records = getattr(dataset, "records", None)
+
+                    if dataset_name:
+                        datasets.append(dataset_name)
+                        # Build metadata for this dataset
+                        metadata = self._build_dataset_metadata(
+                            dataset_created, dataset_updated, dataset_size, dataset_records
+                        )
+                        datasets_metadata.append(metadata)
+
+                # Debug logging
+                logger.debug("Fetched %s datasets with metadata", len(datasets))
+                if datasets_metadata:
+                    logger.debug("Sample dataset metadata: %s", datasets_metadata[0])
+
+                return datasets, datasets_metadata
+            return datasets, datasets_metadata  # noqa: TRY300
         except NeMoMicroservicesError as exc:
             if hasattr(self, "log"):
                 self.log(f"NeMo microservices error while fetching datasets: {exc}")
-            return []
+            return [], []
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             if hasattr(self, "log"):
                 self.log(f"Error response while requesting datasets: {exc}")
-            return []
+            return [], []
         except (ValueError, TypeError) as exc:
             if hasattr(self, "log"):
                 self.log(f"Unexpected error while fetching datasets: {exc}")
-            return []
+            return [], []
+
+    def _build_dataset_metadata(
+        self,
+        created: str | None = None,
+        updated: str | None = None,
+        size: int | None = None,
+        records: int | None = None,
+    ) -> dict[str, Any]:
+        """Build metadata dictionary for a dataset."""
+        metadata = {}
+
+        # Add dataset size and records if available
+        if size is not None:
+            metadata["size"] = f"{size:,}"  # Format with commas
+        if records is not None:
+            metadata["records"] = f"{records:,}"  # Format with commas
+
+        # Add timestamps if available (but don't display them in dropdown)
+        if created:
+            metadata["created"] = created
+        if updated:
+            metadata["updated"] = updated
+
+        # Add icon for datasets
+        metadata["icon"] = "Database"
+
+        # Debug logging
+        logger.debug("Built dataset metadata: %s", metadata)
+
+        return metadata
 
     async def wait_for_job_completion(
         self, job_id: str, max_wait_time_minutes: int = 30, poll_interval_seconds: int = 15
