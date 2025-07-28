@@ -59,6 +59,7 @@ class NewConfigInput:
                             value="sft",
                             required=True,
                             refresh_button=True,
+                            real_time_refresh=True,
                         ),
                         "03_finetuning_type": DropdownInput(
                             name="finetuning_type",
@@ -66,6 +67,7 @@ class NewConfigInput:
                             options=["all_weights", "lora"],
                             value="lora",
                             required=True,
+                            real_time_refresh=True,
                         ),
                         "04_max_seq_length": IntInput(
                             name="max_seq_length",
@@ -94,7 +96,6 @@ class NewConfigInput:
                             info="LoRA adapter dimension (only shown for LoRA fine-tuning)",
                             value=32,
                             required=False,
-                            advanced=True,
                         ),
                         "08_lora_alpha": IntInput(
                             name="lora_alpha",
@@ -102,7 +103,6 @@ class NewConfigInput:
                             info="LoRA alpha parameter (only shown for LoRA fine-tuning)",
                             value=16,
                             required=False,
-                            advanced=True,
                         ),
                         "09_lora_target_modules": StrInput(
                             name="lora_target_modules",
@@ -110,7 +110,6 @@ class NewConfigInput:
                             info="Comma-separated list of target modules for LoRA (e.g., q_proj,v_proj)",
                             value="q_proj,v_proj",
                             required=False,
-                            advanced=True,
                         ),
                     },
                 }
@@ -311,11 +310,26 @@ class NvidiaCustomizerComponent(Component):
                     build_config["config"]["options"] = configs
 
             elif field_name == "config":
-                # Fetch configs when config field is refreshed
-                # If a target is selected, filter configs by that target
-                target_value = getattr(self, "target", None)
-                configs = await self.fetch_available_configs(target_value)
-                build_config["config"]["options"] = configs
+                # Handle dialog input changes - follow AstraDB pattern
+                if isinstance(field_value, dict):
+                    # Case 1: New config creation
+                    if "01_config_name" in field_value:
+                        # Handle new config creation if needed
+                        pass
+
+                    # Case 2: Update fine-tuning type options
+                    if "02_training_type" in field_value:
+                        return self._update_training_type_options(build_config, field_value)
+
+                    # Case 3: Update LoRA fields based on fine-tuning type
+                    if "03_finetuning_type" in field_value:
+                        return self._update_lora_fields(build_config, field_value)
+                else:
+                    # Fetch configs when config field is refreshed
+                    # If a target is selected, filter configs by that target
+                    target_value = getattr(self, "target", None)
+                    configs = await self.fetch_available_configs(target_value)
+                    build_config["config"]["options"] = configs
 
             elif field_name == "existing_dataset":
                 # Fetch existing datasets when existing_dataset field is refreshed
@@ -329,44 +343,66 @@ class NvidiaCustomizerComponent(Component):
 
         return build_config
 
-    async def update_dialog_config(self, dialog_config, field_value=None, field_name=None):
-        """Update dialog config for conditional field visibility in popup."""
-        try:
-            if field_name == "03_finetuning_type":
-                # Show/hide LoRA-specific fields based on fine-tuning type
-                if field_value == "lora":
-                    # Show LoRA fields
-                    dialog_config["template"]["07_lora_adapter_dim"]["required"] = True
-                    dialog_config["template"]["08_lora_alpha"]["required"] = True
-                    dialog_config["template"]["09_lora_target_modules"]["required"] = True
-                else:
-                    # Hide LoRA fields
-                    dialog_config["template"]["07_lora_adapter_dim"]["required"] = False
-                    dialog_config["template"]["08_lora_alpha"]["required"] = False
-                    dialog_config["template"]["09_lora_target_modules"]["required"] = False
+    def _update_training_type_options(self, build_config: dict, field_value: dict) -> dict:
+        """Update fine-tuning type options based on training type selection."""
+        # Extract template path for cleaner access
+        template = build_config["config"]["dialog_inputs"]["fields"]["data"]["node"]["template"]
 
-            elif field_name == "02_training_type":
-                # Update fine-tuning type options based on training type
-                if field_value == "sft":
-                    dialog_config["template"]["03_finetuning_type"]["options"] = ["all_weights", "lora"]
-                elif field_value == "dpo":
-                    dialog_config["template"]["03_finetuning_type"]["options"] = ["all_weights"]
-                # Add more training types as needed
+        training_type = field_value["02_training_type"]
 
-            elif field_name == "init":
-                # Initialize training type options from API
-                try:
-                    training_types = await self.fetch_available_training_types()
-                    if training_types:
-                        dialog_config["template"]["02_training_type"]["options"] = training_types
-                except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    logger.warning("Failed to fetch training types for dialog: %s", exc)
+        if training_type == "sft":
+            template["03_finetuning_type"]["options"] = ["all_weights", "lora"]
+            # Reset fine-tuning type to default if current value is not valid
+            current_finetuning = template["03_finetuning_type"]["value"]
+            if current_finetuning not in ["all_weights", "lora"]:
+                template["03_finetuning_type"]["value"] = "lora"
+        elif training_type == "dpo":
+            template["03_finetuning_type"]["options"] = ["all_weights"]
+            template["03_finetuning_type"]["value"] = "all_weights"
 
-        except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            error_msg = f"Error updating dialog config: {exc}"
-            logger.exception(error_msg)
+        # Trigger update of LoRA fields based on new fine-tuning type
+        return self._update_lora_fields(build_config, {"03_finetuning_type": template["03_finetuning_type"]["value"]})
 
-        return dialog_config
+    def _update_lora_fields(self, build_config: dict, field_value: dict) -> dict:
+        """Update LoRA fields based on fine-tuning type selection."""
+        # Extract template path for cleaner access
+        template = build_config["config"]["dialog_inputs"]["fields"]["data"]["node"]["template"]
+
+        finetuning_type = field_value["03_finetuning_type"]
+        is_lora = finetuning_type == "lora"
+
+        # Configure LoRA-specific fields based on fine-tuning type
+        lora_fields = ["07_lora_adapter_dim", "08_lora_alpha", "09_lora_target_modules"]
+
+        for field_key in lora_fields:
+            field_config = template[field_key]
+
+            # Store original value if not already stored
+            if "original_value" not in field_config:
+                field_config["original_value"] = field_config.get("value")
+
+            if is_lora:
+                # Enable LoRA fields
+                field_config.update(
+                    {
+                        "readonly": False,
+                        "required": True,
+                        "placeholder": "",
+                        "value": field_config.get("original_value") or field_config.get("default_value", ""),
+                    }
+                )
+            else:
+                # Disable LoRA fields with explanatory placeholder
+                field_config.update(
+                    {
+                        "readonly": True,
+                        "required": False,
+                        "placeholder": "Only available for LoRA fine-tuning",
+                        "value": None,
+                    }
+                )
+
+        return build_config
 
     async def fetch_available_targets(self) -> list[str]:
         """Fetch available base models for customization."""
