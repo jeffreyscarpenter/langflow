@@ -239,21 +239,29 @@ class NvidiaEvaluatorComponent(Component):
                 self.log("Customized model data must be a dictionary")
                 return None, None
 
-            # Extract output_model from customizer result
+            # First try to extract from output_model field (primary method)
             output_model = data.get("output_model")
-            if not output_model:
-                self.log("Customized model data does not contain 'output_model' field")
-                return None, None
+            if output_model:
+                # Parse namespace/name format
+                if "/" in output_model:
+                    namespace, model_name = output_model.split("/", 1)
+                    self.log(f"Extracted model name: {model_name}, namespace: {namespace}")
+                    return model_name, namespace
 
-            # Parse namespace/name format
-            if "/" in output_model:
-                namespace, model_name = output_model.split("/", 1)
+                # If no namespace in output_model, use the model name as-is
+                self.log(f"Using output_model as model name: {output_model}")
+                return output_model, None
+
+            # Fallback: try to extract from individual fields
+            model_name = data.get("model_name")
+            namespace = data.get("namespace")
+
+            if model_name:
                 self.log(f"Extracted model name: {model_name}, namespace: {namespace}")
                 return model_name, namespace
-
-            # If no namespace in output_model, use the model name as-is
-            self.log(f"Using output_model as model name: {output_model}")
-            return output_model, None  # noqa: TRY300
+            else:
+                self.log("Customized model data does not contain 'output_model' or 'model_name' field")
+                return None, None
 
         except (ValueError, TypeError, AttributeError) as exc:
             self.log(f"Error extracting customized model info: {exc}")
@@ -354,21 +362,6 @@ class NvidiaEvaluatorComponent(Component):
             combobox=True,
             dialog_inputs=asdict(NewConfigInput()),
         ),
-        StrInput(
-            name="001_tag",
-            display_name="Tag name",
-            info="Any user-provided value. Generated results are stored in the NeMo Data Store with this name.",
-            value="default",
-            required=True,
-        ),
-        DropdownInput(
-            name="002_evaluation_type",
-            display_name="Evaluation Type",
-            info="Select the type of evaluation",
-            options=["LM Evaluation Harness", "Similarity Metrics"],
-            real_time_refresh=True,  # Ensure dropdown triggers update on change
-            required=True,
-        ),
         DropdownInput(
             name="existing_dataset",
             display_name="Existing Dataset",
@@ -397,126 +390,6 @@ class NvidiaEvaluatorComponent(Component):
 
     outputs = [
         Output(display_name="Evaluation Data", name="job_info", method="evaluate"),
-    ]
-
-    # Inputs for LM Evaluation
-    lm_evaluation_inputs = [
-        SecretStrInput(
-            name="100_huggingface_token",
-            display_name="HuggingFace Token",
-            info="Token for accessing HuggingFace to fet the evaluation dataset.",
-            required=True,
-        ),
-        StrInput(
-            name="110_task_name",
-            display_name="Task Name",
-            info="Task from https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.3/lm_eval/tasks#tasks",
-            value="gsm8k",
-            required=True,
-        ),
-        IntInput(
-            name="112_few_shot_examples",
-            display_name="Few-shot Examples",
-            info="The number of few-shot examples before the input.",
-            advanced=True,
-            value=5,
-        ),
-        IntInput(
-            name="113_batch_size",
-            display_name="Batch Size",
-            info="The batch size used for evaluation.",
-            value=16,
-        ),
-        IntInput(
-            name="114_bootstrap_iterations",
-            display_name="Bootstrap Iterations",
-            info="The number of iterations for bootstrap statistics.",
-            advanced=True,
-            value=100000,
-        ),
-        IntInput(
-            name="115_limit",
-            display_name="Limit",
-            info="Limits the number of documents to evaluate for debugging, or limits to X% of documents.",
-            advanced=True,
-            value=-1,
-        ),
-        FloatInput(
-            name="151_top_p",
-            display_name="Top_p",
-            info="Threshold to select from most probable tokens until cumulative probability exceeds this value",
-            advanced=True,
-            value=0.0,
-        ),
-        IntInput(
-            name="152_top_k",
-            display_name="Top_k",
-            info="The top_k value to be used during generation sampling.",
-            value=1,
-        ),
-        SliderInput(
-            name="153_temperature",
-            display_name="Temperature",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            value=0.1,
-            info="The temperature to be used during generation sampling (0.0 to 2.0).",
-        ),
-        IntInput(
-            name="154_tokens_to_generate",
-            display_name="Max Tokens",
-            advanced=True,
-            info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
-            value=1024,
-        ),
-    ]
-
-    # Inputs for Similarity Metrics
-    custom_evaluation_inputs = [
-        IntInput(
-            name="350_num_of_samples",
-            display_name="Number of Samples",
-            info="Number of samples to run inference on from the input_file.",
-            value=-1,
-            advanced=True,
-        ),
-        MultiselectInput(
-            name="351_scorers",
-            display_name="Scorers",
-            info="List of Scorers for evaluation.",
-            options=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
-            value=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
-            required=True,
-        ),
-        DropdownInput(
-            name="310_run_inference",
-            display_name="Run Inference",
-            info="Select 'True' to run inference or 'False' to use a `response` field in the dataset.",
-            options=["True", "False"],
-            value="True",
-            real_time_refresh=True,
-            advanced=True,
-        ),
-        IntInput(
-            name="311_tokens_to_generate",
-            display_name="Max Tokens",
-            advanced=True,
-            info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
-            value=1024,
-        ),
-        SliderInput(
-            name="312_temperature",
-            display_name="Temperature",
-            range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
-            value=0.1,
-            info="The temperature to be used during generation sampling (0.0 to 2.0).",
-        ),
-        IntInput(
-            name="313_top_k",
-            display_name="Top_k",
-            info="Top_k value for generation sampling.",
-            value=1,
-            advanced=True,
-        ),
     ]
 
     async def fetch_models(self, base_url: str):
@@ -719,45 +592,11 @@ class NvidiaEvaluatorComponent(Component):
 
         return metadata
 
-    def clear_dynamic_inputs(self, build_config, saved_values):
-        """Clears dynamically added fields by referring to a special marker in build_config."""
-        dynamic_fields = build_config.get("_dynamic_fields", [])
-        length_dynamic_fields = len(dynamic_fields)
-        message = f"Clearing dynamic inputs. Number of fields to remove: {length_dynamic_fields}"
-        logger.info(message)
-
-        for field_name in dynamic_fields:
-            if field_name in build_config:
-                message = f"Removing dynamic field: {field_name}"
-                logger.info(message)
-                saved_values[field_name] = build_config[field_name].get("value", None)
-                del build_config[field_name]
-
-        build_config["_dynamic_fields"] = []
-
-    def add_inputs_with_saved_values(self, build_config, input_definitions, saved_values):
-        """Adds inputs to build_config and restores any saved values."""
-        for input_def in input_definitions:
-            # Check if input_def is already a dict or needs conversion
-            input_dict = input_def if isinstance(input_def, dict) else input_def.to_dict()
-            input_name = input_dict["name"]
-            input_dict["value"] = saved_values.get(input_name, input_dict.get("value"))
-            build_config[input_name] = input_dict
-            build_config.setdefault("_dynamic_fields", []).append(input_name)
-
-    def add_evaluation_inputs(self, build_config, saved_values, evaluation_type):
-        """Adds inputs based on the evaluation type (LM Evaluation or Similarity Metrics)."""
-        if evaluation_type == "LM Evaluation Harness":
-            self.add_inputs_with_saved_values(build_config, self.lm_evaluation_inputs, saved_values)
-        elif evaluation_type == "Similarity Metrics":
-            self.add_inputs_with_saved_values(build_config, self.custom_evaluation_inputs, saved_values)
-
     async def update_build_config(self, build_config, field_value, field_name=None):
         """Updates the component's configuration based on the selected option."""
         try:
             message = f"Updating build config: field_name={field_name}, field_value={field_value}"
             logger.info(message)
-            saved_values = {}
 
             # Defensive check - if auth_token is not set, don't try to fetch data
             if not hasattr(self, "auth_token") or not self.auth_token:
@@ -863,29 +702,6 @@ class NvidiaEvaluatorComponent(Component):
                 if hasattr(self, "log"):
                     self.log(f"Refreshed {len(dataset_options)} datasets for evaluation")
 
-            # Handle evaluation type changes (for backward compatibility)
-            elif field_name == "002_evaluation_type":
-                if hasattr(self, "clear_dynamic_inputs") and hasattr(self, "add_evaluation_inputs"):
-                    self.clear_dynamic_inputs(build_config, saved_values)
-                    self.add_evaluation_inputs(build_config, saved_values, field_value)
-                else:
-                    logger.warning("Dynamic input methods not available yet")
-
-            # Handle run_inference changes (for backward compatibility)
-            elif field_name == "310_run_inference":
-                if hasattr(self, "custom_evaluation_inputs") and hasattr(self, "clear_dynamic_inputs"):
-                    run_inference = field_value == "True"
-                    # Always include inputs 1, 2, 3, 7, and 8
-                    always_included_inputs = self.custom_evaluation_inputs[:3] + self.custom_evaluation_inputs[6:8]
-                    self.clear_dynamic_inputs(build_config, saved_values)
-                    self.add_inputs_with_saved_values(build_config, always_included_inputs, saved_values)
-                    # Conditionally add fields 4 to 6 if Run Inference is True
-                    if run_inference:
-                        conditional_inputs = self.custom_evaluation_inputs[3:6]
-                        self.add_inputs_with_saved_values(build_config, conditional_inputs, saved_values)
-                else:
-                    logger.warning("Custom evaluation input methods not available yet")
-
             logger.info("Build config update completed successfully.")
         except (ValueError, AttributeError, ImportError, RuntimeError) as exc:
             # Catch specific exceptions to prevent UI crashes
@@ -986,8 +802,6 @@ class NvidiaEvaluatorComponent(Component):
         return build_config
 
     async def evaluate(self) -> Data:
-        evaluation_type = getattr(self, "002_evaluation_type", "LM Evaluation Harness")
-
         if not self.namespace:
             error_msg = "Missing namespace"
             raise ValueError(error_msg)
@@ -1062,333 +876,10 @@ class NvidiaEvaluatorComponent(Component):
                 raise ValueError(error_msg) from exc
 
         else:
-            # Fallback to existing dynamic creation approach
-            self.log("Using fallback dynamic creation approach")
-
-            # Prioritize customized_model input over target dropdown
-            customized_model_input = getattr(self, "customized_model", None)
-            effective_namespace = self.namespace
-            if customized_model_input is not None and isinstance(customized_model_input, Data):
-                model_name, customized_namespace = self.extract_customized_model_info(customized_model_input)
-                if model_name:
-                    self.log(f"Using customized model: {model_name}")
-                    if customized_namespace:
-                        effective_namespace = customized_namespace
-                        self.log(f"Using customized model namespace: {effective_namespace}")
-                else:
-                    self.log("Failed to extract model name from customized model input")
-                    model_name = getattr(self, "000_llm_name", "")
-                    if not model_name:
-                        error_msg = "Refresh and select the model name to be evaluated"
-                        raise ValueError(error_msg)
-                    self.log(f"Using model from dropdown: {model_name}")
-            else:
-                model_name = getattr(self, "000_llm_name", "")
-                if not model_name:
-                    error_msg = "Refresh and select the model name to be evaluated"
-                    raise ValueError(error_msg)
-                self.log(f"Using model from dropdown: {model_name}")
-
-            if not self.base_url:
-                error_msg = "Missing base URL"
-                raise ValueError(error_msg)
-
-            base_url = self.base_url.rstrip("/")
-
-            # Create the evaluation using SDK pattern like customizer
-            try:
-                nemo_client = self.get_nemo_client()
-
-                if evaluation_type == "LM Evaluation Harness":
-                    # Create LM evaluation config and target, then create job with IDs
-                    config_data, target_data = await self._prepare_lm_evaluation_data(
-                        base_url, effective_namespace, model_name
-                    )
-
-                    # Create config first
-                    config_response = await nemo_client.evaluation.configs.create(
-                        type=config_data["type"],
-                        namespace=config_data["namespace"],
-                        tasks=config_data["tasks"],
-                        params=config_data["params"],
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-                    config_id = config_response.id
-                    self.log(f"Created evaluation config with ID: {config_id}")
-
-                    # Debug log the config structure
-                    formatted_config = json.dumps(config_data, indent=2, default=str)
-                    self.log(f"Config data sent: {formatted_config}")
-
-                    # Create target
-                    target_response = await nemo_client.evaluation.targets.create(
-                        type=target_data["type"],
-                        namespace=target_data["namespace"],
-                        model=target_data["model"],
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-                    target_id = target_response.id
-                    self.log(f"Created evaluation target with ID: {target_id}")
-
-                    # Create job with config and target IDs
-                    response = await nemo_client.evaluation.jobs.create(
-                        namespace=config_data["namespace"],
-                        config=config_id,
-                        target=target_id,
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-
-                elif evaluation_type == "Similarity Metrics":
-                    # Create custom evaluation config and target, then create job with IDs
-                    config_data, target_data = await self._prepare_custom_evaluation_data(
-                        base_url, effective_namespace, model_name
-                    )
-
-                    # Create config first
-                    config_response = await nemo_client.evaluation.configs.create(
-                        type=config_data["type"],
-                        namespace=config_data["namespace"],
-                        tasks=config_data["tasks"],
-                        params=config_data["params"],
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-                    config_id = config_response.id
-                    self.log(f"Created evaluation config with ID: {config_id}")
-
-                    # Debug log the config structure
-                    formatted_config = json.dumps(config_data, indent=2, default=str)
-                    self.log(f"Config data sent: {formatted_config}")
-
-                    # Create target
-                    target_response = await nemo_client.evaluation.targets.create(
-                        type=target_data["type"],
-                        namespace=target_data["namespace"],
-                        model=target_data["model"],
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-                    target_id = target_response.id
-                    self.log(f"Created evaluation target with ID: {target_id}")
-
-                    # Create job with config and target IDs
-                    response = await nemo_client.evaluation.jobs.create(
-                        namespace=config_data["namespace"],
-                        config=config_id,
-                        target=target_id,
-                        extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                    )
-                else:
-                    error_msg = f"Unsupported evaluation type: {evaluation_type}"
-                    raise ValueError(error_msg)
-
-                # Process the response
-                result_dict = response.model_dump()
-
-                # Convert datetime objects to strings for JSON serialization
-                result_dict = self.convert_datetime_to_string(result_dict)
-
-                # Log the successful response
-                formatted_result = json.dumps(result_dict, indent=2)
-                msg = f"Received successful evaluation response: {formatted_result}"
-                self.log(msg)
-
-                # Extract job ID for wait-for-completion logic
-                id_value = result_dict["id"]
-                self.log(f"Evaluation job created successfully with ID: {id_value}")
-
-                # Check if we should wait for job completion
-                wait_for_completion = getattr(self, "wait_for_completion", False)
-                logger.info("Wait for completion setting: %s", wait_for_completion)
-                if wait_for_completion:
-                    logger.info("Wait for completion enabled. Waiting for evaluation job %s to complete...", id_value)
-                    try:
-                        max_wait_time = getattr(self, "max_wait_time_minutes", 30)
-                        logger.info("Starting wait_for_job_completion with max_wait_time: %s", max_wait_time)
-                        # Wait for job completion
-                        final_job_result = await self.wait_for_job_completion(
-                            job_id=id_value, max_wait_time_minutes=max_wait_time
-                        )
-                        # Update result_dict with final job status
-                        result_dict.update(final_job_result)
-                        logger.info("Evaluation job %s completed successfully!", id_value)
-                        self.log(f"Evaluation job {id_value} completed successfully!")
-                    except TimeoutError as exc:
-                        logger.warning("Evaluation job %s did not complete within timeout: %s", id_value, exc)
-                        self.log(f"Evaluation job {id_value} did not complete within {max_wait_time} minutes timeout")
-                        # Continue with the original result (job created but not completed)
-                    except ValueError as exc:
-                        logger.exception("Evaluation job %s failed", id_value)
-                        self.log(f"Evaluation job {id_value} failed: {exc}")
-                        # Re-raise the ValueError to indicate job failure
-                        error_msg = f"Evaluation job {id_value} failed: {exc}"
-                        raise ValueError(error_msg) from exc
-                    except (asyncio.CancelledError, RuntimeError, OSError):
-                        logger.exception("Unexpected error while waiting for evaluation job completion")
-                        self.log(f"Unexpected error while waiting for evaluation job {id_value} completion")
-                        # Continue with the original result
-                else:
-                    logger.info("Wait for completion disabled. Evaluation job %s created successfully.", id_value)
-
-                return Data(data=result_dict)
-
-            except NeMoMicroservicesError as exc:
-                error_msg = f"NeMo microservices error during evaluation job creation: {exc}"
-                self.log(error_msg, name="NeMoEvaluatorComponent")
-                raise ValueError(error_msg) from exc
-
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                error_msg = f"HTTP error during evaluation job creation: {exc}"
-                self.log(error_msg, name="NeMoEvaluatorComponent")
-                raise ValueError(error_msg) from exc
-
-            except Exception as exc:
-                error_msg = f"Unexpected error during evaluation job creation: {exc}"
-                self.log(error_msg)
-                raise ValueError(error_msg) from exc
-
-    async def _prepare_lm_evaluation_data(self, base_url: str, namespace: str, model_name: str) -> tuple:
-        """Prepare LM evaluation config and target data for SDK."""
-        # Check if we have a dataset input to determine effective namespace
-        dataset_input = getattr(self, "dataset", None)
-        effective_namespace = namespace
-
-        if dataset_input is not None and isinstance(dataset_input, Data):
-            # Extract dataset information from the provided dataset
-            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
-            if isinstance(dataset_data, dict):
-                dataset_namespace = dataset_data.get("namespace")
-                if dataset_namespace:
-                    effective_namespace = dataset_namespace
-                    self.log(f"Using dataset namespace for LM evaluation: {effective_namespace}")
-
-        # Create target first
-        target_data = await self._create_evaluation_target(None, base_url, effective_namespace, model_name)
-
-        # Get required parameters
-        hf_token = getattr(self, "100_huggingface_token", None)
-        if not hf_token:
-            error_msg = "Missing hf token"
+            # Both target and config are required
+            error_msg = "Both target and config must be selected for evaluation"
+            self.log(error_msg)
             raise ValueError(error_msg)
-
-        # Create config data in SDK format
-        config_data = {
-            "type": "lm_eval_harness",
-            "namespace": effective_namespace,
-            "tasks": {
-                getattr(self, "110_task_name", "gsm8k"): {
-                    "params": {
-                        "num_fewshot": getattr(self, "112_few_shot_examples", 5),
-                        "batch_size": getattr(self, "113_batch_size", 16),
-                        "bootstrap_iters": getattr(self, "114_bootstrap_iterations", 100000),
-                        "limit": getattr(self, "115_limit", -1),
-                    },
-                }
-            },
-            "params": {
-                "hf_token": hf_token,
-                "use_greedy": True,
-                "top_p": getattr(self, "151_top_p", 0.0),
-                "top_k": getattr(self, "152_top_k", 1),
-                "temperature": getattr(self, "153_temperature", 0.0),
-                "stop": [],
-                "tokens_to_generate": getattr(self, "154_tokens_to_generate", 1024),
-            },
-        }
-
-        return config_data, target_data
-
-    async def _prepare_custom_evaluation_data(self, base_url: str, namespace: str, model_name: str) -> tuple:
-        """Prepare custom evaluation config and target data for SDK."""
-        # Check if we have a dataset input or existing dataset selection
-        dataset_input = getattr(self, "dataset", None)
-        existing_dataset = getattr(self, "existing_dataset", None)
-
-        # Priority: 1. Dataset connection, 2. Existing dataset selection
-        if dataset_input is not None:
-            # Extract dataset information from the provided dataset
-            if not isinstance(dataset_input, Data):
-                error_msg = "Dataset input must be a Data object"
-                raise ValueError(error_msg)
-
-            dataset_data = dataset_input.data if hasattr(dataset_input, "data") else dataset_input
-
-            if not isinstance(dataset_data, dict):
-                error_msg = "Dataset data must be a dictionary"
-                raise ValueError(error_msg)
-
-            # Extract required fields from dataset
-            dataset_name = dataset_data.get("name")
-            dataset_namespace = dataset_data.get("namespace")
-
-            if not dataset_name:
-                error_msg = "Dataset must contain 'name' field"
-                raise ValueError(error_msg)
-
-            if not dataset_namespace:
-                error_msg = "Dataset must contain 'namespace' field"
-                raise ValueError(error_msg)
-
-            # Use dataset namespace if different from component namespace
-            effective_namespace = dataset_namespace
-            repo_id = f"{effective_namespace}/{dataset_name}"
-            self.log(f"Using dataset connection: {dataset_name} from namespace: {effective_namespace}")
-
-        elif existing_dataset:
-            # Use selected existing dataset
-            dataset_name = existing_dataset
-            effective_namespace = namespace
-            repo_id = f"{effective_namespace}/{dataset_name}"
-            self.log(f"Using existing dataset: {dataset_name} from namespace: {effective_namespace}")
-
-        else:
-            # No dataset provided - require either connection or existing dataset
-            error_msg = "Either provide a dataset connection or select an existing dataset " "to run evaluation"
-            raise ValueError(error_msg)
-
-        # Use the file path with the repo ID
-        input_file = f"hf://datasets/{repo_id}/input.jsonl"
-
-        # Handle run_inference
-        run_inference = getattr(self, "310_run_inference", "True").lower() == "true"
-        output_file = None if run_inference else f"hf://datasets/{repo_id}/output.jsonl"
-
-        # Create target
-        target_data = await self._create_evaluation_target(output_file, base_url, effective_namespace, model_name)
-
-        # Create metrics in SDK format - use string-check for all to ensure consistent return types
-        scores = getattr(self, "351_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
-        metrics_dict = {}
-        for score in scores:
-            metric_name = score.lower()
-            # Use string-check for all metrics to ensure consistent result format
-            # This should avoid the model_dump() error while maintaining the correct check parameter format
-            if metric_name == "em":
-                metrics_dict["exact_match"] = {
-                    "type": "string-check",
-                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                }
-            else:
-                # Use string-check for all other metrics with proper 3-element check array
-                metrics_dict[metric_name] = {
-                    "type": "string-check",
-                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                }
-
-        # Create config data in SDK format
-        config_data = {
-            "type": "custom",
-            "namespace": effective_namespace,
-            "params": {"parallelism": 8},
-            "tasks": {
-                "default_task": {
-                    "type": "completion",
-                    "params": {"template": {"prompt": "{{item.prompt}}"}},
-                    "metrics": metrics_dict,
-                    "dataset": {"files_url": input_file},
-                }
-            },
-        }
-
-        return config_data, target_data
 
     async def _create_new_evaluation_config(self, config_data: dict) -> str:
         """Create a new evaluation configuration and return its ID."""
@@ -1494,8 +985,9 @@ class NvidiaEvaluatorComponent(Component):
                         return getattr(target, "id", target_name)
                 # Not found, assume already an ID
                 return target_name
-            # No data, assume already an ID
-            return target_name
+            else:
+                # No data, assume already an ID
+                return target_name
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to get target ID for %s: %s", target_name, exc)
             return target_name
@@ -1511,8 +1003,9 @@ class NvidiaEvaluatorComponent(Component):
                         return getattr(config, "id", config_name)
                 # Not found, assume already an ID
                 return config_name
-            # No data, assume already an ID
-            return config_name
+            else:
+                # No data, assume already an ID
+                return config_name
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to get config ID for %s: %s", config_name, exc)
             return config_name
@@ -1544,107 +1037,6 @@ class NvidiaEvaluatorComponent(Component):
             raise
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Could not validate target-config compatibility: %s", exc)
-
-    async def _create_evaluation_target(self, output_file, base_url: str, namespace: str, model_name: str):  # noqa: ARG002
-        """Create evaluation target using SDK and return the data for job creation."""
-        try:
-            if output_file:
-                # Target with cached outputs
-                model_data = {"cached_outputs": {"files_url": output_file}}
-            else:
-                # Target with API endpoint
-                if not self.inference_model_url:
-                    error_msg = "Provide the nim url for evaluation inference to be processed"
-                    raise ValueError(error_msg)
-                model_data = {
-                    "api_endpoint": {
-                        "url": self.normalize_nim_url(self.inference_model_url),
-                        "model_id": model_name,
-                    }
-                }
-
-            # Create target data for SDK
-            target_data = {
-                "type": "model",
-                "namespace": namespace,
-                "model": model_data,
-            }
-
-        except Exception as exc:
-            error_msg = f"Error creating evaluation target: {exc}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
-        else:
-            return target_data
-
-    async def _get_target_object(self, target_id: str, base_url: str):  # noqa: ARG002
-        """Get the target object for SDK use."""
-        try:
-            nemo_client = self.get_nemo_client()
-            target_obj = await nemo_client.evaluation.targets.retrieve(
-                target_id=target_id,
-                namespace=self.namespace,
-                extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.log(f"Warning: Could not retrieve target object {target_id}, using string: {exc}")
-            # Fallback to string format if object retrieval fails
-            return f"{self.namespace}/{target_id}"
-        else:
-            return target_obj
-
-    async def create_eval_target(self, output_file, base_url: str) -> str:  # noqa: ARG002
-        namespace = self.namespace
-        try:
-            # Use NeMo client for evaluation target creation
-            nemo_client = self.get_nemo_client()
-
-            if output_file:
-                # Target with cached outputs
-                response = await nemo_client.evaluation.targets.create(
-                    type="model",
-                    namespace=namespace,
-                    model={"cached_outputs": {"files_url": output_file}},
-                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                )
-            else:
-                # Target with API endpoint
-                response = await nemo_client.evaluation.targets.create(
-                    type="model",
-                    namespace=namespace,
-                    model={
-                        "api_endpoint": {
-                            "url": self.normalize_nim_url(self.inference_model_url),
-                            "model_id": getattr(self, "000_llm_name", ""),
-                        }
-                    },
-                    extra_headers={"Authorization": f"Bearer {self.auth_token}"},
-                )
-
-            # Process the response
-            result_dict = response.model_dump()
-
-            # Convert datetime objects to strings for JSON serialization
-            result_dict = self.convert_datetime_to_string(result_dict)
-            formatted_result = json.dumps(result_dict, indent=2)
-            self.log(f"Received successful response: {formatted_result}")
-
-            return result_dict.get("id")
-
-        except NeMoMicroservicesError as exc:
-            error_msg = f"NeMo microservices error during evaluation target creation: {exc}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
-
-        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
-            error_msg = f"HTTP error during evaluation target creation: {exc}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
-
-        except Exception as exc:
-            error_msg = f"Unexpected error during evaluation target creation: {exc}"
-            self.log(error_msg)
-            raise ValueError(error_msg) from exc
 
     async def fetch_existing_datasets(self, base_url: str) -> list[str]:  # noqa: ARG002
         """Fetch existing datasets from the NeMo Data Store.
