@@ -75,7 +75,7 @@ class NewConfigInput:
                             value="gsm8k",
                             required=False,
                         ),
-                        "04_hf_token": SecretStrInput(
+                        "04_hf_token": StrInput(
                             name="hf_token",
                             display_name="HuggingFace Token",
                             info="Token for accessing HuggingFace to fetch the evaluation dataset.",
