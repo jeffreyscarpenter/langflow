@@ -26,32 +26,29 @@ from langflow.schema import Data
 
 
 @dataclass
-class NewConfigInput:
-    """Input structure for creating new evaluation configurations with conditional logic."""
+class LMEvalHarnessConfigInput:
+    """Input structure for LM Evaluation Harness configuration."""
 
     functionality: str = "create"
     fields: dict[str, dict] = field(
         default_factory=lambda: {
             "data": {
                 "node": {
-                    "name": "create_config",
-                    "description": "Create a new evaluation configuration for the selected target",
-                    "display_name": "Create New Config",
+                    "name": "create_lm_eval_config",
+                    "description": "Create a new LM Evaluation Harness configuration",
+                    "display_name": "Create LM Evaluation Config",
                     "field_order": [
                         "01_config_name",
-                        "02_evaluation_type",
-                        "03_task_name",
-                        "04_hf_token",
-                        "05_few_shot_examples",
-                        "06_batch_size",
-                        "07_bootstrap_iterations",
-                        "08_limit",
-                        "09_top_p",
-                        "10_top_k",
-                        "11_temperature",
-                        "12_tokens_to_generate",
-                        "13_scorers",
-                        "14_num_samples",
+                        "02_task_name",
+                        "03_hf_token",
+                        "04_few_shot_examples",
+                        "05_batch_size",
+                        "06_bootstrap_iterations",
+                        "07_limit",
+                        "08_top_p",
+                        "09_top_k",
+                        "10_temperature",
+                        "11_tokens_to_generate",
                     ],
                     "template": {
                         "01_config_name": StrInput(
@@ -60,49 +57,41 @@ class NewConfigInput:
                             info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
                             required=True,
                         ),
-                        "02_evaluation_type": DropdownInput(
-                            name="evaluation_type",
-                            display_name="Evaluation Type",
-                            options=["LM Evaluation Harness", "Similarity Metrics"],
-                            value="LM Evaluation Harness",
-                            required=True,
-                            real_time_refresh=True,
-                        ),
-                        "03_task_name": StrInput(
+                        "02_task_name": StrInput(
                             name="task_name",
                             display_name="Task Name",
                             info="Task from https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.3/lm_eval/tasks#tasks",
                             value="gsm8k",
-                            required=False,
+                            required=True,
                         ),
-                        "04_hf_token": StrInput(
+                        "03_hf_token": StrInput(
                             name="hf_token",
                             display_name="HuggingFace Token",
                             info="Token for accessing HuggingFace to fetch the evaluation dataset.",
-                            required=False,
+                            required=True,
                         ),
-                        "05_few_shot_examples": IntInput(
+                        "04_few_shot_examples": IntInput(
                             name="few_shot_examples",
                             display_name="Few-shot Examples",
                             info="The number of few-shot examples before the input.",
                             value=5,
                             required=False,
                         ),
-                        "06_batch_size": IntInput(
+                        "05_batch_size": IntInput(
                             name="batch_size",
                             display_name="Batch Size",
                             info="The batch size used for evaluation.",
                             value=16,
                             required=False,
                         ),
-                        "07_bootstrap_iterations": IntInput(
+                        "06_bootstrap_iterations": IntInput(
                             name="bootstrap_iterations",
                             display_name="Bootstrap Iterations",
                             info="The number of iterations for bootstrap statistics.",
                             value=100000,
                             required=False,
                         ),
-                        "08_limit": IntInput(
+                        "07_limit": IntInput(
                             name="limit",
                             display_name="Limit",
                             info=(
@@ -112,7 +101,7 @@ class NewConfigInput:
                             value=-1,
                             required=False,
                         ),
-                        "09_top_p": FloatInput(
+                        "08_top_p": FloatInput(
                             name="top_p",
                             display_name="Top_p",
                             info=(
@@ -122,14 +111,14 @@ class NewConfigInput:
                             value=0.0,
                             required=False,
                         ),
-                        "10_top_k": IntInput(
+                        "09_top_k": IntInput(
                             name="top_k",
                             display_name="Top_k",
                             info="The top_k value to be used during generation sampling.",
                             value=1,
                             required=False,
                         ),
-                        "11_temperature": SliderInput(
+                        "10_temperature": SliderInput(
                             name="temperature",
                             display_name="Temperature",
                             range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
@@ -137,27 +126,147 @@ class NewConfigInput:
                             info="The temperature to be used during generation sampling (0.0 to 1.0).",
                             required=False,
                         ),
-                        "12_tokens_to_generate": IntInput(
+                        "11_tokens_to_generate": IntInput(
                             name="tokens_to_generate",
                             display_name="Max Tokens",
                             info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
                             value=1024,
                             required=False,
                         ),
-                        "13_scorers": MultiselectInput(
+                    },
+                }
+            }
+        }
+    )
+
+
+@dataclass
+class SimilarityMetricsConfigInput:
+    """Input structure for Similarity Metrics configuration."""
+
+    functionality: str = "create"
+    fields: dict[str, dict] = field(
+        default_factory=lambda: {
+            "data": {
+                "node": {
+                    "name": "create_similarity_config",
+                    "description": "Create a new Similarity Metrics configuration",
+                    "display_name": "Create Similarity Metrics Config",
+                    "field_order": [
+                        "01_config_name",
+                        "02_scorers",
+                        "03_num_samples",
+                    ],
+                    "template": {
+                        "01_config_name": StrInput(
+                            name="config_name",
+                            display_name="Config Name",
+                            info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
+                            required=True,
+                        ),
+                        "02_scorers": MultiselectInput(
                             name="scorers",
                             display_name="Scorers",
                             info="List of Scorers for evaluation.",
                             options=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
                             value=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
-                            required=False,
+                            required=True,
                         ),
-                        "14_num_samples": IntInput(
+                        "03_num_samples": IntInput(
                             name="num_samples",
                             display_name="Number of Samples",
                             info="Number of samples to run inference on from the input_file.",
                             value=-1,
                             required=False,
+                        ),
+                    },
+                }
+            }
+        }
+    )
+
+
+@dataclass
+class CustomEvaluationConfigInput:
+    """Input structure for Custom Evaluation configuration."""
+
+    functionality: str = "create"
+    fields: dict[str, dict] = field(
+        default_factory=lambda: {
+            "data": {
+                "node": {
+                    "name": "create_custom_config",
+                    "description": "Create a new Custom Evaluation configuration",
+                    "display_name": "Create Custom Evaluation Config",
+                    "field_order": [
+                        "01_config_name",
+                        "02_evaluation_prompt",
+                        "03_metrics",
+                        "04_batch_size",
+                    ],
+                    "template": {
+                        "01_config_name": StrInput(
+                            name="config_name",
+                            display_name="Config Name",
+                            info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
+                            required=True,
+                        ),
+                        "02_evaluation_prompt": StrInput(
+                            name="evaluation_prompt",
+                            display_name="Evaluation Prompt",
+                            info=(
+                                "The prompt template for evaluation (use {{item.prompt}} for input, "
+                                "{{response}} for model output)"
+                            ),
+                            value="Evaluate the following response: {{response}}",
+                            required=True,
+                        ),
+                        "03_metrics": MultiselectInput(
+                            name="metrics",
+                            display_name="Metrics",
+                            info="List of metrics to evaluate.",
+                            options=["accuracy", "bleu", "rouge", "em", "bert", "f1", "custom"],
+                            value=["accuracy"],
+                            required=True,
+                        ),
+                        "04_batch_size": IntInput(
+                            name="batch_size",
+                            display_name="Batch Size",
+                            info="The batch size used for evaluation.",
+                            value=16,
+                            required=False,
+                        ),
+                    },
+                }
+            }
+        }
+    )
+
+
+# Default dialog for evaluation type selection
+@dataclass
+class EvaluationTypeSelectionInput:
+    """Input structure for evaluation type selection."""
+
+    functionality: str = "create"
+    fields: dict[str, dict] = field(
+        default_factory=lambda: {
+            "data": {
+                "node": {
+                    "name": "select_evaluation_type",
+                    "description": "Select the type of evaluation configuration to create",
+                    "display_name": "Select Evaluation Type",
+                    "field_order": [
+                        "01_evaluation_type",
+                    ],
+                    "template": {
+                        "01_evaluation_type": DropdownInput(
+                            name="evaluation_type",
+                            display_name="Evaluation Type",
+                            options=["LM Evaluation Harness", "Similarity Metrics", "Custom Evaluation"],
+                            value="LM Evaluation Harness",
+                            required=True,
+                            real_time_refresh=True,
                         ),
                     },
                 }
@@ -359,7 +468,7 @@ class NvidiaEvaluatorComponent(Component):
             refresh_button=True,
             required=True,
             combobox=True,
-            dialog_inputs=asdict(NewConfigInput()),
+            dialog_inputs=asdict(EvaluationTypeSelectionInput()),
         ),
         DropdownInput(
             name="existing_dataset",
@@ -665,20 +774,27 @@ class NvidiaEvaluatorComponent(Component):
             elif field_name == "config":
                 # Handle dialog input changes - follow customizer pattern
                 if isinstance(field_value, dict):
-                    # Case 1: New config creation
+                    # Case 1: Evaluation type selection - switch to appropriate dialog
+                    if "01_evaluation_type" in field_value:
+                        return self._switch_evaluation_dialog(build_config, field_value)
+
+                    # Case 2: New config creation - handle based on current dialog type
                     if "01_config_name" in field_value:
                         # Handle new config creation if needed
                         pass
-
-                    # Case 2: Update evaluation type options
-                    if "02_evaluation_type" in field_value:
-                        return self._update_evaluation_type_options(build_config, field_value)
                 else:
                     # Fetch configs when config field is refreshed
                     target_value = getattr(self, "target", None)
                     configs, configs_metadata = await self.fetch_available_evaluation_configs(target_value)
                     build_config["config"]["options"] = configs
                     build_config["config"]["options_metadata"] = configs_metadata
+
+                    # Reset dialog to evaluation type selection when refreshed
+                    build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
+
+                    # Clear stored evaluation type
+                    if hasattr(self, "_selected_evaluation_type"):
+                        delattr(self, "_selected_evaluation_type")
 
                     # Debug logging
                     logger.debug("Updated build_config for config refresh:")
@@ -716,92 +832,28 @@ class NvidiaEvaluatorComponent(Component):
             return build_config
         return build_config
 
-    def _update_evaluation_type_options(self, build_config: dict, field_value: dict) -> dict:
-        """Update evaluation type options based on evaluation type selection."""
-        # Extract template path for cleaner access
-        template = build_config["config"]["dialog_inputs"]["fields"]["data"]["node"]["template"]
+    def _switch_evaluation_dialog(self, build_config: dict, field_value: dict) -> dict:
+        """Switch to the appropriate evaluation dialog based on evaluation type selection."""
+        evaluation_type = field_value["01_evaluation_type"]
 
-        evaluation_type = field_value["02_evaluation_type"]
+        # Store the selected evaluation type for later use
+        if not hasattr(self, "_selected_evaluation_type"):
+            self._selected_evaluation_type = evaluation_type
+        else:
+            self._selected_evaluation_type = evaluation_type
 
+        # Switch to the appropriate dialog based on evaluation type
         if evaluation_type == "LM Evaluation Harness":
-            # Enable LM Evaluation Harness fields
-            lm_fields = [
-                "03_task_name",
-                "04_hf_token",
-                "05_few_shot_examples",
-                "06_batch_size",
-                "07_bootstrap_iterations",
-                "08_limit",
-                "09_top_p",
-                "10_top_k",
-                "11_temperature",
-                "12_tokens_to_generate",
-            ]
-
-            for field_key in lm_fields:
-                if field_key in template:
-                    field_config = template[field_key]
-                    field_config.update(
-                        {
-                            "readonly": False,
-                            "required": field_key in ["03_task_name", "04_hf_token"],
-                            "placeholder": "",
-                        }
-                    )
-
-            # Disable Similarity Metrics fields
-            sm_fields = ["13_scorers", "14_num_samples"]
-            for field_key in sm_fields:
-                if field_key in template:
-                    field_config = template[field_key]
-                    field_config.update(
-                        {
-                            "readonly": True,
-                            "required": False,
-                            "placeholder": "Only available for Similarity Metrics",
-                            "value": None,
-                        }
-                    )
-
+            build_config["config"]["dialog_inputs"] = asdict(LMEvalHarnessConfigInput())
         elif evaluation_type == "Similarity Metrics":
-            # Enable Similarity Metrics fields
-            sm_fields = ["13_scorers", "14_num_samples"]
-            for field_key in sm_fields:
-                if field_key in template:
-                    field_config = template[field_key]
-                    field_config.update(
-                        {
-                            "readonly": False,
-                            "required": field_key == "13_scorers",
-                            "placeholder": "",
-                        }
-                    )
+            build_config["config"]["dialog_inputs"] = asdict(SimilarityMetricsConfigInput())
+        elif evaluation_type == "Custom Evaluation":
+            build_config["config"]["dialog_inputs"] = asdict(CustomEvaluationConfigInput())
+        else:
+            # Default to evaluation type selection dialog
+            build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
 
-            # Disable LM Evaluation Harness fields
-            lm_fields = [
-                "03_task_name",
-                "04_hf_token",
-                "05_few_shot_examples",
-                "06_batch_size",
-                "07_bootstrap_iterations",
-                "08_limit",
-                "09_top_p",
-                "10_top_k",
-                "11_temperature",
-                "12_tokens_to_generate",
-            ]
-            for field_key in lm_fields:
-                if field_key in template:
-                    field_config = template[field_key]
-                    field_config.update(
-                        {
-                            "readonly": True,
-                            "required": False,
-                            "placeholder": "Only available for LM Evaluation Harness",
-                            "value": None,
-                        }
-                    )
-
+        logger.info(f"Switched to {evaluation_type} dialog")
         return build_config
 
     async def evaluate(self) -> Data:
@@ -889,13 +941,16 @@ class NvidiaEvaluatorComponent(Component):
         try:
             nemo_client = self.get_nemo_client()
 
-            # Extract config parameters from dialog data
-            evaluation_type = config_data.get("02_evaluation_type", "LM Evaluation Harness")
+            # Determine evaluation type from stored selection or config data
+            evaluation_type = getattr(self, "_selected_evaluation_type", None)
+            if not evaluation_type:
+                # Fallback to config data if not stored
+                evaluation_type = config_data.get("01_evaluation_type", "LM Evaluation Harness")
 
             if evaluation_type == "LM Evaluation Harness":
                 # Build LM Evaluation Harness config
-                task_name = config_data.get("03_task_name", "gsm8k")
-                hf_token = config_data.get("04_hf_token")
+                task_name = config_data.get("02_task_name", "gsm8k")
+                hf_token = config_data.get("03_hf_token")
 
                 if not hf_token:
                     error_msg = "HuggingFace token is required for LM Evaluation Harness"
@@ -904,11 +959,11 @@ class NvidiaEvaluatorComponent(Component):
                 config_params = {
                     "hf_token": hf_token,
                     "use_greedy": True,
-                    "top_p": config_data.get("09_top_p", 0.0),
-                    "top_k": config_data.get("10_top_k", 1),
-                    "temperature": config_data.get("11_temperature", 0.0),
+                    "top_p": config_data.get("08_top_p", 0.0),
+                    "top_k": config_data.get("09_top_k", 1),
+                    "temperature": config_data.get("10_temperature", 0.0),
                     "stop": [],
-                    "tokens_to_generate": config_data.get("12_tokens_to_generate", 1024),
+                    "tokens_to_generate": config_data.get("11_tokens_to_generate", 1024),
                 }
 
                 # Create config
@@ -918,10 +973,10 @@ class NvidiaEvaluatorComponent(Component):
                     tasks={
                         task_name: {
                             "params": {
-                                "num_fewshot": config_data.get("05_few_shot_examples", 5),
-                                "batch_size": config_data.get("06_batch_size", 16),
-                                "bootstrap_iters": config_data.get("07_bootstrap_iterations", 100000),
-                                "limit": config_data.get("08_limit", -1),
+                                "num_fewshot": config_data.get("04_few_shot_examples", 5),
+                                "batch_size": config_data.get("05_batch_size", 16),
+                                "bootstrap_iters": config_data.get("06_bootstrap_iterations", 100000),
+                                "limit": config_data.get("07_limit", -1),
                             },
                         }
                     },
@@ -931,7 +986,7 @@ class NvidiaEvaluatorComponent(Component):
 
             elif evaluation_type == "Similarity Metrics":
                 # Build Similarity Metrics config
-                scorers = config_data.get("13_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
+                scorers = config_data.get("02_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
 
                 # Create metrics in SDK format
                 metrics_dict = {}
@@ -957,6 +1012,51 @@ class NvidiaEvaluatorComponent(Component):
                         "default_task": {
                             "type": "completion",
                             "params": {"template": {"prompt": "{{item.prompt}}"}},
+                            "metrics": metrics_dict,
+                            "dataset": {"files_url": "placeholder"},  # Will be updated when used
+                        }
+                    },
+                    extra_headers=self.get_auth_headers(),
+                )
+
+            elif evaluation_type == "Custom Evaluation":
+                # Build Custom Evaluation config
+                evaluation_prompt = config_data.get(
+                    "02_evaluation_prompt", "Evaluate the following response: {{response}}"
+                )
+                metrics = config_data.get("03_metrics", ["accuracy"])
+                batch_size = config_data.get("04_batch_size", 16)
+
+                # Create metrics in SDK format
+                metrics_dict = {}
+                for metric in metrics:
+                    metric_name = metric.lower()
+                    if metric_name == "custom":
+                        # For custom metrics, we'll use a simple string check
+                        metrics_dict["custom_evaluation"] = {
+                            "type": "string-check",
+                            "params": {"check": ["{{response}}", "!=", ""]},
+                        }
+                    elif metric_name == "em":
+                        metrics_dict["exact_match"] = {
+                            "type": "string-check",
+                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                        }
+                    else:
+                        metrics_dict[metric_name] = {
+                            "type": "string-check",
+                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                        }
+
+                # Create config
+                response = await nemo_client.evaluation.configs.create(
+                    type="custom",
+                    namespace=getattr(self, "namespace", "default"),
+                    params={"parallelism": batch_size},
+                    tasks={
+                        "custom_task": {
+                            "type": "completion",
+                            "params": {"template": {"prompt": evaluation_prompt}},
                             "metrics": metrics_dict,
                             "dataset": {"files_url": "placeholder"},  # Will be updated when used
                         }
