@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import httpx
 import nemo_microservices
@@ -292,22 +293,43 @@ class NvidiaCustomizerComponent(Component):
         try:
             if field_name == "base_url":
                 # Fetch targets when base_url changes
-                targets = await self.fetch_available_targets()
+                targets, targets_metadata = await self.fetch_available_targets()
                 build_config["target"]["options"] = targets
+                build_config["target"]["options_metadata"] = targets_metadata
 
                 # Fetch existing datasets
-                existing_datasets = await self.fetch_existing_datasets()
+                existing_datasets, existing_datasets_metadata = await self.fetch_existing_datasets()
                 build_config["existing_dataset"]["options"] = existing_datasets
+                build_config["existing_dataset"]["options_metadata"] = existing_datasets_metadata
+
+                # Fetch configs with metadata
+                configs, configs_metadata = await self.fetch_available_configs()
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
+
+                # Debug logging
+                logger.debug("Updated build_config for base_url change:")
+                logger.debug("  Targets: %s options, %s metadata", len(targets), len(targets_metadata))
+                logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
+                logger.debug(
+                    "  Datasets: %s options, %s metadata", len(existing_datasets), len(existing_datasets_metadata)
+                )
 
             elif field_name == "target":
                 # Fetch targets when target field is refreshed
-                targets = await self.fetch_available_targets()
+                targets, targets_metadata = await self.fetch_available_targets()
                 build_config["target"]["options"] = targets
+                build_config["target"]["options_metadata"] = targets_metadata
 
                 # Fetch configs when target changes
                 if field_value:
-                    configs = await self.fetch_available_configs(field_value)
+                    configs, configs_metadata = await self.fetch_available_configs(field_value)
                     build_config["config"]["options"] = configs
+                    build_config["config"]["options_metadata"] = configs_metadata
+
+                    # Debug logging
+                    logger.debug("Updated build_config for target change '%s':", field_value)
+                    logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
 
             elif field_name == "config":
                 # Handle dialog input changes - follow AstraDB pattern
@@ -328,13 +350,25 @@ class NvidiaCustomizerComponent(Component):
                     # Fetch configs when config field is refreshed
                     # If a target is selected, filter configs by that target
                     target_value = getattr(self, "target", None)
-                    configs = await self.fetch_available_configs(target_value)
+                    configs, configs_metadata = await self.fetch_available_configs(target_value)
                     build_config["config"]["options"] = configs
+                    build_config["config"]["options_metadata"] = configs_metadata
+
+                    # Debug logging
+                    logger.debug("Updated build_config for config refresh:")
+                    logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
 
             elif field_name == "existing_dataset":
                 # Fetch existing datasets when existing_dataset field is refreshed
-                existing_datasets = await self.fetch_existing_datasets()
+                existing_datasets, existing_datasets_metadata = await self.fetch_existing_datasets()
                 build_config["existing_dataset"]["options"] = existing_datasets
+                build_config["existing_dataset"]["options_metadata"] = existing_datasets_metadata
+
+                # Debug logging
+                logger.debug("Updated build_config for existing_dataset refresh:")
+                logger.debug(
+                    "  Datasets: %s options, %s metadata", len(existing_datasets), len(existing_datasets_metadata)
+                )
 
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             error_msg = f"Error updating build config: {exc}"
@@ -404,34 +438,72 @@ class NvidiaCustomizerComponent(Component):
 
         return build_config
 
-    async def fetch_available_targets(self) -> list[str]:
-        """Fetch available base models for customization."""
+    async def fetch_available_targets(self) -> tuple[list[str], list[dict[str, Any]]]:
+        """Fetch available base models for customization with metadata."""
         try:
             nemo_client = self.get_nemo_client()
             response = await nemo_client.customization.targets.list(extra_headers=self.get_auth_headers())
             targets = []
+            targets_metadata = []
+
             if hasattr(response, "data") and response.data:
                 for target in response.data:
                     # Format: "target_name@version" or just "target_name"
                     target_name = getattr(target, "name", "")
+                    target_id = getattr(target, "id", "")
+                    target_created = getattr(target, "created", None)
+                    target_updated = getattr(target, "updated", None)
+
                     if target_name:
                         targets.append(target_name)
-                return targets
-            return targets  # noqa: TRY300
+                        # Build metadata for this target
+                        metadata = self._build_target_metadata(target_id, target_created, target_updated)
+                        targets_metadata.append(metadata)
+
+                return targets, targets_metadata
+            return targets, targets_metadata  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch targets: %s", exc)
-            return []
+            return [], []
 
-    async def fetch_available_configs(self, target_name: str | None = None) -> list[str]:
-        """Fetch available configurations for customization."""
+    def _build_target_metadata(
+        self, target_id: str, created: str | None = None, updated: str | None = None
+    ) -> dict[str, Any]:
+        """Build metadata dictionary for a target."""
+        metadata = {}
+
+        # Add target ID (shortened for display)
+        if target_id:
+            # Extract just the last part of the ID for display
+            short_id = target_id.split("-")[-1] if "-" in target_id else target_id[:8]
+            metadata["id"] = short_id
+
+        # Add timestamps if available (but don't display them in dropdown)
+        if created:
+            metadata["created"] = created
+        if updated:
+            metadata["updated"] = updated
+
+        # Add icon for targets
+        metadata["icon"] = "NVIDIA"
+
+        return metadata
+
+    async def fetch_available_configs(self, target_name: str | None = None) -> tuple[list[str], list[dict[str, Any]]]:
+        """Fetch available configurations for customization with metadata."""
         try:
             nemo_client = self.get_nemo_client()
             response = await nemo_client.customization.configs.list(extra_headers=self.get_auth_headers())
             configs = []
+            configs_metadata = []
+
             if hasattr(response, "data") and response.data:
                 for config in response.data:
                     config_name = getattr(config, "name", "")
                     config_target = getattr(config, "target", None)
+                    config_params = getattr(config, "params", {})
+                    config_created = getattr(config, "created", None)
+                    config_updated = getattr(config, "updated", None)
 
                     # If target_name is provided, filter by target
                     if target_name and config_target:
@@ -440,14 +512,72 @@ class NvidiaCustomizerComponent(Component):
                         target_id_for_selection = await self._get_target_id(target_name)
                         if target_id == target_id_for_selection:
                             configs.append(config_name)
+                            # Build metadata for this config
+                            metadata = self._build_config_metadata(config_params, config_created, config_updated)
+                            configs_metadata.append(metadata)
                     # If no target_name provided, return all configs
                     elif config_name:
                         configs.append(config_name)
-                return configs
-            return configs  # noqa: TRY300
+                        # Build metadata for this config
+                        metadata = self._build_config_metadata(config_params, config_created, config_updated)
+                        configs_metadata.append(metadata)
+
+                return configs, configs_metadata
+            return configs, configs_metadata  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch configs: %s", exc)
-            return []
+            return [], []
+
+    def _build_config_metadata(
+        self, config_params: dict, created: str | None = None, updated: str | None = None
+    ) -> dict[str, Any]:
+        """Build metadata dictionary for a configuration."""
+        metadata = {}
+
+        # Add training type and fine-tuning type
+        if config_params:
+            training_type = config_params.get("training_type", "unknown")
+            finetuning_type = config_params.get("finetuning_type", "unknown")
+            max_seq_length = config_params.get("max_seq_length")
+            training_precision = config_params.get("training_precision", "unknown")
+
+            # Use more user-friendly keys for display
+            metadata.update(
+                {
+                    "type": training_type.upper(),  # SFT, DPO, etc.
+                    "method": finetuning_type.replace("_", " ").title(),  # "All Weights", "Lora"
+                    "length": max_seq_length,
+                    "precision": training_precision.replace("-", " ").title(),  # "Bf16 Mixed", "Fp16 Mixed"
+                }
+            )
+
+            # Add LoRA-specific metadata if applicable
+            if finetuning_type == "lora":
+                lora_params = config_params.get("lora", {})
+                adapter_dim = lora_params.get("adapter_dim")
+                alpha = lora_params.get("alpha")
+                target_modules = lora_params.get("target_modules", [])
+
+                if adapter_dim:
+                    metadata["dim"] = adapter_dim
+                if alpha:
+                    metadata["alpha"] = alpha
+                if target_modules:
+                    metadata["modules"] = ", ".join(target_modules)
+
+        # Add timestamps if available (but don't display them in dropdown)
+        if created:
+            metadata["created"] = created
+        if updated:
+            metadata["updated"] = updated
+
+        # Add icon for configurations
+        metadata["icon"] = "Settings"
+
+        # Debug logging
+        logger.debug("Built config metadata: %s", metadata)
+
+        return metadata
 
     async def fetch_available_training_types(self) -> list[str]:
         """Fetch available training types from NeMo service."""
@@ -459,15 +589,70 @@ class NvidiaCustomizerComponent(Component):
             logger.warning("Failed to fetch training types: %s", exc)
             return []
 
-    async def fetch_existing_datasets(self) -> list[str]:
-        """Fetch existing datasets from NeMo service."""
+    async def fetch_existing_datasets(self) -> tuple[list[str], list[dict[str, Any]]]:
+        """Fetch existing datasets from NeMo service with metadata."""
         try:
             nemo_client = self.get_nemo_client()
             response = await nemo_client.datasets.list(extra_headers=self.get_auth_headers())
-            return [dataset.name for dataset in response.data] if hasattr(response, "data") else []
+            datasets = []
+            datasets_metadata = []
+
+            if hasattr(response, "data") and response.data:
+                for dataset in response.data:
+                    dataset_name = getattr(dataset, "name", "")
+                    dataset_created = getattr(dataset, "created", None)
+                    dataset_updated = getattr(dataset, "updated", None)
+                    dataset_size = getattr(dataset, "size", None)
+                    dataset_records = getattr(dataset, "records", None)
+
+                    if dataset_name:
+                        datasets.append(dataset_name)
+                        # Build metadata for this dataset
+                        metadata = self._build_dataset_metadata(
+                            dataset_created, dataset_updated, dataset_size, dataset_records
+                        )
+                        datasets_metadata.append(metadata)
+
+                # Debug logging
+                logger.debug("Fetched %s datasets with metadata", len(datasets))
+                if datasets_metadata:
+                    logger.debug("Sample dataset metadata: %s", datasets_metadata[0])
+
+                return datasets, datasets_metadata
+            return datasets, datasets_metadata  # noqa: TRY300
         except (nemo_microservices.APIError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch existing datasets: %s", exc)
-            return []
+            return [], []
+
+    def _build_dataset_metadata(
+        self,
+        created: str | None = None,
+        updated: str | None = None,
+        size: int | None = None,
+        records: int | None = None,
+    ) -> dict[str, Any]:
+        """Build metadata dictionary for a dataset."""
+        metadata = {}
+
+        # Add dataset size and records if available
+        if size is not None:
+            metadata["size"] = f"{size:,}"  # Format with commas
+        if records is not None:
+            metadata["records"] = f"{records:,}"  # Format with commas
+
+        # Add timestamps if available (but don't display them in dropdown)
+        if created:
+            metadata["created"] = created
+        if updated:
+            metadata["updated"] = updated
+
+        # Add icon for datasets
+        metadata["icon"] = "Database"
+
+        # Debug logging
+        logger.debug("Built dataset metadata: %s", metadata)
+
+        return metadata
 
     async def _validate_config_target_compatibility(self, config_id: str, target_id: str):
         """Validate that the selected config is compatible with the selected target."""
@@ -789,3 +974,27 @@ class NvidiaCustomizerComponent(Component):
             except (asyncio.CancelledError, RuntimeError, OSError):
                 logger.exception("Unexpected error while checking job status")
                 await asyncio.sleep(poll_interval_seconds)
+
+    def _test_metadata_building(self) -> dict[str, Any]:
+        """Test method to verify metadata building functionality."""
+        # Test target metadata
+        target_metadata = self._build_target_metadata("test-target-id", "2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z")
+
+        # Test config metadata
+        config_params = {
+            "training_type": "sft",
+            "finetuning_type": "lora",
+            "max_seq_length": 4096,
+            "training_precision": "bf16-mixed",
+            "lora": {"adapter_dim": 32, "alpha": 16, "target_modules": ["q_proj", "v_proj"]},
+        }
+        config_metadata = self._build_config_metadata(config_params, "2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z")
+
+        # Test dataset metadata
+        dataset_metadata = self._build_dataset_metadata("2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z", 1024, 1000)
+
+        return {
+            "target_metadata": target_metadata,
+            "config_metadata": config_metadata,
+            "dataset_metadata": dataset_metadata,
+        }
