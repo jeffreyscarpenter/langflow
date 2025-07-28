@@ -858,12 +858,18 @@ class NvidiaCustomizerComponent(Component):
                     "job_id": job_id,
                     "status": "completed",
                     "result": job_result,
+                    "output_model": f"{self.namespace}/{self.fine_tuned_model_name}",
+                    "model_name": self.fine_tuned_model_name,
+                    "namespace": self.namespace,
                 }
             else:
                 result_dict = {
                     "job_id": job_id,
                     "status": "created",
                     "message": "Job created successfully. Use wait_for_completion=True to wait for completion.",
+                    "output_model": f"{self.namespace}/{self.fine_tuned_model_name}",
+                    "model_name": self.fine_tuned_model_name,
+                    "namespace": self.namespace,
                 }
 
             # Convert datetime objects to strings for JSON serialization
