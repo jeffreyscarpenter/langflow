@@ -12,8 +12,12 @@ export function useDeleteEvaluatorJob() {
     mutationFn: deleteEvaluatorJob,
     onSuccess: (data, jobId) => {
       // Invalidate evaluator job queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["nemo", "evaluator", "jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["nemo", "evaluation", "jobs"] });
+      queryClient.invalidateQueries({
+        queryKey: ["nemo", "evaluator", "jobs"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["nemo", "evaluation", "jobs"],
+      });
     },
   });
 }

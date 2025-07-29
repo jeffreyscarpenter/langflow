@@ -1,12 +1,26 @@
-import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Calendar,
+  Database,
+  Download,
+  Eye,
+  FileText,
+  Hash,
+  Loader2,
+} from "lucide-react";
+import React, { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, FileText, Database, Eye, Download, Calendar, Hash } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useGetDatasetDetails } from "@/controllers/API/queries/nemo/use-get-dataset-details";
 import { NeMoDataset } from "@/types/nemo";
 
@@ -21,17 +35,26 @@ interface DatasetFile {
   type: "training" | "validation" | "other";
 }
 
-const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => {
+const DatasetPreview: React.FC<DatasetPreviewProps> = ({
+  dataset,
+  onClose,
+}) => {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
-  const { data: datasetDetails, isLoading, error } = useGetDatasetDetails({
+  const {
+    data: datasetDetails,
+    isLoading,
+    error,
+  } = useGetDatasetDetails({
     datasetName: dataset.name,
-    namespace: dataset.namespace
+    namespace: dataset.namespace,
   });
 
   const getFileType = (fileName: string): DatasetFile["type"] => {
-    if (fileName.includes("training") || fileName.includes("train")) return "training";
-    if (fileName.includes("validation") || fileName.includes("eval")) return "validation";
+    if (fileName.includes("training") || fileName.includes("train"))
+      return "training";
+    if (fileName.includes("validation") || fileName.includes("eval"))
+      return "validation";
     return "other";
   };
 
@@ -72,16 +95,17 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
     );
   }
 
-  const datasetFiles = datasetDetails?.siblings
-    ?.filter(file => !file.rfilename.includes('.gitattributes'))
-    ?.map(file => ({
-      ...file,
-      type: getFileType(file.rfilename),
-    })) || [];
+  const datasetFiles =
+    datasetDetails?.siblings
+      ?.filter((file) => !file.rfilename.includes(".gitattributes"))
+      ?.map((file) => ({
+        ...file,
+        type: getFileType(file.rfilename),
+      })) || [];
 
-  const trainingFiles = datasetFiles.filter(f => f.type === "training");
-  const validationFiles = datasetFiles.filter(f => f.type === "validation");
-  const otherFiles = datasetFiles.filter(f => f.type === "other");
+  const trainingFiles = datasetFiles.filter((f) => f.type === "training");
+  const validationFiles = datasetFiles.filter((f) => f.type === "validation");
+  const otherFiles = datasetFiles.filter((f) => f.type === "other");
 
   return (
     <div className="space-y-4">
@@ -110,19 +134,25 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
                 <div className="flex items-center space-x-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Created:</span>
-                  <span className="text-sm">{formatDate(datasetDetails.created_at)}</span>
+                  <span className="text-sm">
+                    {formatDate(datasetDetails.created_at)}
+                  </span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Modified:</span>
-                  <span className="text-sm">{formatDate(datasetDetails.last_modified)}</span>
+                  <span className="text-sm">
+                    {formatDate(datasetDetails.last_modified)}
+                  </span>
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
                   <Hash className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">SHA:</span>
-                  <code className="text-xs bg-muted px-2 py-1 rounded">{datasetDetails.sha.substring(0, 12)}...</code>
+                  <code className="text-xs bg-muted px-2 py-1 rounded">
+                    {datasetDetails.sha.substring(0, 12)}...
+                  </code>
                 </div>
                 <div className="flex items-center space-x-2">
                   <FileText className="h-4 w-4 text-muted-foreground" />
@@ -141,17 +171,21 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
             <Eye className="h-5 w-5" />
             <span>Dataset Files</span>
           </CardTitle>
-          <CardDescription>
-            Browse the files in this dataset
-          </CardDescription>
+          <CardDescription>Browse the files in this dataset</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="training" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="training" disabled={trainingFiles.length === 0}>
+              <TabsTrigger
+                value="training"
+                disabled={trainingFiles.length === 0}
+              >
                 Training Data ({trainingFiles.length})
               </TabsTrigger>
-              <TabsTrigger value="validation" disabled={validationFiles.length === 0}>
+              <TabsTrigger
+                value="validation"
+                disabled={validationFiles.length === 0}
+              >
                 Validation Data ({validationFiles.length})
               </TabsTrigger>
               <TabsTrigger value="other" disabled={otherFiles.length === 0}>
@@ -171,7 +205,11 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
                       <div className="flex items-center space-x-2">
                         <FileText className="h-4 w-4" />
                         <span className="font-medium">{file.rfilename}</span>
-                        {file.size && <Badge variant="outline">{formatFileSize(file.size)}</Badge>}
+                        {file.size && (
+                          <Badge variant="outline">
+                            {formatFileSize(file.size)}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -191,7 +229,11 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
                       <div className="flex items-center space-x-2">
                         <FileText className="h-4 w-4" />
                         <span className="font-medium">{file.rfilename}</span>
-                        {file.size && <Badge variant="outline">{formatFileSize(file.size)}</Badge>}
+                        {file.size && (
+                          <Badge variant="outline">
+                            {formatFileSize(file.size)}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -211,7 +253,11 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({ dataset, onClose }) => 
                       <div className="flex items-center space-x-2">
                         <FileText className="h-4 w-4" />
                         <span className="font-medium">{file.rfilename}</span>
-                        {file.size && <Badge variant="outline">{formatFileSize(file.size)}</Badge>}
+                        {file.size && (
+                          <Badge variant="outline">
+                            {formatFileSize(file.size)}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </Card>

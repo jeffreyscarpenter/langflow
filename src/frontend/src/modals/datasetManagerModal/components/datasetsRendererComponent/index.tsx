@@ -1,6 +1,6 @@
-import { NeMoDataset } from "@/types/nemo";
-import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { NeMoDataset } from "@/types/nemo";
 
 interface DatasetsRendererComponentProps {
   datasets: NeMoDataset[];

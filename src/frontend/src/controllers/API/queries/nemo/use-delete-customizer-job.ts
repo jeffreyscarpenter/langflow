@@ -12,9 +12,13 @@ export function useDeleteCustomizerJob() {
     mutationFn: deleteCustomizerJob,
     onSuccess: (data, jobId) => {
       // Invalidate job-related queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["nemo", "jobs", "status", jobId] });
+      queryClient.invalidateQueries({
+        queryKey: ["nemo", "jobs", "status", jobId],
+      });
       queryClient.invalidateQueries({ queryKey: ["nemo", "jobs", "tracked"] });
-      queryClient.invalidateQueries({ queryKey: ["nemo", "customizer", "jobs"] });
+      queryClient.invalidateQueries({
+        queryKey: ["nemo", "customizer", "jobs"],
+      });
     },
   });
 }

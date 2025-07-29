@@ -9,7 +9,9 @@ interface UploadDatasetFilesParams {
   files: File[];
 }
 
-async function uploadDatasetFiles(params: UploadDatasetFilesParams): Promise<void> {
+async function uploadDatasetFiles(
+  params: UploadDatasetFilesParams,
+): Promise<void> {
   return await nemoApi.uploadDatasetFiles(params);
 }
 

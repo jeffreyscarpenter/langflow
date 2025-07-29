@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { nemoApi } from "../../nemo-api";
 import { TrackedJob } from "@/types/nemo";
+import { nemoApi } from "../../nemo-api";
 
 interface UseGetCustomizerJobParams {
   jobId: string;
   enabled?: boolean;
 }
 
-export const useGetCustomizerJob = ({ jobId, enabled = true }: UseGetCustomizerJobParams) => {
+export const useGetCustomizerJob = ({
+  jobId,
+  enabled = true,
+}: UseGetCustomizerJobParams) => {
   return useQuery({
     queryKey: ["nemo", "customizer-job", jobId],
     queryFn: async (): Promise<TrackedJob> => {
@@ -26,8 +29,8 @@ export const useGetCustomizerJob = ({ jobId, enabled = true }: UseGetCustomizerJ
         custom_fields: {
           description: result.description,
           namespace: result.namespace,
-          ...result.status_details
-        }
+          ...result.status_details,
+        },
       };
     },
     enabled: enabled && !!jobId,

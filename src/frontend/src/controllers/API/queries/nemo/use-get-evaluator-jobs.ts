@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { nemoApi } from "../../nemo-api";
 import { NeMoEvaluatorJobList } from "@/types/nemo";
+import { nemoApi } from "../../nemo-api";
 
-async function getEvaluatorJobs(page: number = 1, pageSize: number = 10): Promise<NeMoEvaluatorJobList> {
+async function getEvaluatorJobs(
+  page: number = 1,
+  pageSize: number = 10,
+): Promise<NeMoEvaluatorJobList> {
   return await nemoApi.getEvaluatorJobs(page, pageSize);
 }
 

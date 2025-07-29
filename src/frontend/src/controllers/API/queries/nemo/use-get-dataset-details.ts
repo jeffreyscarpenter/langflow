@@ -20,7 +20,10 @@ interface UseGetDatasetDetailsParams {
   namespace?: string;
 }
 
-export const useGetDatasetDetails = (params: UseGetDatasetDetailsParams, options?: any) => {
+export const useGetDatasetDetails = (
+  params: UseGetDatasetDetailsParams,
+  options?: any,
+) => {
   const { query } = UseRequestProcessor();
   const { datasetName, namespace } = params;
 
@@ -35,7 +38,7 @@ export const useGetDatasetDetails = (params: UseGetDatasetDetailsParams, options
       refetchOnWindowFocus: false,
       enabled: !!datasetName, // Only run if datasetName is provided
       ...options,
-    }
+    },
   );
 
   return queryResult;

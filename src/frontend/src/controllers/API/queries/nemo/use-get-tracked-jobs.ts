@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { nemoApi } from "../../nemo-api";
 import { TrackedJob } from "@/types/nemo";
+import { nemoApi } from "../../nemo-api";
 
 async function getTrackedJobs(): Promise<TrackedJob[]> {
   return await nemoApi.getTrackedJobs();

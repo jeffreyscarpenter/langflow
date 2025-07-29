@@ -1,44 +1,59 @@
+import { formatDistanceToNow } from "date-fns";
+import {
+  ActivitySquare,
+  AlertCircle,
+  AlertTriangle,
+  BarChart3,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Database,
+  Download,
+  Eye,
+  FileText,
+  Pause,
+  PlayCircle,
+  RefreshCw,
+  Search,
+  Settings,
+  Tag,
+  Target,
+  Terminal,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import React, { useState } from "react";
-import { useGetEvaluatorJobs } from "@/controllers/API/queries/nemo/use-get-evaluator-jobs";
-import { useDeleteEvaluatorJob, useGetEvaluatorJobLogs, useGetEvaluatorJobResults, useDownloadEvaluatorJobResults } from "@/controllers/API/queries/nemo/use-evaluator-job-actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, AlertCircle, ActivitySquare, Search } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { NeMoEvaluatorJob } from "@/types/nemo";
-import { Progress } from "@/components/ui/progress";
-import useAlertStore from "@/stores/alertStore";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Clock,
-  CheckCircle,
-  XCircle,
-  PlayCircle,
-  Pause,
-  BarChart3,
-  Calendar,
-  Database,
-  Settings,
-  AlertTriangle,
-  Tag,
-  Target,
-  FileText,
-  Trash2,
-  Download,
-  Eye,
-  Terminal
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  useDeleteEvaluatorJob,
+  useDownloadEvaluatorJobResults,
+  useGetEvaluatorJobLogs,
+  useGetEvaluatorJobResults,
+} from "@/controllers/API/queries/nemo/use-evaluator-job-actions";
+import { useGetEvaluatorJobs } from "@/controllers/API/queries/nemo/use-get-evaluator-jobs";
+import useAlertStore from "@/stores/alertStore";
+import { NeMoEvaluatorJob } from "@/types/nemo";
 
 // Helper function to parse evaluation results for display
 const parseEvaluationResults = (data: any) => {
@@ -58,23 +73,25 @@ const parseEvaluationResults = (data: any) => {
   Object.values(data.tasks).forEach((task: any) => {
     if (task.metrics) {
       // Iterate through each metric type (accuracy, bleu, rouge, etc.)
-      Object.entries(task.metrics).forEach(([metricName, metricData]: [string, any]) => {
-        if (metricData.scores) {
-          // Get the first scoring method (typically "string-check")
-          const firstScore = Object.values(metricData.scores)[0] as any;
-          if (firstScore) {
-            metrics.push({
-              metric: metricName.toUpperCase(),
-              value: firstScore.value || 0,
-              count: firstScore.stats?.count || 0,
-              mean: firstScore.stats?.mean,
-              min: firstScore.stats?.min,
-              max: firstScore.stats?.max,
-              stddev: firstScore.stats?.stddev,
-            });
+      Object.entries(task.metrics).forEach(
+        ([metricName, metricData]: [string, any]) => {
+          if (metricData.scores) {
+            // Get the first scoring method (typically "string-check")
+            const firstScore = Object.values(metricData.scores)[0] as any;
+            if (firstScore) {
+              metrics.push({
+                metric: metricName.toUpperCase(),
+                value: firstScore.value || 0,
+                count: firstScore.stats?.count || 0,
+                mean: firstScore.stats?.mean,
+                min: firstScore.stats?.min,
+                max: firstScore.stats?.max,
+                stddev: firstScore.stats?.stddev,
+              });
+            }
           }
-        }
-      });
+        },
+      );
     }
   });
 
@@ -83,7 +100,8 @@ const parseEvaluationResults = (data: any) => {
 
 const statusColorMap: Record<string, string> = {
   running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  completed:
+    "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   failed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   created: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
   cancelled: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
@@ -143,23 +161,33 @@ const EmptyState: React.FC = () => (
     <ActivitySquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
     <h3 className="text-xl font-semibold mb-2">No Evaluator Jobs Found</h3>
     <p className="text-muted-foreground mb-4">
-      No evaluator jobs are currently available. Jobs will appear here when you create them using the NeMo Evaluator component.
+      No evaluator jobs are currently available. Jobs will appear here when you
+      create them using the NeMo Evaluator component.
     </p>
     <p className="text-sm text-muted-foreground">
-      Jobs are automatically refreshed every 30 seconds to show the latest status.
+      Jobs are automatically refreshed every 30 seconds to show the latest
+      status.
     </p>
   </div>
 );
 
 const EvaluatorJobCard: React.FC<{
   job: NeMoEvaluatorJob;
-  jobType: 'customizer' | 'evaluator';
+  jobType: "customizer" | "evaluator";
   onViewDetails: (jobId: string) => void;
   onDelete?: (jobId: string) => void;
   onViewLogs?: (jobId: string) => void;
   onViewResults?: (jobId: string) => void;
   onDownloadResults?: (jobId: string) => void;
-}> = ({ job, jobType, onViewDetails, onDelete, onViewLogs, onViewResults, onDownloadResults }) => {
+}> = ({
+  job,
+  jobType,
+  onViewDetails,
+  onDelete,
+  onViewLogs,
+  onViewResults,
+  onDownloadResults,
+}) => {
   const statusColor = statusColorMap[job.status] || "bg-gray-100 text-gray-800";
 
   // Safe string conversion for complex objects
@@ -180,7 +208,9 @@ const EvaluatorJobCard: React.FC<{
           {safeString(job.id)}
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-xs px-2 py-1 rounded ${statusColor} capitalize`}>
+          <span
+            className={`text-xs px-2 py-1 rounded ${statusColor} capitalize`}
+          >
             {safeString(job.status)}
           </span>
           <div className="flex gap-1 flex-wrap">
@@ -199,7 +229,7 @@ const EvaluatorJobCard: React.FC<{
             </Button>
 
             {/* Delete button for evaluator jobs */}
-            {jobType === 'evaluator' && onDelete && (
+            {jobType === "evaluator" && onDelete && (
               <Button
                 variant="outline"
                 size="sm"
@@ -207,7 +237,11 @@ const EvaluatorJobCard: React.FC<{
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (confirm(`Are you sure you want to delete evaluator job ${safeString(job.id).slice(-8)}?`)) {
+                  if (
+                    confirm(
+                      `Are you sure you want to delete evaluator job ${safeString(job.id).slice(-8)}?`,
+                    )
+                  ) {
                     onDelete(job.id);
                   }
                 }}
@@ -233,7 +267,7 @@ const EvaluatorJobCard: React.FC<{
             )}
 
             {/* Results and Download buttons for completed evaluator jobs */}
-            {jobType === 'evaluator' && job.status === 'completed' && (
+            {jobType === "evaluator" && job.status === "completed" && (
               <>
                 {onViewResults && (
                   <Button
@@ -271,18 +305,40 @@ const EvaluatorJobCard: React.FC<{
       </div>
       <div className="flex flex-wrap gap-1 mb-1">
         {safeTags.map((tag, index) => (
-          <span key={`tag-${index}`} className="text-xs bg-gray-200 dark:bg-gray-700 rounded px-2 py-0.5">
+          <span
+            key={`tag-${index}`}
+            className="text-xs bg-gray-200 dark:bg-gray-700 rounded px-2 py-0.5"
+          >
             {safeString(tag)}
           </span>
         ))}
       </div>
-      <div className="text-sm text-muted-foreground truncate">Namespace: {safeString(job.namespace)}</div>
-      <div className="text-sm text-muted-foreground truncate">Target: {safeString(job.target)}</div>
-      <div className="text-sm text-muted-foreground truncate">Config: {safeString(job.config)}</div>
-      <div className="text-xs text-gray-400">Created: {safeString(job.created_at) ? new Date(safeString(job.created_at)).toLocaleString() : "-"}</div>
-      <div className="text-xs text-gray-400">Updated: {safeString(job.updated_at) ? new Date(safeString(job.updated_at)).toLocaleString() : "-"}</div>
+      <div className="text-sm text-muted-foreground truncate">
+        Namespace: {safeString(job.namespace)}
+      </div>
+      <div className="text-sm text-muted-foreground truncate">
+        Target: {safeString(job.target)}
+      </div>
+      <div className="text-sm text-muted-foreground truncate">
+        Config: {safeString(job.config)}
+      </div>
+      <div className="text-xs text-gray-400">
+        Created:{" "}
+        {safeString(job.created_at)
+          ? new Date(safeString(job.created_at)).toLocaleString()
+          : "-"}
+      </div>
+      <div className="text-xs text-gray-400">
+        Updated:{" "}
+        {safeString(job.updated_at)
+          ? new Date(safeString(job.updated_at)).toLocaleString()
+          : "-"}
+      </div>
       <div className="text-xs text-gray-600 font-medium mt-2 mb-1">
-        Status Message: {job.status_details?.message ? safeString(job.status_details.message) : "-"}
+        Status Message:{" "}
+        {job.status_details?.message
+          ? safeString(job.status_details.message)
+          : "-"}
       </div>
       {typeof job.status_details?.percentage_done === "number" && (
         <Progress value={job.status_details.percentage_done} className="h-2" />
@@ -316,7 +372,9 @@ const EvaluatorJobDetailsModal: React.FC<{
           <DialogTitle className="flex items-center space-x-2">
             <span>Evaluator Job Details: {safeString(job.id).slice(-8)}</span>
             {getStatusIcon(safeString(job.status))}
-            <Badge className={`${getStatusColor(safeString(job.status))} text-white`}>
+            <Badge
+              className={`${getStatusColor(safeString(job.status))} text-white`}
+            >
               {safeString(job.status).toUpperCase()}
             </Badge>
           </DialogTitle>
@@ -334,15 +392,26 @@ const EvaluatorJobDetailsModal: React.FC<{
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Overall Progress</span>
-                    <span className="font-medium">{job.status_details?.percentage_done || 0}%</span>
+                    <span className="text-muted-foreground">
+                      Overall Progress
+                    </span>
+                    <span className="font-medium">
+                      {job.status_details?.percentage_done || 0}%
+                    </span>
                   </div>
-                  <Progress value={job.status_details?.percentage_done || 0} className="h-2" />
+                  <Progress
+                    value={job.status_details?.percentage_done || 0}
+                    className="h-2"
+                  />
                 </div>
 
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {job.status === "completed" ? "✓" : job.status === "failed" ? "✗" : "○"}
+                    {job.status === "completed"
+                      ? "✓"
+                      : job.status === "failed"
+                        ? "✗"
+                        : "○"}
                   </div>
                   <div className="text-sm text-muted-foreground">Status</div>
                 </div>
@@ -374,7 +443,9 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Namespace</span>
-                      <span className="font-mono">{safeString(job.namespace)}</span>
+                      <span className="font-mono">
+                        {safeString(job.namespace)}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Job ID</span>
@@ -391,11 +462,15 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Target</span>
-                      <span className="font-mono">{safeString(job.target)}</span>
+                      <span className="font-mono">
+                        {safeString(job.target)}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm p-2 bg-gray-50 dark:bg-gray-800 rounded">
                       <span>Config</span>
-                      <span className="font-mono">{safeString(job.config)}</span>
+                      <span className="font-mono">
+                        {safeString(job.config)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -437,7 +512,9 @@ const EvaluatorJobDetailsModal: React.FC<{
                     <span className="font-medium">Status Message</span>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {job.status_details?.message ? safeString(job.status_details.message) : "No status message available"}
+                    {job.status_details?.message
+                      ? safeString(job.status_details.message)
+                      : "No status message available"}
                   </div>
                 </div>
               </div>
@@ -457,14 +534,28 @@ const EvaluatorJobDetailsModal: React.FC<{
                   <div className="flex items-center space-x-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Created:</span>
-                    <span>{safeString(job.created_at) ? formatDistanceToNow(new Date(safeString(job.created_at)), { addSuffix: true }) : "-"}</span>
+                    <span>
+                      {safeString(job.created_at)
+                        ? formatDistanceToNow(
+                            new Date(safeString(job.created_at)),
+                            { addSuffix: true },
+                          )
+                        : "-"}
+                    </span>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center space-x-2">
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Last Updated:</span>
-                    <span>{safeString(job.updated_at) ? formatDistanceToNow(new Date(safeString(job.updated_at)), { addSuffix: true }) : "-"}</span>
+                    <span>
+                      {safeString(job.updated_at)
+                        ? formatDistanceToNow(
+                            new Date(safeString(job.updated_at)),
+                            { addSuffix: true },
+                          )
+                        : "-"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -482,7 +573,13 @@ const EvaluatorJobList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
 
-  const { data: jobs, isLoading, error, refetch, isFetching } = useGetEvaluatorJobs(currentPage, pageSize);
+  const {
+    data: jobs,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = useGetEvaluatorJobs(currentPage, pageSize);
   const deleteEvaluatorJob = useDeleteEvaluatorJob();
   const getEvaluatorJobLogs = useGetEvaluatorJobLogs();
   const getEvaluatorJobResults = useGetEvaluatorJobResults();
@@ -492,7 +589,7 @@ const EvaluatorJobList: React.FC = () => {
 
   // Safe jobs handling - ensure we have a valid array
   const safeJobs: NeMoEvaluatorJob[] = React.useMemo(() => {
-    if (jobs && typeof jobs === 'object' && Array.isArray(jobs.data)) {
+    if (jobs && typeof jobs === "object" && Array.isArray(jobs.data)) {
       return jobs.data;
     }
     // Fallback: if jobs is directly an array (for backward compatibility)
@@ -505,7 +602,7 @@ const EvaluatorJobList: React.FC = () => {
 
   // Extract pagination metadata
   const paginationInfo = React.useMemo(() => {
-    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs)) {
+    if (jobs && typeof jobs === "object" && !Array.isArray(jobs)) {
       return {
         page: jobs.page || currentPage,
         pageSize: jobs.page_size || pageSize,
@@ -528,8 +625,8 @@ const EvaluatorJobList: React.FC = () => {
   // Filter jobs based on active search query (by job ID)
   const filteredJobs = React.useMemo(() => {
     if (!activeSearchQuery.trim()) return safeJobs;
-    return safeJobs.filter(job =>
-      job.id.toLowerCase().includes(activeSearchQuery.toLowerCase())
+    return safeJobs.filter((job) =>
+      job.id.toLowerCase().includes(activeSearchQuery.toLowerCase()),
     );
   }, [safeJobs, activeSearchQuery]);
 
@@ -543,14 +640,19 @@ const EvaluatorJobList: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSearch();
     }
   };
 
   // Check if backend returned an error (auth issues, etc.)
   const backendError = React.useMemo(() => {
-    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs) && 'error' in jobs) {
+    if (
+      jobs &&
+      typeof jobs === "object" &&
+      !Array.isArray(jobs) &&
+      "error" in jobs
+    ) {
       return (jobs as any).error;
     }
     return null;
@@ -593,16 +695,22 @@ const EvaluatorJobList: React.FC = () => {
   const handleViewLogs = async (jobId: string) => {
     try {
       const logs = await getEvaluatorJobLogs.mutateAsync(jobId);
-      console.log('Job logs:', logs);
+      console.log("Job logs:", logs);
 
       // Check if the response contains actual logs or just a message
-      if (logs && typeof logs === 'object' && 'message' in logs) {
+      if (logs && typeof logs === "object" && "message" in logs) {
         // Service returned a message (e.g., "Job not found")
         setErrorData({
           title: "No logs available",
           list: [logs.message],
         });
-      } else if (logs && (logs.logs || logs.content || typeof logs === 'string' || Array.isArray(logs))) {
+      } else if (
+        logs &&
+        (logs.logs ||
+          logs.content ||
+          typeof logs === "string" ||
+          Array.isArray(logs))
+      ) {
         // Service returned actual logs
         setLogsData(logs);
         setShowLogsDialog(true);
@@ -625,7 +733,7 @@ const EvaluatorJobList: React.FC = () => {
   const handleViewResults = async (jobId: string) => {
     try {
       const results = await getEvaluatorJobResults.mutateAsync(jobId);
-      console.log('Job results:', results);
+      console.log("Job results:", results);
       setResultsData(results);
       setShowResultsDialog(true);
       setSuccessData({
@@ -643,7 +751,7 @@ const EvaluatorJobList: React.FC = () => {
   const handleDownloadResults = async (jobId: string) => {
     try {
       const downloadData = await downloadEvaluatorJobResults.mutateAsync(jobId);
-      console.log('Download data:', downloadData);
+      console.log("Download data:", downloadData);
 
       // Handle file download based on the response data
       if (downloadData) {
@@ -655,30 +763,30 @@ const EvaluatorJobList: React.FC = () => {
         if (downloadData.content && downloadData.content_type) {
           // Handle structured response with content and metadata
           fileContent = downloadData.content;
-          mimeType = downloadData.content_type || 'application/octet-stream';
+          mimeType = downloadData.content_type || "application/octet-stream";
 
           // Use filename from backend if provided, otherwise determine from content type
           if (downloadData.filename) {
             fileName = downloadData.filename;
           } else {
             // Determine file extension based on content type
-            let extension = 'txt';
-            if (mimeType.includes('zip')) {
-              extension = 'zip';
-            } else if (mimeType.includes('json')) {
-              extension = 'json';
-              mimeType = 'application/json';
-            } else if (mimeType.includes('csv')) {
-              extension = 'csv';
-            } else if (mimeType.includes('xml')) {
-              extension = 'xml';
+            let extension = "txt";
+            if (mimeType.includes("zip")) {
+              extension = "zip";
+            } else if (mimeType.includes("json")) {
+              extension = "json";
+              mimeType = "application/json";
+            } else if (mimeType.includes("csv")) {
+              extension = "csv";
+            } else if (mimeType.includes("xml")) {
+              extension = "xml";
             }
 
             fileName = `evaluation-results-${jobId}.${extension}`;
           }
 
           // Handle base64 encoded content
-          if (downloadData.encoding === 'base64') {
+          if (downloadData.encoding === "base64") {
             try {
               const binaryContent = atob(fileContent);
               const bytes = new Uint8Array(binaryContent.length);
@@ -688,7 +796,7 @@ const EvaluatorJobList: React.FC = () => {
               const blob = new Blob([bytes], { type: mimeType });
               const url = window.URL.createObjectURL(blob);
 
-              const link = document.createElement('a');
+              const link = document.createElement("a");
               link.href = url;
               link.download = fileName;
               document.body.appendChild(link);
@@ -697,7 +805,7 @@ const EvaluatorJobList: React.FC = () => {
               document.body.removeChild(link);
               window.URL.revokeObjectURL(url);
             } catch (error) {
-              console.error('Error decoding base64 content:', error);
+              console.error("Error decoding base64 content:", error);
               setErrorData({
                 title: "Failed to decode download content",
                 list: ["The downloaded content could not be processed."],
@@ -709,7 +817,7 @@ const EvaluatorJobList: React.FC = () => {
             const blob = new Blob([fileContent], { type: mimeType });
             const url = window.URL.createObjectURL(blob);
 
-            const link = document.createElement('a');
+            const link = document.createElement("a");
             link.href = url;
             link.download = fileName;
             document.body.appendChild(link);
@@ -729,12 +837,12 @@ const EvaluatorJobList: React.FC = () => {
           // Fallback: treat entire response as JSON data
           fileContent = JSON.stringify(downloadData, null, 2);
           fileName = `evaluation-results-${jobId}.json`;
-          mimeType = 'application/json';
+          mimeType = "application/json";
 
           const blob = new Blob([fileContent], { type: mimeType });
           const url = window.URL.createObjectURL(blob);
 
-          const link = document.createElement('a');
+          const link = document.createElement("a");
           link.href = url;
           link.download = fileName;
           document.body.appendChild(link);
@@ -767,7 +875,8 @@ const EvaluatorJobList: React.FC = () => {
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Failed to load evaluator jobs. Please check your connection and try again.
+          Failed to load evaluator jobs. Please check your connection and try
+          again.
         </AlertDescription>
       </Alert>
     );
@@ -782,7 +891,8 @@ const EvaluatorJobList: React.FC = () => {
           <div className="space-y-2">
             <div className="font-medium">Authentication Error</div>
             <div className="text-sm">
-              Unable to authenticate with NeMo services. Please check your NeMo configuration (API token and base URL) and try again.
+              Unable to authenticate with NeMo services. Please check your NeMo
+              configuration (API token and base URL) and try again.
             </div>
             <div className="text-xs text-muted-foreground mt-2">
               Error details: {backendError}
@@ -825,11 +935,7 @@ const EvaluatorJobList: React.FC = () => {
               Find
             </Button>
             {activeSearchQuery && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClearSearch}
-              >
+              <Button variant="outline" size="sm" onClick={handleClearSearch}>
                 Clear
               </Button>
             )}
@@ -840,7 +946,9 @@ const EvaluatorJobList: React.FC = () => {
             disabled={isFetching}
             className="flex items-center space-x-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+            />
             <span>Refresh</span>
           </Button>
         </div>
@@ -851,19 +959,23 @@ const EvaluatorJobList: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {safeJobs.filter(job => job.status === 'running').length}
+              {safeJobs.filter((job) => job.status === "running").length}
             </div>
-            <div className="text-sm text-blue-600 dark:text-blue-400">Running</div>
+            <div className="text-sm text-blue-600 dark:text-blue-400">
+              Running
+            </div>
           </div>
           <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {safeJobs.filter(job => job.status === 'completed').length}
+              {safeJobs.filter((job) => job.status === "completed").length}
             </div>
-            <div className="text-sm text-green-600 dark:text-green-400">Completed</div>
+            <div className="text-sm text-green-600 dark:text-green-400">
+              Completed
+            </div>
           </div>
           <div className="bg-red-50 dark:bg-red-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {safeJobs.filter(job => job.status === 'failed').length}
+              {safeJobs.filter((job) => job.status === "failed").length}
             </div>
             <div className="text-sm text-red-600 dark:text-red-400">Failed</div>
           </div>
@@ -871,7 +983,9 @@ const EvaluatorJobList: React.FC = () => {
             <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
               {safeJobs.length}
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Total
+            </div>
           </div>
         </div>
       )}
@@ -900,8 +1014,8 @@ const EvaluatorJobList: React.FC = () => {
           {paginationInfo.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
-                Showing page {paginationInfo.page} of {paginationInfo.totalPages}
-                ({paginationInfo.total} total jobs)
+                Showing page {paginationInfo.page} of{" "}
+                {paginationInfo.totalPages}({paginationInfo.total} total jobs)
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -969,20 +1083,37 @@ const EvaluatorJobList: React.FC = () => {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="font-semibold">Metric</TableHead>
-                                <TableHead className="font-semibold text-right">Score</TableHead>
-                                <TableHead className="font-semibold text-right">Count</TableHead>
-                                <TableHead className="font-semibold text-right">Mean</TableHead>
-                                <TableHead className="font-semibold text-right">Min</TableHead>
-                                <TableHead className="font-semibold text-right">Max</TableHead>
-                                <TableHead className="font-semibold text-right">Std Dev</TableHead>
+                                <TableHead className="font-semibold">
+                                  Metric
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Score
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Count
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Mean
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Min
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Max
+                                </TableHead>
+                                <TableHead className="font-semibold text-right">
+                                  Std Dev
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {parsedMetrics.map((metric, index) => (
                                 <TableRow key={index}>
                                   <TableCell className="font-medium">
-                                    <Badge variant="outline" className="font-mono">
+                                    <Badge
+                                      variant="outline"
+                                      className="font-mono"
+                                    >
                                       {metric.metric}
                                     </Badge>
                                   </TableCell>
@@ -993,16 +1124,24 @@ const EvaluatorJobList: React.FC = () => {
                                     {metric.count}
                                   </TableCell>
                                   <TableCell className="text-right font-mono">
-                                    {metric.mean !== null ? metric.mean.toFixed(4) : '-'}
+                                    {metric.mean !== null
+                                      ? metric.mean.toFixed(4)
+                                      : "-"}
                                   </TableCell>
                                   <TableCell className="text-right font-mono">
-                                    {metric.min !== null ? metric.min.toFixed(4) : '-'}
+                                    {metric.min !== null
+                                      ? metric.min.toFixed(4)
+                                      : "-"}
                                   </TableCell>
                                   <TableCell className="text-right font-mono">
-                                    {metric.max !== null ? metric.max.toFixed(4) : '-'}
+                                    {metric.max !== null
+                                      ? metric.max.toFixed(4)
+                                      : "-"}
                                   </TableCell>
                                   <TableCell className="text-right font-mono">
-                                    {metric.stddev !== null ? metric.stddev.toFixed(4) : '-'}
+                                    {metric.stddev !== null
+                                      ? metric.stddev.toFixed(4)
+                                      : "-"}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -1022,27 +1161,37 @@ const EvaluatorJobList: React.FC = () => {
                     <h3 className="font-medium text-lg">Job Information</h3>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-muted-foreground">Job ID</div>
+                        <div className="text-sm font-medium text-muted-foreground">
+                          Job ID
+                        </div>
                         <div className="text-sm font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                          {resultsData.job || 'N/A'}
+                          {resultsData.job || "N/A"}
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-muted-foreground">Result ID</div>
+                        <div className="text-sm font-medium text-muted-foreground">
+                          Result ID
+                        </div>
                         <div className="text-sm font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                          {resultsData.id || 'N/A'}
+                          {resultsData.id || "N/A"}
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-muted-foreground">Namespace</div>
+                        <div className="text-sm font-medium text-muted-foreground">
+                          Namespace
+                        </div>
                         <div className="text-sm font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                          {resultsData.namespace || 'N/A'}
+                          {resultsData.namespace || "N/A"}
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div className="text-sm font-medium text-muted-foreground">Created At</div>
+                        <div className="text-sm font-medium text-muted-foreground">
+                          Created At
+                        </div>
                         <div className="text-sm font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded">
-                          {resultsData.created_at ? new Date(resultsData.created_at).toLocaleString() : 'N/A'}
+                          {resultsData.created_at
+                            ? new Date(resultsData.created_at).toLocaleString()
+                            : "N/A"}
                         </div>
                       </div>
                     </div>
@@ -1062,7 +1211,9 @@ const EvaluatorJobList: React.FC = () => {
                 </>
               ) : (
                 <div className="text-center py-8">
-                  <div className="text-muted-foreground">No results data available</div>
+                  <div className="text-muted-foreground">
+                    No results data available
+                  </div>
                 </div>
               )}
             </div>
@@ -1085,24 +1236,32 @@ const EvaluatorJobList: React.FC = () => {
                 <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-auto">
                   {(() => {
                     // Handle different log formats
-                    if (typeof logsData === 'string') {
-                      return <pre className="whitespace-pre-wrap">{logsData}</pre>;
+                    if (typeof logsData === "string") {
+                      return (
+                        <pre className="whitespace-pre-wrap">{logsData}</pre>
+                      );
                     } else if (Array.isArray(logsData)) {
                       return (
                         <pre className="whitespace-pre-wrap">
-                          {logsData.map((line, index) => `${index + 1}: ${line}`).join('\n')}
+                          {logsData
+                            .map((line, index) => `${index + 1}: ${line}`)
+                            .join("\n")}
                         </pre>
                       );
                     } else if (logsData.logs) {
                       return (
                         <pre className="whitespace-pre-wrap">
-                          {typeof logsData.logs === 'string'
+                          {typeof logsData.logs === "string"
                             ? logsData.logs
                             : JSON.stringify(logsData.logs, null, 2)}
                         </pre>
                       );
                     } else if (logsData.content) {
-                      return <pre className="whitespace-pre-wrap">{logsData.content}</pre>;
+                      return (
+                        <pre className="whitespace-pre-wrap">
+                          {logsData.content}
+                        </pre>
+                      );
                     } else {
                       return (
                         <pre className="whitespace-pre-wrap">

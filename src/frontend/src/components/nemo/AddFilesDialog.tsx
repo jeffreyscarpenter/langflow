@@ -1,4 +1,16 @@
-import React, { useState, useRef } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  File,
+  FolderOpen,
+  Loader2,
+  Upload,
+  X,
+} from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -6,24 +18,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import {
-  Upload,
-  X,
-  File,
-  FolderOpen,
-  AlertCircle,
-  CheckCircle2,
-  Loader2
-} from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { formatBytes } from "@/utils/utils";
 import { useUploadDatasetFiles } from "@/controllers/API/queries/nemo";
 import useAlertStore from "@/stores/alertStore";
+import { formatBytes } from "@/utils/utils";
 
 interface AddFilesDialogProps {
   isOpen: boolean;
@@ -33,7 +33,6 @@ interface AddFilesDialogProps {
   namespace: string;
   onSuccess?: () => void;
 }
-
 
 const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
   isOpen,
@@ -57,12 +56,12 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
-    setAcceptedFiles(prev => [...prev, ...files]);
+    setAcceptedFiles((prev) => [...prev, ...files]);
     setErrors([]);
   };
 
   const removeFile = (index: number) => {
-    setAcceptedFiles(prev => prev.filter((_, i) => i !== index));
+    setAcceptedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const clearAll = () => {
@@ -84,8 +83,10 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
     }
 
     // Validate path format
-    if (path.trim() && !/^[a-zA-Z0-9_\-\/]+$/.test(path.trim())) {
-      newErrors.push("Path can only contain letters, numbers, underscores, hyphens, and forward slashes");
+    if (path.trim() && !/^[a-zA-Z0-9_\-/]+$/.test(path.trim())) {
+      newErrors.push(
+        "Path can only contain letters, numbers, underscores, hyphens, and forward slashes",
+      );
     }
 
     return newErrors;
@@ -105,7 +106,7 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
     try {
       // Simulate progress for UX
       const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
+        setUploadProgress((prev) => {
           if (prev >= 90) {
             clearInterval(progressInterval);
             return prev;
@@ -162,7 +163,8 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
             <span>Add Files to {datasetName}</span>
           </DialogTitle>
           <DialogDescription>
-            Upload files to your dataset with a specified path. Files will be organized as path/filename.
+            Upload files to your dataset with a specified path. Files will be
+            organized as path/filename.
           </DialogDescription>
         </DialogHeader>
 
@@ -180,7 +182,8 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
               disabled={isUploading}
             />
             <p className="text-sm text-muted-foreground">
-              Example: If you enter "validation" and upload "data.jsonl", it will be saved as "validation/data.jsonl"
+              Example: If you enter "validation" and upload "data.jsonl", it
+              will be saved as "validation/data.jsonl"
             </p>
           </div>
 
@@ -248,7 +251,9 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge variant="secondary">{file.type || "unknown"}</Badge>
+                      <Badge variant="secondary">
+                        {file.type || "unknown"}
+                      </Badge>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -269,7 +274,9 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Uploading files...</Label>
-                <span className="text-sm text-muted-foreground">{uploadProgress}%</span>
+                <span className="text-sm text-muted-foreground">
+                  {uploadProgress}%
+                </span>
               </div>
               <Progress value={uploadProgress} className="h-2" />
             </div>
@@ -300,7 +307,9 @@ const AddFilesDialog: React.FC<AddFilesDialogProps> = ({
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={isUploading || acceptedFiles.length === 0 || !path.trim()}
+              disabled={
+                isUploading || acceptedFiles.length === 0 || !path.trim()
+              }
               className="flex items-center space-x-2"
             >
               {isUploading ? (

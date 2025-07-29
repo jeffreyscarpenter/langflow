@@ -23,7 +23,7 @@ export const useGetDatasetFiles: useQueryFunctionType<
     {
       refetchOnWindowFocus: false,
       ...options,
-    }
+    },
   );
 
   return queryResult;

@@ -1,10 +1,10 @@
+import { useEffect } from "react";
 import { ICON_STROKE_WIDTH } from "@/constants/constants";
 import { useGetDatasets } from "@/controllers/API/queries/nemo";
 import { ENABLE_NEMO_MICROSERVICES } from "@/customization/feature-flags";
 import DatasetManagerModal from "@/modals/datasetManagerModal";
 import DatasetsRendererComponent from "@/modals/datasetManagerModal/components/datasetsRendererComponent";
 import { cn } from "@/utils/utils";
-import { useEffect } from "react";
 import useAlertStore from "../../../../../stores/alertStore";
 import IconComponent, {
   ForwardedIconComponent,
@@ -36,8 +36,8 @@ export default function InputDatasetComponent({
   const selectedDatasets = Array.isArray(dataset_path)
     ? dataset_path
     : dataset_path
-    ? [dataset_path]
-    : [];
+      ? [dataset_path]
+      : [];
 
   const isDisabled = disabled || isLoading;
 
@@ -60,10 +60,11 @@ export default function InputDatasetComponent({
                       handleOnNewValue({
                         value: isList
                           ? newSelectedDatasets.map(
-                              (id) =>
-                                datasets.find((d) => d.id === id)?.name,
+                              (id) => datasets.find((d) => d.id === id)?.name,
                             )
-                          : (datasets.find((d) => d.id === newSelectedDatasets[0])?.name ?? ""),
+                          : (datasets.find(
+                              (d) => d.id === newSelectedDatasets[0],
+                            )?.name ?? ""),
                         dataset_path: isList
                           ? newSelectedDatasets
                           : (newSelectedDatasets[0] ?? ""),
@@ -79,7 +80,8 @@ export default function InputDatasetComponent({
                       ? selectedDatasets.map(
                           (id) => datasets.find((d) => d.id === id)?.name,
                         )
-                      : (datasets.find((d) => d.id === selectedDatasets[0])?.name ?? "");
+                      : (datasets.find((d) => d.id === selectedDatasets[0])
+                          ?.name ?? "");
 
                     const newDatasetPath = isList
                       ? selectedDatasets
@@ -95,13 +97,18 @@ export default function InputDatasetComponent({
                   isList={isList}
                 >
                   {(selectedDatasets.length === 0 || isList) && (
-                    <div data-testid="input-dataset-component" className="w-full">
+                    <div
+                      data-testid="input-dataset-component"
+                      className="w-full"
+                    >
                       <Button
                         disabled={isDisabled}
                         variant={
                           selectedDatasets.length !== 0 ? "ghost" : "default"
                         }
-                        size={selectedDatasets.length !== 0 ? "iconMd" : "default"}
+                        size={
+                          selectedDatasets.length !== 0 ? "iconMd" : "default"
+                        }
                         className={cn(
                           selectedDatasets.length !== 0
                             ? "hit-area-icon absolute -top-8 right-0"
@@ -142,7 +149,9 @@ export default function InputDatasetComponent({
                   onClick={() => {
                     setErrorData({
                       title: "NeMo Data Store not enabled",
-                      list: ["Please enable NeMo Data Store integration to use this feature."],
+                      list: [
+                        "Please enable NeMo Data Store integration to use this feature.",
+                      ],
                     });
                   }}
                 />
@@ -160,7 +169,9 @@ export default function InputDatasetComponent({
                   onClick={() => {
                     setErrorData({
                       title: "NeMo Data Store not enabled",
-                      list: ["Please enable NeMo Data Store integration to use this feature."],
+                      list: [
+                        "Please enable NeMo Data Store integration to use this feature.",
+                      ],
                     });
                   }}
                   disabled={isDisabled}

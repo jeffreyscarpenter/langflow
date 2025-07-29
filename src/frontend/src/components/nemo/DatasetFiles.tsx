@@ -1,26 +1,50 @@
-import React, { useState, useRef } from "react";
-import { useGetDatasetFiles, useUploadFiles } from "@/controllers/API/queries/nemo";
-import { NeMoFile } from "@/types/nemo";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Upload, File, Calendar, HardDrive, Download, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { formatBytes } from "@/utils/utils";
+import {
+  Calendar,
+  Download,
+  File,
+  HardDrive,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  useGetDatasetFiles,
+  useUploadFiles,
+} from "@/controllers/API/queries/nemo";
 import useAlertStore from "@/stores/alertStore";
+import { NeMoFile } from "@/types/nemo";
+import { formatBytes } from "@/utils/utils";
 
 interface DatasetFilesProps {
   datasetId: string;
   datasetName: string;
 }
 
-const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) => {
+const DatasetFiles: React.FC<DatasetFilesProps> = ({
+  datasetId,
+  datasetName,
+}) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const setSuccessData = useAlertStore((state) => state.setSuccessData);
   const setErrorData = useAlertStore((state) => state.setErrorData);
 
-  const { data: files, isLoading, error, refetch } = useGetDatasetFiles({ datasetId });
+  const {
+    data: files,
+    isLoading,
+    error,
+    refetch,
+  } = useGetDatasetFiles({ datasetId });
   const uploadFilesMutation = useUploadFiles();
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,26 +61,29 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
       return;
     }
 
-    uploadFilesMutation.mutate({
-      datasetId,
-      files: selectedFiles,
-    }, {
-      onSuccess: () => {
-        setSuccessData({
-          title: "Files uploaded",
-        });
-        setSelectedFiles([]);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
+    uploadFilesMutation.mutate(
+      {
+        datasetId,
+        files: selectedFiles,
       },
-      onError: (error) => {
-        setErrorData({
-          title: "Error",
-          list: [error?.message || "Failed to upload files"],
-        });
+      {
+        onSuccess: () => {
+          setSuccessData({
+            title: "Files uploaded",
+          });
+          setSelectedFiles([]);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+        },
+        onError: (error) => {
+          setErrorData({
+            title: "Error",
+            list: [error?.message || "Failed to upload files"],
+          });
+        },
       },
-    });
+    );
   };
 
   const handleDownload = (file: NeMoFile) => {
@@ -111,7 +138,8 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
         <div>
           <h2 className="text-2xl font-bold">Files in {datasetName}</h2>
           <p className="text-muted-foreground">
-            {files?.length || 0} files • {files?.reduce((total, file) => total + file.size, 0) || 0} bytes
+            {files?.length || 0} files •{" "}
+            {files?.reduce((total, file) => total + file.size, 0) || 0} bytes
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -137,7 +165,9 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
               disabled={uploadFilesMutation.isPending}
             >
               <Upload className="h-4 w-4 mr-2" />
-              {uploadFilesMutation.isPending ? "Uploading..." : `Upload ${selectedFiles.length} files`}
+              {uploadFilesMutation.isPending
+                ? "Uploading..."
+                : `Upload ${selectedFiles.length} files`}
             </Button>
           )}
         </div>
@@ -154,7 +184,10 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
           <CardContent>
             <div className="space-y-2">
               {selectedFiles.map((file, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-muted rounded">
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-muted rounded"
+                >
                   <div className="flex items-center space-x-2">
                     <File className="h-4 w-4" />
                     <span className="text-sm font-medium">{file.name}</span>
@@ -174,7 +207,9 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <span className="text-2xl">{getFileIcon(file.content_type)}</span>
+                    <span className="text-2xl">
+                      {getFileIcon(file.content_type)}
+                    </span>
                     <div>
                       <h3 className="font-medium">{file.filename}</h3>
                       <div className="flex items-center space-x-4 text-sm text-muted-foreground">
@@ -185,7 +220,9 @@ const DatasetFiles: React.FC<DatasetFilesProps> = ({ datasetId, datasetName }) =
                         <div className="flex items-center space-x-1">
                           <Calendar className="h-4 w-4" />
                           <span>
-                            {formatDistanceToNow(new Date(file.uploaded_at), { addSuffix: true })}
+                            {formatDistanceToNow(new Date(file.uploaded_at), {
+                              addSuffix: true,
+                            })}
                           </span>
                         </div>
                         <Badge variant="outline">{file.content_type}</Badge>

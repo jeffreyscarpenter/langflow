@@ -24,7 +24,7 @@ export const useGetDataset: useQueryFunctionType<
     {
       refetchOnWindowFocus: false,
       ...options,
-    }
+    },
   );
 
   return queryResult;

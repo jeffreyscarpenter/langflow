@@ -1,7 +1,7 @@
-import useAlertStore from "@/stores/alertStore";
-import { NeMoDataset } from "@/types/nemo";
 import { useQueryClient } from "@tanstack/react-query";
 import { ReactNode, useEffect, useState } from "react";
+import useAlertStore from "@/stores/alertStore";
+import { NeMoDataset } from "@/types/nemo";
 import { ForwardedIconComponent } from "../../components/common/genericIconComponent";
 import BaseModal from "../baseModal";
 import CreateDatasetComponent from "./components/createDatasetComponent";
@@ -38,9 +38,9 @@ export default function DatasetManagerModal({
     });
   }, [internalOpen]);
 
-  const [internalSelectedDatasets, setInternalSelectedDatasets] = useState<string[]>(
-    selectedDatasets || [],
-  );
+  const [internalSelectedDatasets, setInternalSelectedDatasets] = useState<
+    string[]
+  >(selectedDatasets || []);
 
   useEffect(() => {
     // Only update internal state when modal opens, not when it closes

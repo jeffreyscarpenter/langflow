@@ -24,7 +24,7 @@ const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(
         {children}
       </div>
     );
-  }
+  },
 );
 
 ScrollArea.displayName = "ScrollArea";

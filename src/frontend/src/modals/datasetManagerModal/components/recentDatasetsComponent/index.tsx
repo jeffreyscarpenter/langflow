@@ -30,7 +30,9 @@ export default function RecentDatasetsComponent({
             onClick={() => {
               if (isList) {
                 if (selectedDatasets.includes(dataset.id)) {
-                  setSelectedDatasets(selectedDatasets.filter(id => id !== dataset.id));
+                  setSelectedDatasets(
+                    selectedDatasets.filter((id) => id !== dataset.id),
+                  );
                 } else {
                   setSelectedDatasets([...selectedDatasets, dataset.id]);
                 }
@@ -42,7 +44,9 @@ export default function RecentDatasetsComponent({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">{dataset.name}</p>
-                <p className="text-xs text-muted-foreground">{dataset.description}</p>
+                <p className="text-xs text-muted-foreground">
+                  {dataset.description}
+                </p>
               </div>
               <div className="text-xs text-muted-foreground">
                 {dataset.metadata?.file_count || 0} files

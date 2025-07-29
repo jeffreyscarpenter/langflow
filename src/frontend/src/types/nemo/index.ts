@@ -139,7 +139,12 @@ export interface NeMoJobStatusDetails {
   validation_loss: NeMoValidationLossEntry[];
 }
 
-export type NeMoJobStatus = "created" | "running" | "completed" | "failed" | "cancelled";
+export type NeMoJobStatus =
+  | "created"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface NeMoCustomizerJob {
   id: string;
@@ -276,7 +281,12 @@ export interface StoreJobResponse {
 // Evaluator Job Types (Evaluator) - Real NeMo API Structure
 // =============================================================================
 
-export type NeMoEvaluatorJobStatus = "created" | "running" | "completed" | "failed" | "cancelled";
+export type NeMoEvaluatorJobStatus =
+  | "created"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface NeMoEvaluatorJobStatusDetails {
   created_at: string;

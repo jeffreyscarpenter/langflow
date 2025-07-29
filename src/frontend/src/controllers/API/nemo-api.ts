@@ -20,52 +20,60 @@ class NeMoApiClient {
 
   private loadConfig(): void {
     try {
-      const savedConfig = localStorage.getItem('nemo-config');
+      const savedConfig = localStorage.getItem("nemo-config");
       if (savedConfig) {
         this.config = JSON.parse(savedConfig);
       }
     } catch (error) {
-      console.error('Error loading NeMo config:', error);
+      console.error("Error loading NeMo config:", error);
       this.config = null;
     }
   }
 
   private getHeaders(): Record<string, string> {
     if (!this.config?.authToken) {
-      throw new Error('NeMo configuration not found. Please configure your connection.');
+      throw new Error(
+        "NeMo configuration not found. Please configure your connection.",
+      );
     }
 
     return {
-      'X-NeMo-Base-URL': this.config.baseUrl,
-      'X-NeMo-Auth-Token': this.config.authToken,
-      'X-NeMo-Namespace': this.config.namespace,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
+      "X-NeMo-Base-URL": this.config.baseUrl,
+      "X-NeMo-Auth-Token": this.config.authToken,
+      "X-NeMo-Namespace": this.config.namespace,
+      "Content-Type": "application/json",
+      Accept: "application/json",
     };
   }
 
   getNamespace(): string {
     if (!this.config?.namespace) {
-      throw new Error('NeMo configuration not found. Please configure your connection.');
+      throw new Error(
+        "NeMo configuration not found. Please configure your connection.",
+      );
     }
     return this.config.namespace;
   }
 
   // Dataset operations (use backend proxy)
-  async getDatasets(page: number = 1, pageSize: number = 10, datasetName?: string) {
+  async getDatasets(
+    page: number = 1,
+    pageSize: number = 10,
+    datasetName?: string,
+  ) {
     this.loadConfig(); // Refresh config
     const params: any = {
       page,
-      page_size: pageSize
+      page_size: pageSize,
     };
 
     if (datasetName) {
       params.dataset_name = datasetName;
     }
 
-    const response = await this.client.get('/nemo/datasets', {
+    const response = await this.client.get("/nemo/datasets", {
       headers: this.getHeaders(),
-      params
+      params,
     });
     return response.data;
   }
@@ -74,7 +82,7 @@ class NeMoApiClient {
     this.loadConfig(); // Refresh config
     const response = await this.client.get(`/nemo/datasets/${datasetName}`, {
       headers: this.getHeaders(),
-      params: { namespace }
+      params: { namespace },
     });
     return response.data;
   }
@@ -84,18 +92,18 @@ class NeMoApiClient {
 
     // Prepare form data for the API call
     const formData = new URLSearchParams();
-    formData.append('name', data.name);
-    formData.append('namespace', data.namespace);
+    formData.append("name", data.name);
+    formData.append("namespace", data.namespace);
     if (data.description) {
-      formData.append('description', data.description);
+      formData.append("description", data.description);
     }
-    formData.append('dataset_type', data.dataset_type || 'fileset');
+    formData.append("dataset_type", data.dataset_type || "fileset");
 
-    const response = await this.client.post('/nemo/datasets', formData, {
+    const response = await this.client.post("/nemo/datasets", formData, {
       headers: {
         ...this.getHeaders(),
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     });
     return response.data;
   }
@@ -110,7 +118,7 @@ class NeMoApiClient {
 
     const response = await this.client.delete(`/nemo/datasets/${datasetName}`, {
       headers: this.getHeaders(),
-      params
+      params,
     });
     return response.data;
   }
@@ -125,23 +133,23 @@ class NeMoApiClient {
 
     const response = await this.client.get(`/nemo/datasets/${datasetName}`, {
       headers: this.getHeaders(),
-      params
+      params,
     });
     return response.data;
   }
 
   async getDatasetFiles(datasetName: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/datasets/${datasetName}/files`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/datasets/${datasetName}/files`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
-  async uploadFiles(params: {
-    datasetId: string;
-    files: File[];
-  }) {
+  async uploadFiles(params: { datasetId: string; files: File[] }) {
     this.loadConfig(); // Refresh config
 
     const formData = new FormData();
@@ -152,17 +160,17 @@ class NeMoApiClient {
     });
 
     const headers = {
-      'X-NeMo-Base-URL': this.config!.baseUrl,
-      'X-NeMo-Auth-Token': this.config!.authToken,
-      'X-NeMo-Namespace': this.config!.namespace,
-      'Accept': 'application/json'
+      "X-NeMo-Base-URL": this.config!.baseUrl,
+      "X-NeMo-Auth-Token": this.config!.authToken,
+      "X-NeMo-Namespace": this.config!.namespace,
+      Accept: "application/json",
       // Don't set Content-Type - let browser set it with boundary for multipart/form-data
     };
 
     const response = await this.client.post(
       `/nemo/datasets/${params.datasetId}/files`,
       formData,
-      { headers }
+      { headers },
     );
     return response.data;
   }
@@ -175,10 +183,13 @@ class NeMoApiClient {
       params.namespace = namespace;
     }
 
-    const response = await this.client.get(`/nemo/datasets/${datasetName}/details`, {
-      headers: this.getHeaders(),
-      params
-    });
+    const response = await this.client.get(
+      `/nemo/datasets/${datasetName}/details`,
+      {
+        headers: this.getHeaders(),
+        params,
+      },
+    );
     return response.data;
   }
 
@@ -192,8 +203,8 @@ class NeMoApiClient {
     this.loadConfig(); // Refresh config
 
     const formData = new FormData();
-    formData.append('path', params.path);
-    formData.append('namespace', params.namespace);
+    formData.append("path", params.path);
+    formData.append("namespace", params.namespace);
 
     // Add each file to the form data
     params.files.forEach((file, index) => {
@@ -201,17 +212,17 @@ class NeMoApiClient {
     });
 
     const headers = {
-      'X-NeMo-Base-URL': this.config!.baseUrl,
-      'X-NeMo-Auth-Token': this.config!.authToken,
-      'X-NeMo-Namespace': this.config!.namespace,
-      'Accept': 'application/json'
+      "X-NeMo-Base-URL": this.config!.baseUrl,
+      "X-NeMo-Auth-Token": this.config!.authToken,
+      "X-NeMo-Namespace": this.config!.namespace,
+      Accept: "application/json",
       // Don't set Content-Type - let browser set it with boundary for multipart/form-data
     };
 
     const response = await this.client.post(
       `/nemo/datasets/${params.datasetName}/upload`,
       formData,
-      { headers }
+      { headers },
     );
     return response.data;
   }
@@ -220,63 +231,71 @@ class NeMoApiClient {
   async getCustomizerJobs(page: number = 1, pageSize: number = 10) {
     this.loadConfig(); // Refresh config
     const params = { page, page_size: pageSize };
-    const response = await this.client.get('/nemo/v1/customization/jobs', {
+    const response = await this.client.get("/nemo/v1/customization/jobs", {
       headers: this.getHeaders(),
-      params
+      params,
     });
     return response.data;
   }
 
   async getCustomizerJob(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/customization/jobs/${jobId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async getTrackedJobs() {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get('/nemo/jobs/tracked', {
-      headers: this.getHeaders()
-    });
-    return response.data;
-  }
-
-  async getCustomizerJob(jobId: string) {
-    this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}`, {
-      headers: this.getHeaders()
+    const response = await this.client.get("/nemo/jobs/tracked", {
+      headers: this.getHeaders(),
     });
     return response.data;
   }
 
   async getCustomizerJobStatus(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}/status`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/customization/jobs/${jobId}/status`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async cancelCustomizerJob(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.post(`/nemo/v1/customization/jobs/${jobId}/cancel`, {}, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.post(
+      `/nemo/v1/customization/jobs/${jobId}/cancel`,
+      {},
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async deleteCustomizerJob(jobId: string) {
     this.loadConfig(); // Refresh config
 
-    console.log('DELETE CUSTOMIZER JOB - URL:', `/nemo/v1/customization/jobs/${jobId}`);
-    console.log('DELETE CUSTOMIZER JOB - Headers:', this.getHeaders());
+    console.log(
+      "DELETE CUSTOMIZER JOB - URL:",
+      `/nemo/v1/customization/jobs/${jobId}`,
+    );
+    console.log("DELETE CUSTOMIZER JOB - Headers:", this.getHeaders());
 
-    const response = await this.client.delete(`/nemo/v1/customization/jobs/${jobId}`, {
-      headers: this.getHeaders()
-    });
-    console.log('DELETE CUSTOMIZER JOB - Response:', response.data);
+    const response = await this.client.delete(
+      `/nemo/v1/customization/jobs/${jobId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    console.log("DELETE CUSTOMIZER JOB - Response:", response.data);
     return response.data;
   }
 
@@ -284,79 +303,107 @@ class NeMoApiClient {
   async getEvaluatorJobs(page: number = 1, pageSize: number = 10) {
     this.loadConfig(); // Refresh config
     const params = { page, page_size: pageSize };
-    const response = await this.client.get('/nemo/v1/evaluation/jobs', {
+    const response = await this.client.get("/nemo/v1/evaluation/jobs", {
       headers: this.getHeaders(),
-      params
+      params,
     });
     return response.data;
   }
 
   async getEvaluatorJob(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/jobs/${jobId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async getEvaluatorJobStatus(jobId: string) {
     this.loadConfig(); // Refresh config
-    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/status`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/jobs/${jobId}/status`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async deleteEvaluatorJob(jobId: string) {
     this.loadConfig(); // Refresh config
 
-    console.log('DELETE EVALUATOR JOB - URL:', `/nemo/v1/evaluation/jobs/${jobId}`);
-    console.log('DELETE EVALUATOR JOB - Headers:', this.getHeaders());
+    console.log(
+      "DELETE EVALUATOR JOB - URL:",
+      `/nemo/v1/evaluation/jobs/${jobId}`,
+    );
+    console.log("DELETE EVALUATOR JOB - Headers:", this.getHeaders());
 
-    const response = await this.client.delete(`/nemo/v1/evaluation/jobs/${jobId}`, {
-      headers: this.getHeaders()
-    });
-    console.log('DELETE EVALUATOR JOB - Response:', response.data);
+    const response = await this.client.delete(
+      `/nemo/v1/evaluation/jobs/${jobId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    console.log("DELETE EVALUATOR JOB - Response:", response.data);
     return response.data;
   }
 
   // New methods for logs, results, and downloads
   async getCustomizerJobContainerLogs(jobId: string) {
     this.loadConfig();
-    const response = await this.client.get(`/nemo/v1/customization/jobs/${jobId}/container-logs`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/customization/jobs/${jobId}/container-logs`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async getEvaluatorJobLogs(jobId: string) {
     this.loadConfig();
-    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/logs`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/jobs/${jobId}/logs`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async getEvaluatorJobResults(jobId: string) {
     this.loadConfig();
-    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/results`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/jobs/${jobId}/results`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   async downloadEvaluatorJobResults(jobId: string) {
     this.loadConfig();
-    const response = await this.client.get(`/nemo/v1/evaluation/jobs/${jobId}/download-results`, {
-      headers: this.getHeaders()
-    });
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/jobs/${jobId}/download-results`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
     return response.data;
   }
 
   // Check if configuration is valid
   isConfigured(): boolean {
     this.loadConfig();
-    return !!(this.config?.baseUrl && this.config?.authToken && this.config?.namespace);
+    return !!(
+      this.config?.baseUrl &&
+      this.config?.authToken &&
+      this.config?.namespace
+    );
   }
 }
 

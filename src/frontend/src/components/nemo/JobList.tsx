@@ -1,22 +1,25 @@
+import { AlertCircle, RefreshCw, Search, Terminal, Wrench } from "lucide-react";
 import React, { useState } from "react";
-import { useGetCustomizerJobs } from "@/controllers/API/queries/nemo/use-get-customizer-jobs";
-import { useGetCustomizerJob } from "@/controllers/API/queries/nemo/use-get-customizer-job";
-import { useCancelCustomizerJob, useGetCustomizerJobLogs } from "@/controllers/API/queries/nemo/use-customizer-job-actions";
-import JobCard from "./JobCard";
-import JobDetailsModal from "./JobDetailsModal";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, AlertCircle, Wrench, Terminal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import useAlertStore from "@/stores/alertStore";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useCancelCustomizerJob,
+  useGetCustomizerJobLogs,
+} from "@/controllers/API/queries/nemo/use-customizer-job-actions";
+import { useGetCustomizerJob } from "@/controllers/API/queries/nemo/use-get-customizer-job";
+import { useGetCustomizerJobs } from "@/controllers/API/queries/nemo/use-get-customizer-jobs";
+import useAlertStore from "@/stores/alertStore";
+import JobCard from "./JobCard";
+import JobDetailsModal from "./JobDetailsModal";
 
 const JobListSkeleton: React.FC = () => (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -42,10 +45,12 @@ const EmptyState: React.FC = () => (
     <Wrench className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
     <h3 className="text-xl font-semibold mb-2">No Jobs Found</h3>
     <p className="text-muted-foreground mb-4">
-      No customizer jobs are currently being tracked. Jobs will appear here when you create them using the NeMo Customizer component.
+      No customizer jobs are currently being tracked. Jobs will appear here when
+      you create them using the NeMo Customizer component.
     </p>
     <p className="text-sm text-muted-foreground">
-      Jobs are automatically refreshed every 30 seconds to show the latest status.
+      Jobs are automatically refreshed every 30 seconds to show the latest
+      status.
     </p>
   </div>
 );
@@ -58,16 +63,22 @@ const JobList: React.FC = () => {
   const [pageSize] = useState(10);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
-  const { data: jobs, isLoading, error, refetch, isFetching } = useGetCustomizerJobs(currentPage, pageSize);
+  const {
+    data: jobs,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = useGetCustomizerJobs(currentPage, pageSize);
 
   // Search for specific job by ID using direct API call
   const {
     data: searchedJob,
     isLoading: isSearchLoading,
-    error: searchError
+    error: searchError,
   } = useGetCustomizerJob({
     jobId: activeSearchQuery,
-    enabled: !!activeSearchQuery
+    enabled: !!activeSearchQuery,
   });
   const cancelCustomizerJob = useCancelCustomizerJob();
   const getCustomizerJobLogs = useGetCustomizerJobLogs();
@@ -76,7 +87,7 @@ const JobList: React.FC = () => {
 
   // Ensure jobs is always an array and map to TrackedJob format
   const safeJobs = React.useMemo(() => {
-    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs) && jobs.data) {
+    if (jobs && typeof jobs === "object" && !Array.isArray(jobs) && jobs.data) {
       const jobsArray = Array.isArray(jobs.data) ? jobs.data : [];
       // Map customizer job format to TrackedJob format
       return jobsArray.map((job: any) => ({
@@ -92,8 +103,8 @@ const JobList: React.FC = () => {
         custom_fields: {
           description: job.description,
           namespace: job.namespace,
-          ...job.status_details
-        }
+          ...job.status_details,
+        },
       }));
     }
     return Array.isArray(jobs) ? jobs : [];
@@ -101,14 +112,20 @@ const JobList: React.FC = () => {
 
   // Extract pagination metadata
   const paginationInfo = React.useMemo(() => {
-    if (jobs && typeof jobs === 'object' && !Array.isArray(jobs) && jobs.pagination) {
+    if (
+      jobs &&
+      typeof jobs === "object" &&
+      !Array.isArray(jobs) &&
+      jobs.pagination
+    ) {
       const pagination = jobs.pagination;
       return {
         page: pagination.page || currentPage,
         pageSize: pagination.page_size || pageSize,
         total: pagination.total_results || 0,
         totalPages: pagination.total_pages || 0,
-        hasNext: (pagination.page || currentPage) < (pagination.total_pages || 1),
+        hasNext:
+          (pagination.page || currentPage) < (pagination.total_pages || 1),
         hasPrev: (pagination.page || currentPage) > 1,
       };
     }
@@ -140,7 +157,7 @@ const JobList: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSearch();
     }
   };
@@ -175,16 +192,22 @@ const JobList: React.FC = () => {
   const handleViewLogs = async (jobId: string) => {
     try {
       const logs = await getCustomizerJobLogs.mutateAsync(jobId);
-      console.log('Job logs:', logs);
+      console.log("Job logs:", logs);
 
       // Check if the response contains actual logs or just a message
-      if (logs && typeof logs === 'object' && 'message' in logs) {
+      if (logs && typeof logs === "object" && "message" in logs) {
         // Service returned a message (e.g., "Job not found")
         setErrorData({
           title: "No logs available",
           list: [logs.message],
         });
-      } else if (logs && (logs.logs || logs.content || typeof logs === 'string' || Array.isArray(logs))) {
+      } else if (
+        logs &&
+        (logs.logs ||
+          logs.content ||
+          typeof logs === "string" ||
+          Array.isArray(logs))
+      ) {
         // Service returned actual logs
         setLogsData(logs);
         setShowLogsDialog(true);
@@ -209,7 +232,8 @@ const JobList: React.FC = () => {
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Failed to load customizer jobs. Please check your connection and try again.
+          Failed to load customizer jobs. Please check your connection and try
+          again.
         </AlertDescription>
       </Alert>
     );
@@ -222,7 +246,8 @@ const JobList: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold">Customizer Jobs</h2>
           <p className="text-muted-foreground">
-            Monitor your NeMo Customizer jobs with real-time progress and metrics
+            Monitor your NeMo Customizer jobs with real-time progress and
+            metrics
           </p>
         </div>
         <div className="flex items-center space-x-4">
@@ -247,11 +272,7 @@ const JobList: React.FC = () => {
               Find
             </Button>
             {activeSearchQuery && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClearSearch}
-              >
+              <Button variant="outline" size="sm" onClick={handleClearSearch}>
                 Clear
               </Button>
             )}
@@ -262,7 +283,9 @@ const JobList: React.FC = () => {
             disabled={isFetching}
             className="flex items-center space-x-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+            />
             <span>Refresh</span>
           </Button>
         </div>
@@ -273,19 +296,23 @@ const JobList: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {safeJobs.filter(job => job.status === 'running').length}
+              {safeJobs.filter((job) => job.status === "running").length}
             </div>
-            <div className="text-sm text-blue-600 dark:text-blue-400">Running</div>
+            <div className="text-sm text-blue-600 dark:text-blue-400">
+              Running
+            </div>
           </div>
           <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {safeJobs.filter(job => job.status === 'completed').length}
+              {safeJobs.filter((job) => job.status === "completed").length}
             </div>
-            <div className="text-sm text-green-600 dark:text-green-400">Completed</div>
+            <div className="text-sm text-green-600 dark:text-green-400">
+              Completed
+            </div>
           </div>
           <div className="bg-red-50 dark:bg-red-950 p-4 rounded-lg">
             <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {safeJobs.filter(job => job.status === 'failed').length}
+              {safeJobs.filter((job) => job.status === "failed").length}
             </div>
             <div className="text-sm text-red-600 dark:text-red-400">Failed</div>
           </div>
@@ -293,13 +320,15 @@ const JobList: React.FC = () => {
             <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
               {safeJobs.length}
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Total
+            </div>
           </div>
         </div>
       )}
 
       {/* Jobs Grid */}
-      {(isLoading || isSearchLoading) ? (
+      {isLoading || isSearchLoading ? (
         <JobListSkeleton />
       ) : displayJobs.length > 0 ? (
         <>
@@ -320,8 +349,8 @@ const JobList: React.FC = () => {
           {false && paginationInfo.totalPages > 1 && (
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
-                Showing page {paginationInfo.page} of {paginationInfo.totalPages}
-                ({paginationInfo.total} total jobs)
+                Showing page {paginationInfo.page} of{" "}
+                {paginationInfo.totalPages}({paginationInfo.total} total jobs)
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -383,24 +412,32 @@ const JobList: React.FC = () => {
                 <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-auto">
                   {(() => {
                     // Handle different log formats
-                    if (typeof logsData === 'string') {
-                      return <pre className="whitespace-pre-wrap">{logsData}</pre>;
+                    if (typeof logsData === "string") {
+                      return (
+                        <pre className="whitespace-pre-wrap">{logsData}</pre>
+                      );
                     } else if (Array.isArray(logsData)) {
                       return (
                         <pre className="whitespace-pre-wrap">
-                          {logsData.map((line, index) => `${index + 1}: ${line}`).join('\n')}
+                          {logsData
+                            .map((line, index) => `${index + 1}: ${line}`)
+                            .join("\n")}
                         </pre>
                       );
                     } else if (logsData.logs) {
                       return (
                         <pre className="whitespace-pre-wrap">
-                          {typeof logsData.logs === 'string'
+                          {typeof logsData.logs === "string"
                             ? logsData.logs
                             : JSON.stringify(logsData.logs, null, 2)}
                         </pre>
                       );
                     } else if (logsData.content) {
-                      return <pre className="whitespace-pre-wrap">{logsData.content}</pre>;
+                      return (
+                        <pre className="whitespace-pre-wrap">
+                          {logsData.content}
+                        </pre>
+                      );
                     } else {
                       return (
                         <pre className="whitespace-pre-wrap">

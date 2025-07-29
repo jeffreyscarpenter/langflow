@@ -1,6 +1,6 @@
+import { UseMutationResult } from "@tanstack/react-query";
 import { useMutationFunctionType } from "@/types/api";
 import { DeleteDatasetResponse } from "@/types/nemo";
-import { UseMutationResult } from "@tanstack/react-query";
 import { nemoApi } from "../../nemo-api";
 import { UseRequestProcessor } from "../../services/request-processor";
 
@@ -16,21 +16,23 @@ export const useDeleteDataset: useMutationFunctionType<
 > = (options?) => {
   const { mutate, queryClient } = UseRequestProcessor();
 
-  async function deleteDatasetFn(data: DeleteDatasetParams): Promise<DeleteDatasetResponse> {
+  async function deleteDatasetFn(
+    data: DeleteDatasetParams,
+  ): Promise<DeleteDatasetResponse> {
     return await nemoApi.deleteDataset(data.datasetName, data.namespace);
   }
 
-  const mutation: UseMutationResult<DeleteDatasetResponse, any, DeleteDatasetParams> = mutate(
-    ["useDeleteDataset"],
-    deleteDatasetFn,
-    {
-      ...options,
-      onSuccess: () => {
-        // Invalidate and refetch datasets list
-        queryClient.invalidateQueries({ queryKey: ["useGetDatasets"] });
-      },
-    }
-  );
+  const mutation: UseMutationResult<
+    DeleteDatasetResponse,
+    any,
+    DeleteDatasetParams
+  > = mutate(["useDeleteDataset"], deleteDatasetFn, {
+    ...options,
+    onSuccess: () => {
+      // Invalidate and refetch datasets list
+      queryClient.invalidateQueries({ queryKey: ["useGetDatasets"] });
+    },
+  });
 
   return mutation;
 };

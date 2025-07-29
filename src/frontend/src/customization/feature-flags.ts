@@ -16,3 +16,5 @@ export const ENABLE_IMAGE_ON_PLAYGROUND = false;
 export const ENABLE_MCP = true;
 export const ENABLE_MCP_NOTICE = true;
 export const ENABLE_NEMO_MICROSERVICES = true;
+export const ENABLE_MCP_COMPOSER =
+  process.env.LANGFLOW_FEATURE_MCP_COMPOSER === "true";

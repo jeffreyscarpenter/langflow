@@ -12,7 +12,9 @@ export function useCancelJob() {
     mutationFn: cancelJob,
     onSuccess: (data, jobId) => {
       // Invalidate job status queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["nemo", "jobs", "status", jobId] });
+      queryClient.invalidateQueries({
+        queryKey: ["nemo", "jobs", "status", jobId],
+      });
       queryClient.invalidateQueries({ queryKey: ["nemo", "jobs", "tracked"] });
     },
   });

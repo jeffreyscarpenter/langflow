@@ -162,9 +162,9 @@ At this point, you can navigate to http://localhost:3000/ in a browser and acces
 
 ### Build and Display Documentation
 
-If you are contributing changes to documentation (always welcome!), these are built (using [Docusaurus](https://docusaurus.io/)) and served separately, also using Node.js.
+If you are contributing changes to documentation (always welcome!), these are built using [Docusaurus](https://docusaurus.io/) and served separately, also using Node.js.
 
-In the *Documentation Terminal* (from the project root directory), run the following:
+In the terminal, from the project root directory, run the following:
 
 ```bash
 cd docs

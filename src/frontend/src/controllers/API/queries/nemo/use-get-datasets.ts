@@ -19,7 +19,10 @@ interface PaginatedDatasetsResponse {
   error?: string;
 }
 
-export const useGetDatasets = (params: UseGetDatasetsParams = {}, options?: any) => {
+export const useGetDatasets = (
+  params: UseGetDatasetsParams = {},
+  options?: any,
+) => {
   const { query } = UseRequestProcessor();
   const { page = 1, pageSize = 10, datasetName } = params;
 
@@ -33,7 +36,7 @@ export const useGetDatasets = (params: UseGetDatasetsParams = {}, options?: any)
     {
       refetchOnWindowFocus: false,
       ...options,
-    }
+    },
   );
 
   return queryResult;

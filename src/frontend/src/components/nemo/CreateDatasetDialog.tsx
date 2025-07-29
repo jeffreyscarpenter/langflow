@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { useCreateDataset } from "@/controllers/API/queries/nemo";
-import { CreateDatasetRequest } from "@/types/nemo";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,10 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -20,7 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useCreateDataset } from "@/controllers/API/queries/nemo";
 import useAlertStore from "@/stores/alertStore";
+import { CreateDatasetRequest } from "@/types/nemo";
 
 interface CreateDatasetDialogProps {
   open: boolean;
@@ -28,7 +28,11 @@ interface CreateDatasetDialogProps {
   onSuccess?: () => void;
 }
 
-const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenChange, onSuccess }) => {
+const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({
+  open,
+  onOpenChange,
+  onSuccess,
+}) => {
   const [formData, setFormData] = useState<CreateDatasetRequest>({
     name: "",
     namespace: "default",
@@ -70,7 +74,8 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
       onSuccess: (result) => {
         setSuccessData({
           title: "Dataset created",
-          text: result?.message || `Dataset ${formData.name} created successfully`,
+          text:
+            result?.message || `Dataset ${formData.name} created successfully`,
         });
         handleClose();
         onSuccess?.();
@@ -84,7 +89,10 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
     });
   };
 
-  const handleInputChange = (field: keyof CreateDatasetRequest, value: string) => {
+  const handleInputChange = (
+    field: keyof CreateDatasetRequest,
+    value: string,
+  ) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -133,7 +141,9 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) => handleInputChange("description", e.target.value)}
+                onChange={(e) =>
+                  handleInputChange("description", e.target.value)
+                }
                 placeholder="Enter dataset description (optional)"
                 rows={3}
                 disabled={createDatasetMutation.isPending}
@@ -143,7 +153,9 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
               <Label htmlFor="type">Dataset Type</Label>
               <Select
                 value={formData.dataset_type}
-                onValueChange={(value) => handleInputChange("dataset_type", value)}
+                onValueChange={(value) =>
+                  handleInputChange("dataset_type", value)
+                }
                 disabled={createDatasetMutation.isPending}
               >
                 <SelectTrigger>
@@ -170,9 +182,15 @@ const CreateDatasetDialog: React.FC<CreateDatasetDialogProps> = ({ open, onOpenC
             </Button>
             <Button
               type="submit"
-              disabled={createDatasetMutation.isPending || !formData.name.trim() || !formData.namespace.trim()}
+              disabled={
+                createDatasetMutation.isPending ||
+                !formData.name.trim() ||
+                !formData.namespace.trim()
+              }
             >
-              {createDatasetMutation.isPending ? "Creating..." : "Create Dataset"}
+              {createDatasetMutation.isPending
+                ? "Creating..."
+                : "Create Dataset"}
             </Button>
           </DialogFooter>
         </form>

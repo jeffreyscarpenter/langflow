@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { nemoApi } from "../../nemo-api";
 import { NeMoDataset } from "@/types/nemo";
+import { nemoApi } from "../../nemo-api";
 
 interface UseGetDatasetByNameParams {
   namespace: string;
@@ -8,7 +8,11 @@ interface UseGetDatasetByNameParams {
   enabled?: boolean;
 }
 
-export const useGetDatasetByName = ({ namespace, datasetName, enabled = true }: UseGetDatasetByNameParams) => {
+export const useGetDatasetByName = ({
+  namespace,
+  datasetName,
+  enabled = true,
+}: UseGetDatasetByNameParams) => {
   return useQuery({
     queryKey: ["nemo", "dataset", namespace, datasetName],
     queryFn: async (): Promise<NeMoDataset> => {

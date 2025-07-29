@@ -1,31 +1,31 @@
-import React from "react";
-import { TrackedJob, NeMoJobStatus } from "@/types/nemo";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
-import {
-  Clock,
-  CheckCircle,
-  XCircle,
-  PlayCircle,
-  Pause,
-  Eye,
-  Calendar,
-  Database,
-  Cpu,
-  Settings,
-  Trash2,
-  Square,
-  FileText,
-  BarChart3,
-  Download
-} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  BarChart3,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Database,
+  Download,
+  Eye,
+  FileText,
+  Pause,
+  PlayCircle,
+  Settings,
+  Square,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import React from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { NeMoJobStatus, TrackedJob } from "@/types/nemo";
 
 interface JobCardProps {
   job: TrackedJob;
-  jobType: 'customizer' | 'evaluator'; // New prop to determine job type
+  jobType: "customizer" | "evaluator"; // New prop to determine job type
   onViewDetails?: (jobId: string) => void;
   onDelete?: (jobId: string) => void;
   onCancel?: (jobId: string) => void;
@@ -85,23 +85,28 @@ const JobCard: React.FC<JobCardProps> = ({
   onCancel,
   onViewLogs,
   onViewResults,
-  onDownloadResults
+  onDownloadResults,
 }) => {
-  const formattedCreatedAt = formatDistanceToNow(new Date(job.created_at), { addSuffix: true });
-  const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), { addSuffix: true });
+  const formattedCreatedAt = formatDistanceToNow(new Date(job.created_at), {
+    addSuffix: true,
+  });
+  const formattedUpdatedAt = formatDistanceToNow(new Date(job.updated_at), {
+    addSuffix: true,
+  });
 
   // Try to get job name from custom_fields or config
   const getJobName = () => {
     if (job.custom_fields && job.custom_fields.job_name) {
-      return typeof job.custom_fields.job_name === 'string' ? job.custom_fields.job_name : String(job.custom_fields.job_name);
+      return typeof job.custom_fields.job_name === "string"
+        ? job.custom_fields.job_name
+        : String(job.custom_fields.job_name);
     }
     if (job.config) {
-      return typeof job.config === 'string' ? job.config : String(job.config);
+      return typeof job.config === "string" ? job.config : String(job.config);
     }
     return `Job ${job.job_id.slice(-8)}`;
   };
   const jobName = getJobName();
-
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -127,9 +132,11 @@ const JobCard: React.FC<JobCardProps> = ({
           <Progress
             value={job.progress}
             className="h-2"
-            style={{
-              '--progress-foreground': getProgressColor(job.status),
-            } as React.CSSProperties}
+            style={
+              {
+                "--progress-foreground": getProgressColor(job.status),
+              } as React.CSSProperties
+            }
           />
         </div>
 
@@ -138,7 +145,9 @@ const JobCard: React.FC<JobCardProps> = ({
           <div className="flex items-center space-x-2 text-sm">
             <Clock className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Job ID:</span>
-            <span className="font-mono text-xs truncate" title={job.job_id}>{job.job_id}</span>
+            <span className="font-mono text-xs truncate" title={job.job_id}>
+              {job.job_id}
+            </span>
           </div>
 
           <div className="flex items-center space-x-2 text-sm">
@@ -157,8 +166,12 @@ const JobCard: React.FC<JobCardProps> = ({
           {job.output_model && (
             <div className="flex items-center space-x-2 text-sm">
               <Cpu className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span className="text-muted-foreground flex-shrink-0">Output Model:</span>
-              <span className="font-medium break-all" title={job.output_model}>{job.output_model}</span>
+              <span className="text-muted-foreground flex-shrink-0">
+                Output Model:
+              </span>
+              <span className="font-medium break-all" title={job.output_model}>
+                {job.output_model}
+              </span>
             </div>
           )}
 
@@ -169,7 +182,9 @@ const JobCard: React.FC<JobCardProps> = ({
               <span className="text-muted-foreground">Epochs:</span>
               <span className="font-medium">{job.hyperparameters.epochs}</span>
               <span className="text-muted-foreground">Batch Size:</span>
-              <span className="font-medium">{job.hyperparameters.batch_size}</span>
+              <span className="font-medium">
+                {job.hyperparameters.batch_size}
+              </span>
             </div>
           )}
         </div>
@@ -205,10 +220,10 @@ const JobCard: React.FC<JobCardProps> = ({
           </Button>
 
           {/* Customizer job actions */}
-          {jobType === 'customizer' && (
+          {jobType === "customizer" && (
             <>
               {/* Cancel/Stop button for non-completed jobs */}
-              {job.status !== 'completed' && onCancel && (
+              {job.status !== "completed" && onCancel && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -216,7 +231,11 @@ const JobCard: React.FC<JobCardProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (confirm(`Are you sure you want to cancel job ${job.job_id.slice(-8)}?`)) {
+                    if (
+                      confirm(
+                        `Are you sure you want to cancel job ${job.job_id.slice(-8)}?`,
+                      )
+                    ) {
                       onCancel(job.job_id);
                     }
                   }}
@@ -246,7 +265,7 @@ const JobCard: React.FC<JobCardProps> = ({
           )}
 
           {/* Evaluator job actions */}
-          {jobType === 'evaluator' && (
+          {jobType === "evaluator" && (
             <>
               {/* Delete button for evaluator jobs */}
               {onDelete && (
@@ -257,7 +276,11 @@ const JobCard: React.FC<JobCardProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (confirm(`Are you sure you want to delete job ${job.job_id.slice(-8)}?`)) {
+                    if (
+                      confirm(
+                        `Are you sure you want to delete job ${job.job_id.slice(-8)}?`,
+                      )
+                    ) {
                       onDelete(job.job_id);
                     }
                   }}
@@ -285,7 +308,7 @@ const JobCard: React.FC<JobCardProps> = ({
               )}
 
               {/* Results and Download buttons for completed evaluator jobs */}
-              {job.status === 'completed' && (
+              {job.status === "completed" && (
                 <>
                   {onViewResults && (
                     <Button
