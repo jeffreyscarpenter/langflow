@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from enum import Enum
 
+import pandas as pd
 from fastapi.encoders import jsonable_encoder
 from loguru import logger
 from pydantic import BaseModel
@@ -9,7 +10,6 @@ from langflow.schema.data import Data
 from langflow.schema.dataframe import DataFrame
 from langflow.schema.encoders import CUSTOM_ENCODERS
 from langflow.schema.message import Message
-import pandas as pd
 from langflow.serialization.serialization import serialize
 
 
