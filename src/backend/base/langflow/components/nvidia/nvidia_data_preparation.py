@@ -1,5 +1,5 @@
 import random
-from typing import Any, Union
+from typing import Any
 
 import pandas as pd
 from loguru import logger
@@ -14,7 +14,7 @@ from langflow.io import (
     Output,
 )
 from langflow.schema import Data
-from langflow.schema.dataframe import DataFrame as LangflowDataFrame
+from langflow.schema.dataframe import DataFrame
 
 
 class NeMoDataPreparationComponent(Component):
@@ -33,7 +33,7 @@ class NeMoDataPreparationComponent(Component):
             display_name="Input Data",
             info="Input data as list[Data] or DataFrame",
             required=True,
-            input_types=["Data", "DataFrame", "pandas.DataFrame"],
+            input_types=["Data", "DataFrame"],
         ),
         # Model Type Configuration
         DropdownInput(
@@ -88,7 +88,7 @@ class NeMoDataPreparationComponent(Component):
             display_name="Prepared Data (DataFrame)",
             name="prepared_dataframe",
             method="prepare_dataframe",
-            info="Data prepared for NeMo dataset upload as Langflow DataFrame",
+            info="Data prepared for NeMo dataset upload as DataFrame",
         ),
     ]
 
@@ -97,9 +97,9 @@ class NeMoDataPreparationComponent(Component):
         self.processed_data = None
         self.preparation_stats = {}
 
-    def convert_to_dataframe(self, input_data: Union[list[Data], pd.DataFrame, LangflowDataFrame]) -> pd.DataFrame:
+    def convert_to_dataframe(self, input_data: list[Data] | pd.DataFrame) -> pd.DataFrame:
         """Convert input data to DataFrame for processing."""
-        if isinstance(input_data, (pd.DataFrame, LangflowDataFrame)):
+        if isinstance(input_data, pd.DataFrame):
             return input_data.copy()
         
         if isinstance(input_data, list):
@@ -327,7 +327,7 @@ class NeMoDataPreparationComponent(Component):
             return self.transform_to_chat_format(record, is_evaluation)
         return self.transform_to_completion_format(record, is_evaluation)
 
-    def process_data(self, input_data: Union[list[Data], pd.DataFrame, LangflowDataFrame]) -> list[dict]:
+    def process_data(self, input_data: list[Data] | pd.DataFrame) -> list[dict]:
         """Process input data and return transformed records."""
         # Convert to DataFrame for processing
         df = self.convert_to_dataframe(input_data)
@@ -409,10 +409,10 @@ class NeMoDataPreparationComponent(Component):
         processed_records = self.process_data(self.input_data)
         return [Data(data=record) for record in processed_records]
 
-    def prepare_dataframe(self) -> LangflowDataFrame:
+    def prepare_dataframe(self) -> DataFrame:
         """Prepare data and return as DataFrame."""
         if self.input_data is None:
-            return LangflowDataFrame()
+            return DataFrame()
         
         processed_records = self.process_data(self.input_data)
-        return LangflowDataFrame(processed_records)
+        return DataFrame(processed_records)
