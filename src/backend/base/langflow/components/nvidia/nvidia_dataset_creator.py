@@ -10,7 +10,11 @@ from nemo_microservices import AsyncNeMoMicroservices
 
 from langflow.custom import Component
 from langflow.io import (
-    DataInput,
+    BoolInput,
+    DropdownInput,
+    FloatInput,
+    HandleInput,
+    IntInput,
     Output,
     SecretStrInput,
     StrInput,
@@ -56,6 +60,7 @@ class NvidiaDatasetCreatorComponent(Component):
     chunk_number = 1
 
     inputs = [
+        # Authentication and Configuration
         SecretStrInput(
             name="auth_token",
             display_name="Authentication Token",
@@ -65,7 +70,7 @@ class NvidiaDatasetCreatorComponent(Component):
         StrInput(
             name="base_url",
             display_name="Base API URL",
-            info="Base URL for the NeMo services (e.g., https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo)",
+            info="Base URL for the NeMo services",
             required=True,
             value="https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
         ),
@@ -73,9 +78,8 @@ class NvidiaDatasetCreatorComponent(Component):
             name="namespace",
             display_name="Namespace",
             info="Namespace for the dataset",
-            advanced=True,
-            value="default",
             required=True,
+            value="default",
         ),
         StrInput(
             name="dataset_name",
@@ -89,23 +93,82 @@ class NvidiaDatasetCreatorComponent(Component):
             info="Description of the dataset",
             value="Dataset created via Langflow NeMo Dataset Creator",
         ),
-        DataInput(
-            name="training_data",
-            display_name="Training Data",
-            info="Data for training (prompt/completion pairs)",
-            is_list=True,
+        # Data Input (single input with smart classification)
+        HandleInput(
+            name="data",
+            display_name="Data",
+            info="Data to upload (Data or DataFrame) - will be automatically classified",
+            required=True,
+            input_types=["Data", "DataFrame"],
         ),
-        DataInput(
-            name="evaluation_data",
-            display_name="Evaluation Data",
-            info="Data for evaluation (prompt/ideal_response pairs)",
-            is_list=True,
+        # Model Type Configuration
+        DropdownInput(
+            name="model_type",
+            display_name="Model Type",
+            info="Type of model this dataset is intended for (affects upload format)",
+            options=["auto", "chat", "completion"],
+            value="auto",
+            required=False,
+            advanced=True,
+        ),
+        # Split Configuration
+        FloatInput(
+            name="validation_split_ratio",
+            display_name="Validation Split Ratio",
+            info="Ratio of training data to use for validation (0.0-1.0). Set to 0 for no validation split",
+            value=0.1,
+            required=False,
+            advanced=True,
+        ),
+        # Upload Configuration
+        BoolInput(
+            name="partial_success",
+            display_name="Allow Partial Success",
+            info="If True, upload data even if some records are invalid or unclassified",
+            value=True,
+            required=False,
+            advanced=True,
+        ),
+        BoolInput(
+            name="preserve_all_fields",
+            display_name="Preserve All Fields",
+            info="If True, include all fields from input data in dataset files. If False, only include essential fields (prompt/completion/messages)",
+            value=True,
+            required=False,
+            advanced=True,
+        ),
+        IntInput(
+            name="chunk_size",
+            display_name="Upload Chunk Size",
+            info="Number of records per upload chunk",
+            value=100000,
+            required=False,
+            advanced=True,
         ),
     ]
 
     outputs = [
-        Output(display_name="Dataset Data", name="dataset_info", method="create_dataset"),
+        Output(
+            display_name="Dataset Info",
+            name="dataset_info",
+            method="create_dataset",
+            info="Information about the created dataset",
+        ),
     ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.upload_statistics = {
+            "total_input_records": 0,
+            "classified_records": {"training": 0, "evaluation": 0, "unknown": 0},
+            "uploaded_records": {"training": 0, "validation": 0, "evaluation": 0},
+            "discarded_records": {"training": 0, "evaluation": 0, "unknown": 0},
+            "file_info": {},
+            "split_config": {},
+            "error_summary": {},
+            "processing_time": 0.0,
+            "model_type": None,
+        }
 
     def get_auth_headers(self):
         """Get headers with authentication token."""
@@ -120,6 +183,155 @@ class NvidiaDatasetCreatorComponent(Component):
         return AsyncNeMoMicroservices(
             base_url=self.base_url,
         )
+
+    def convert_to_dataframe(self, input_data) -> pd.DataFrame:
+        """Convert input data to DataFrame for processing."""
+        if isinstance(input_data, pd.DataFrame):
+            return input_data.copy()
+
+        if isinstance(input_data, list):
+            # Check if all items are Data objects
+            if all(isinstance(item, Data) for item in input_data):
+                # Convert list[Data] to DataFrame
+                records = []
+                for data_item in input_data:
+                    if hasattr(data_item, "data"):
+                        if isinstance(data_item.data, dict):
+                            records.append(data_item.data)
+                        elif isinstance(data_item.data, list):
+                            records.extend(data_item.data)
+                        else:
+                            records.append({"data": data_item.data})
+                    else:
+                        records.append({"data": data_item})
+
+                return pd.DataFrame(records)
+            # Assume it's already a list of dictionaries
+            return pd.DataFrame(input_data)
+
+        # Handle single Data object
+        if isinstance(input_data, Data):
+            if hasattr(input_data, "data"):
+                if isinstance(input_data.data, dict):
+                    return pd.DataFrame([input_data.data])
+                if isinstance(input_data.data, list):
+                    return pd.DataFrame(input_data.data)
+                return pd.DataFrame([{"data": input_data.data}])
+            return pd.DataFrame([{"data": input_data}])
+
+        error_msg = "Input data must be DataFrame, Data, or list[Data]"
+        raise ValueError(error_msg)
+
+    def detect_model_type(self, data: pd.DataFrame) -> str:
+        """Detect whether data is intended for chat or completion models."""
+        chat_indicators = 0
+        completion_indicators = 0
+
+        records = data.to_dict("records")
+        for record in records:
+            # Check for messages structure (chat model)
+            if record.get("messages") or (
+                isinstance(record.get("data"), dict) and "messages" in record.get("data", {})
+            ):
+                chat_indicators += 1
+
+            # Check for prompt/completion structure (completion model)
+            if ("prompt" in record and "completion" in record) or (
+                isinstance(record.get("data"), dict)
+                and "prompt" in record.get("data", {})
+                and "completion" in record.get("data", {})
+            ):
+                completion_indicators += 1
+
+        # Determine based on majority
+        if chat_indicators > completion_indicators:
+            return "chat"
+        if completion_indicators > chat_indicators:
+            return "completion"
+        # Default to completion for backward compatibility
+        return "completion"
+
+    def determine_model_type(self, data: pd.DataFrame) -> str:
+        """Determine model type with fallback to configuration."""
+        if self.model_type == "auto":
+            return self.detect_model_type(data)
+        return self.model_type
+
+    def classify_data(self, data: pd.DataFrame) -> dict:
+        """Classify input data into training, evaluation, and unknown categories."""
+        training_records = []
+        evaluation_records = []
+        unknown_records = []
+
+        records = data.to_dict("records")
+        for record in records:
+            record_type = self._classify_record_type(record)
+
+            if record_type == "training":
+                training_records.append(record)
+            elif record_type == "evaluation":
+                evaluation_records.append(record)
+            else:
+                unknown_records.append(record)
+
+        return {
+            "training": training_records,
+            "evaluation": evaluation_records,
+            "unknown": unknown_records,
+            "total": len(records),
+        }
+
+    def _classify_record_type(self, record: dict) -> str:
+        """Classify a single record as training, evaluation, or unknown."""
+        # Check for evaluation indicators
+        if record.get("ideal_response") or record.get("expected_answer") or record.get("ground_truth"):
+            return "evaluation"
+
+        # Check for training indicators
+        if record.get("prompt") and record.get("completion"):
+            return "training"
+
+        # Check for messages format (chat model)
+        if record.get("messages"):
+            return "training"
+
+        return "unknown"
+
+    def apply_training_split(self, training_records: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Apply training/validation split based on validation ratio."""
+        total_records = len(training_records)
+
+        min_records = 2
+        if total_records < min_records:
+            error_msg = f"Insufficient records for split: {total_records} < {min_records}"
+            raise ValueError(error_msg)
+
+        # Calculate split based on validation ratio
+        validation_count = int(total_records * self.validation_split_ratio)
+
+        # Ensure at least 1 record for validation and training
+        validation_count = max(1, min(validation_count, total_records - 1))
+
+        # Split the records
+        validation_records = training_records[:validation_count]
+        actual_training_records = training_records[validation_count:]
+
+        return actual_training_records, validation_records
+
+    def filter_record_fields(self, record: dict, model_type: str) -> dict:
+        """Filter record fields based on preserve_all_fields setting."""
+        if self.preserve_all_fields:
+            return record
+
+        # Only keep essential fields based on model type
+        essential_fields = ["messages"] if model_type == "chat" else ["prompt", "completion", "ideal_response"]
+
+        filtered_record = {}
+        for field in essential_fields:
+            if field in record:
+                filtered_record[field] = record[field]
+
+        return filtered_record
 
     async def create_namespace_with_nemo_client(self, nemo_client: AsyncNeMoMicroservices, namespace: str):
         """Create entity namespace using NeMo client."""
@@ -150,7 +362,7 @@ class NvidiaDatasetCreatorComponent(Component):
                 raise ValueError(error_msg) from exc
 
     async def create_dataset(self) -> Data:
-        """Create a dataset in NeMo Data Store."""
+        """Create a dataset in NeMo Data Store with intelligent classification."""
         if not self.auth_token:
             error_msg = "Missing authentication token"
             raise ValueError(error_msg)
@@ -164,15 +376,33 @@ class NvidiaDatasetCreatorComponent(Component):
             error_msg = "Dataset name is required"
             raise ValueError(error_msg)
 
-        # Check if we have any data to process
-        training_data = getattr(self, "training_data", None)
-        evaluation_data = getattr(self, "evaluation_data", None)
-
-        if not training_data and not evaluation_data:
-            error_msg = "Either training_data or evaluation_data must be provided"
+        # Get input data
+        data = getattr(self, "data", None)
+        if not data:
+            error_msg = "Data input is required"
             raise ValueError(error_msg)
 
         try:
+            # Convert input data to DataFrame
+            df = self.convert_to_dataframe(data)
+
+            # Initialize statistics
+            self.upload_statistics["total_input_records"] = len(df)
+
+            # Determine model type
+            model_type = self.determine_model_type(df)
+            self.upload_statistics["model_type"] = model_type
+
+            # Classify data
+            classified_data = self.classify_data(df)
+
+            # Update classification statistics
+            self.upload_statistics["classified_records"] = {
+                "training": len(classified_data["training"]),
+                "evaluation": len(classified_data["evaluation"]),
+                "unknown": len(classified_data["unknown"]),
+            }
+
             # Initialize client for dataset operations
             nemo_client = self.get_nemo_client()
 
@@ -192,13 +422,20 @@ class NvidiaDatasetCreatorComponent(Component):
 
             logger.info(f"Created/accessed repo: {repo_id}")
 
-            # Process and upload data
-            if training_data:
-                await self.process_training_data(hf_api, repo_id, training_data)
+            # Process training data with split
+            training_records = classified_data["training"]
+            if training_records:
+                if self.validation_split_ratio > 0.0:
+                    actual_training, validation_records = self.apply_training_split(training_records)
+                    await self.process_training_data(hf_api, repo_id, actual_training, validation_records)
+                else:
+                    await self.process_training_data(hf_api, repo_id, training_records, [])
                 logger.info("Uploaded training data")
 
-            if evaluation_data:
-                await self.upload_evaluation_data(hf_api, repo_id, evaluation_data)
+            # Process evaluation data
+            evaluation_records = classified_data["evaluation"]
+            if evaluation_records:
+                await self.upload_evaluation_data(hf_api, repo_id, evaluation_records)
                 logger.info("Uploaded evaluation data")
 
             # Register dataset in entity store using NeMo client
@@ -232,12 +469,31 @@ class NvidiaDatasetCreatorComponent(Component):
             # Add additional metadata
             result_dict.update(
                 {
-                    "has_training_data": bool(training_data),
-                    "has_evaluation_data": bool(evaluation_data),
+                    "has_training_data": bool(training_records),
+                    "has_evaluation_data": bool(evaluation_records),
+                    "model_type": model_type,
+                    "upload_statistics": self.upload_statistics,
                 }
             )
 
             logger.info(f"Successfully created dataset: {dataset_name}")
+
+            # Log upload statistics
+            self.log("Upload Statistics:")
+            self.log(f"  Total input records: {self.upload_statistics['total_input_records']}")
+            self.log(
+                f"  Classified records - Training: {self.upload_statistics['classified_records']['training']}, Evaluation: {self.upload_statistics['classified_records']['evaluation']}, Unknown: {self.upload_statistics['classified_records']['unknown']}"
+            )
+            self.log(
+                f"  Uploaded records - Training: {self.upload_statistics['uploaded_records']['training']}, Validation: {self.upload_statistics['uploaded_records']['validation']}, Evaluation: {self.upload_statistics['uploaded_records']['evaluation']}"
+            )
+            self.log(f"  Model type: {self.upload_statistics['model_type']}")
+            if self.preserve_all_fields:
+                self.log("  Field preservation: All fields preserved in dataset files")
+            else:
+                self.log("  Field preservation: Only essential fields included in dataset files")
+            if self.upload_statistics["file_info"]:
+                self.log(f"  Files created: {self.upload_statistics['file_info']}")
 
             return Data(data=result_dict)
 
@@ -247,60 +503,41 @@ class NvidiaDatasetCreatorComponent(Component):
             logger.error(error_msg)
             raise ValueError(error_msg) from exc
 
-    async def process_training_data(self, hf_api, repo_id: str, training_data):
+    async def process_training_data(
+        self, hf_api, repo_id: str, training_records: list[dict], validation_records: list[dict]
+    ):
         """Process and upload training data with chunking support."""
         import asyncio
 
         try:
-            chunk_size = 100000  # Ensure chunk_size is an integer
+            chunk_size = getattr(self, "chunk_size", 100000)
             logger.info(f"Processing training data for repo: {repo_id}")
 
             tasks = []
 
-            # =====================================================
-            # STEP 1: Build a list of valid records from training_data
-            # =====================================================
-            valid_records = []
-            for data_obj in training_data or []:
-                # Skip non-Data objects
-                if not isinstance(data_obj, Data):
-                    logger.warning(f"Skipping non-Data object in training data: {data_obj}")
-                    continue
+            # Process training records
+            if training_records:
+                chunk = []
+                for record in training_records:
+                    # Filter fields based on preserve_all_fields setting
+                    filtered_record = self.filter_record_fields(record, self.upload_statistics["model_type"])
+                    chunk.append(filtered_record)
+                    if len(chunk) == chunk_size:
+                        chunk_df = pd.DataFrame(chunk)
+                        task = self.upload_chunk(
+                            chunk_df,
+                            self.chunk_number,
+                            self.dataset_name,
+                            repo_id,
+                            hf_api,
+                            is_validation=False,
+                        )
+                        tasks.append(task)
+                        chunk = []
+                        self.chunk_number += 1
 
-                # Extract only "prompt" and "completion" fields if present
-                filtered_data = {
-                    "prompt": getattr(data_obj, "prompt", None),
-                    "completion": getattr(data_obj, "completion", None),
-                }
-                if filtered_data["prompt"] is not None and filtered_data["completion"] is not None:
-                    valid_records.append(filtered_data)
-
-            total_records = len(valid_records)
-            min_records_process = 2
-            min_records_validation = 10
-            if total_records < min_records_process:
-                error_msg = f"Not enough records for processing. Record count : {total_records}"
-                raise ValueError(error_msg)
-
-            # =====================================================
-            # STEP 2: Split into validation (10%) and training (90%)
-            # =====================================================
-            # If the total size is less than 10, force at least one record into validation.
-            validation_count = 1 if total_records < min_records_validation else max(1, int(round(total_records * 0.1)))
-
-            # For simplicity, we take the first validation_count records for validation.
-            # (You could also randomize the order if needed.)
-            validation_records = valid_records[:validation_count]
-            training_records = valid_records[validation_count:]
-
-            # =====================================================
-            # STEP 3: Process training data in chunks (90%)
-            # =====================================================
-            chunk = []
-            is_validation = False
-            for record in training_records:
-                chunk.append(record)
-                if len(chunk) == chunk_size:
+                # Process any remaining training records
+                if chunk:
                     chunk_df = pd.DataFrame(chunk)
                     task = self.upload_chunk(
                         chunk_df,
@@ -308,35 +545,25 @@ class NvidiaDatasetCreatorComponent(Component):
                         self.dataset_name,
                         repo_id,
                         hf_api,
-                        is_validation,
+                        is_validation=False,
                     )
                     tasks.append(task)
-                    chunk = []  # Reset the chunk
-                    self.chunk_number += 1
 
-            # Process any remaining training records
-            if chunk:
-                chunk_df = pd.DataFrame(chunk)
-                task = self.upload_chunk(
-                    chunk_df,
-                    self.chunk_number,
-                    self.dataset_name,
-                    repo_id,
-                    hf_api,
-                    is_validation,
-                )
-                tasks.append(task)
+                # Await all training upload tasks
+                await asyncio.gather(*tasks)
+                self.upload_statistics["uploaded_records"]["training"] = len(training_records)
 
-            # Await all training upload tasks
-            await asyncio.gather(*tasks)
-
-            # =====================================================
-            # STEP 4: Upload validation data (without chunking)
-            # =====================================================
+            # Process validation records
             if validation_records:
-                is_validation = True
-                validation_df = pd.DataFrame(validation_records)
-                await self.upload_chunk(validation_df, 1, self.dataset_name, repo_id, hf_api, is_validation)
+                filtered_validation_records = []
+                for record in validation_records:
+                    # Filter fields based on preserve_all_fields setting
+                    filtered_record = self.filter_record_fields(record, self.upload_statistics["model_type"])
+                    filtered_validation_records.append(filtered_record)
+
+                validation_df = pd.DataFrame(filtered_validation_records)
+                await self.upload_chunk(validation_df, 1, self.dataset_name, repo_id, hf_api, is_validation=True)
+                self.upload_statistics["uploaded_records"]["validation"] = len(validation_records)
 
         except Exception as exc:
             exception_str = str(exc)
@@ -368,56 +595,71 @@ class NvidiaDatasetCreatorComponent(Component):
                     repo_type="dataset",
                     commit_message=commit_message,
                 )
+
+                # Update file info
+                if is_validation:
+                    if "validation" not in self.upload_statistics["file_info"]:
+                        self.upload_statistics["file_info"]["validation"] = []
+                    self.upload_statistics["file_info"]["validation"].append(file_name_training)
+                else:
+                    if "training" not in self.upload_statistics["file_info"]:
+                        self.upload_statistics["file_info"]["training"] = []
+                    self.upload_statistics["file_info"]["training"].append(file_name_training)
+
             finally:
                 training_file_obj.close()
 
         except Exception:  # noqa: BLE001
             logger.error(f"An error occurred while uploading chunk {chunk_number}")
 
-    async def upload_evaluation_data(self, hf_api, repo_id: str, evaluation_data):
+    async def upload_evaluation_data(self, hf_api, repo_id: str, evaluation_data: list[dict]):
         """Upload evaluation data to the dataset."""
         input_records = []
         output_records = []
 
-        for data_obj in evaluation_data or []:
-            if not isinstance(data_obj, Data):
-                logger.warning(f"Skipping non-Data object in evaluation data: {data_obj}")
-                continue
+        for record in evaluation_data:
+            # Filter fields based on preserve_all_fields setting
+            filtered_record = self.filter_record_fields(record, "completion")  # Evaluation uses completion format
 
-            filtered_data = {
-                "prompt": getattr(data_obj, "prompt", None) or "",
-                "ideal_response": getattr(data_obj, "ideal_response", None) or "",
-                "category": getattr(data_obj, "category", "Generation") or "Generation",
-                "source": getattr(data_obj, "source", None) or "",
-                "response": getattr(data_obj, "response", None) or "",
-                "llm_name": getattr(data_obj, "llm_name", None) or "",
-            }
+            prompt = filtered_record.get("prompt", "")
+            ideal_response = (
+                filtered_record.get("ideal_response", "")
+                or filtered_record.get("expected_answer", "")
+                or filtered_record.get("ground_truth", "")
+            )
+            category = filtered_record.get("category", "Generation")
+            source = filtered_record.get("source", "")
+            response = filtered_record.get("response", "")
+            llm_name = filtered_record.get("llm_name", "")
 
-            if filtered_data["prompt"] and filtered_data["ideal_response"]:
+            if prompt and ideal_response:
                 # Input file data
-                input_records.append(
-                    {
-                        "prompt": filtered_data["prompt"],
-                        "ideal_response": filtered_data["ideal_response"],
-                        "category": filtered_data["category"],
-                        "source": filtered_data["source"],
-                    }
-                )
+                input_record = {
+                    "prompt": prompt,
+                    "ideal_response": ideal_response,
+                }
+
+                # Add optional fields if preserve_all_fields is enabled
+                if self.preserve_all_fields:
+                    if category:
+                        input_record["category"] = category
+                    if source:
+                        input_record["source"] = source
+
+                input_records.append(input_record)
 
                 # Output file data (if response is provided)
-                if filtered_data["response"]:
-                    output_records.append(
-                        {
-                            "input": {
-                                "prompt": filtered_data["prompt"],
-                                "ideal_response": filtered_data["ideal_response"],
-                                "category": filtered_data["category"],
-                                "source": filtered_data["source"],
-                            },
-                            "response": filtered_data["response"],
-                            "llm_name": filtered_data["llm_name"],
-                        }
-                    )
+                if response:
+                    output_record = {
+                        "input": input_record.copy(),
+                        "response": response,
+                    }
+
+                    # Add optional fields if preserve_all_fields is enabled
+                    if self.preserve_all_fields and llm_name:
+                        output_record["llm_name"] = llm_name
+
+                    output_records.append(output_record)
 
         if input_records:
             # Upload input file
@@ -430,6 +672,10 @@ class NvidiaDatasetCreatorComponent(Component):
                     repo_type="dataset",
                     commit_message=f"Evaluation input data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
                 )
+                self.upload_statistics["uploaded_records"]["evaluation"] = len(input_records)
+                if "evaluation" not in self.upload_statistics["file_info"]:
+                    self.upload_statistics["file_info"]["evaluation"] = []
+                self.upload_statistics["file_info"]["evaluation"].append("input.json")
             finally:
                 input_file_buffer.close()
 
@@ -444,5 +690,8 @@ class NvidiaDatasetCreatorComponent(Component):
                     repo_type="dataset",
                     commit_message=f"Evaluation output data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
                 )
+                if "evaluation" not in self.upload_statistics["file_info"]:
+                    self.upload_statistics["file_info"]["evaluation"] = []
+                self.upload_statistics["file_info"]["evaluation"].append("output.json")
             finally:
                 output_file_buffer.close()

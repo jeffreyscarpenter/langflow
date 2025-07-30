@@ -1,4 +1,3 @@
-import random
 from typing import Any
 
 import pandas as pd
@@ -101,7 +100,7 @@ class NeMoDataPreparationComponent(Component):
         """Convert input data to DataFrame for processing."""
         if isinstance(input_data, pd.DataFrame):
             return input_data.copy()
-        
+
         if isinstance(input_data, list):
             # Check if all items are Data objects
             if all(isinstance(item, Data) for item in input_data):
@@ -120,7 +119,8 @@ class NeMoDataPreparationComponent(Component):
 
                 return pd.DataFrame(records)
 
-        raise ValueError("Input data must be DataFrame or list[Data]")
+        error_msg = "Input data must be DataFrame or list[Data]"
+        raise ValueError(error_msg)
 
     def detect_model_type(self, data: list[dict]) -> str:
         """Detect whether data is intended for chat or completion models."""
@@ -300,27 +300,62 @@ class NeMoDataPreparationComponent(Component):
         if assistant_content:
             messages.append({"role": "assistant", "content": str(assistant_content)})
 
-        return {"messages": messages}
+        result = {"messages": messages}
+
+        # Preserve unmapped fields if enabled
+        if self.preserve_unmapped_fields:
+            # Get all mapped field names
+            mapped_fields = set(field_mappings.values())
+            mapped_fields.update(["prompt", "completion", "messages"])  # Add standard fields
+
+            # Add all unmapped fields from original record
+            for key, value in record.items():
+                if key not in mapped_fields:
+                    result[key] = value
+
+        return result
 
     def transform_to_completion_format(self, record: dict, is_evaluation: bool = False) -> dict:
         """Transform record to completion model format (prompt-completion schema)."""
         field_mappings = self.determine_field_mappings([record])
 
         prompt = self.extract_field_value(record, field_mappings.get("prompt", "prompt"))
+        completion = self.extract_field_value(record, field_mappings.get("completion", "completion"))
 
         if is_evaluation:
-            # For evaluation, use ideal_response field
-            ideal_response = self.extract_field_value(record, field_mappings.get("ideal_response", "ideal_response"))
-            return {
+            # For evaluation, use the same completion field but output as ideal_response
+            result = {
                 "prompt": str(prompt) if prompt else "",
-                "ideal_response": str(ideal_response) if ideal_response else "",
+                "ideal_response": str(completion) if completion else "",
             }
-        # For training, use completion field
-        completion = self.extract_field_value(record, field_mappings.get("completion", "completion"))
-        return {"prompt": str(prompt) if prompt else "", "completion": str(completion) if completion else ""}
+        else:
+            # For training, use completion field
+            result = {"prompt": str(prompt) if prompt else "", "completion": str(completion) if completion else ""}
+
+        # Preserve unmapped fields if enabled
+        if self.preserve_unmapped_fields:
+            # Get all mapped field names
+            mapped_fields = set(field_mappings.values())
+            mapped_fields.update(["prompt", "completion", "ideal_response"])  # Add standard fields
+
+            # Add all unmapped fields from original record
+            for key, value in record.items():
+                if key not in mapped_fields:
+                    result[key] = value
+
+        return result
+
+    def is_evaluation_record(self, record: dict) -> bool:
+        """Check if a record is already in evaluation format."""
+        # Check for evaluation indicators
+        return bool(record.get("ideal_response") or record.get("expected_answer") or record.get("ground_truth"))
 
     def transform_record(self, record: dict, is_evaluation: bool = False) -> dict:
         """Transform record based on detected model type."""
+        # If record is already in evaluation format, preserve it
+        if self.is_evaluation_record(record):
+            return record
+
         model_type = self.determine_model_type([record])
 
         if model_type == "chat":
@@ -341,22 +376,25 @@ class NeMoDataPreparationComponent(Component):
         # Determine model type
         model_type = self.determine_model_type(records)
 
-        # Handle evaluation split
-        evaluation_indices = []
-        if self.evaluation_records_count > 0 and len(records) > 0:
-            # Randomly select records for evaluation
-            available_indices = list(range(len(records)))
-            evaluation_count = min(self.evaluation_records_count, len(records))
-            evaluation_indices = random.sample(available_indices, evaluation_count)
-
         # Transform records
         transformed_records = []
         valid_count = 0
         discarded_count = 0
+        evaluation_count = 0
 
         for i, record in enumerate(records):
             try:
-                is_evaluation = i in evaluation_indices
+                # Check if record is already in evaluation format
+                is_already_evaluation = self.is_evaluation_record(record)
+
+                # Only apply random evaluation split if record is not already evaluation format
+                is_random_evaluation = False
+                if not is_already_evaluation and self.evaluation_records_count > 0:
+                    # Check if we should randomly mark this as evaluation
+                    if evaluation_count < self.evaluation_records_count:
+                        is_random_evaluation = True
+
+                is_evaluation = is_already_evaluation or is_random_evaluation
                 transformed_record = self.transform_record(record, is_evaluation)
 
                 # Validate required fields
@@ -376,6 +414,10 @@ class NeMoDataPreparationComponent(Component):
                 transformed_records.append(transformed_record)
                 valid_count += 1
 
+                # Track evaluation count
+                if is_evaluation:
+                    evaluation_count += 1
+
             except Exception as e:
                 logger.warning(f"Failed to transform record {i}: {e}")
                 discarded_count += 1
@@ -386,18 +428,24 @@ class NeMoDataPreparationComponent(Component):
             "total_input_records": len(records),
             "successfully_prepared": valid_count,
             "discarded_records": discarded_count,
-            "evaluation_records": len(evaluation_indices),
+            "evaluation_records": evaluation_count,
             "model_type": model_type,
             "field_mappings": field_mappings,
+            "preserve_unmapped_fields": self.preserve_unmapped_fields,
             "processing_time": 0.0,  # TODO: Add actual timing
         }
 
         # Log statistics
         self.log(
-            f"Data preparation completed: {valid_count} valid, {discarded_count} discarded, {len(evaluation_indices)} evaluation records"
+            f"Data preparation completed: {valid_count} valid, {discarded_count} discarded, {evaluation_count} evaluation records"
         )
         self.log(f"Model type: {model_type}")
         self.log(f"Field mappings: {field_mappings}")
+
+        if self.preserve_unmapped_fields:
+            self.log("Unmapped fields will be preserved in output")
+        else:
+            self.log("Only mapped fields will be included in output")
 
         return transformed_records
 
@@ -413,6 +461,6 @@ class NeMoDataPreparationComponent(Component):
         """Prepare data and return as DataFrame."""
         if self.input_data is None:
             return DataFrame()
-        
+
         processed_records = self.process_data(self.input_data)
         return DataFrame(processed_records)
