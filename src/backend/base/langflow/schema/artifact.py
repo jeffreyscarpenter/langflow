@@ -9,6 +9,7 @@ from langflow.schema.data import Data
 from langflow.schema.dataframe import DataFrame
 from langflow.schema.encoders import CUSTOM_ENCODERS
 from langflow.schema.message import Message
+import pandas as pd
 from langflow.serialization.serialization import serialize
 
 
@@ -41,10 +42,10 @@ def get_artifact_type(value, build_result=None) -> str:
         case dict():
             result = ArtifactType.OBJECT
 
-        case list() | DataFrame():
+        case list() | DataFrame() | pd.DataFrame():
             result = ArtifactType.ARRAY
     if result == ArtifactType.UNKNOWN and (
-        (build_result and isinstance(build_result, Generator))
+        (build_result is not None and isinstance(build_result, Generator))
         or (isinstance(value, Message) and isinstance(value.text, Generator))
     ):
         result = ArtifactType.STREAM
