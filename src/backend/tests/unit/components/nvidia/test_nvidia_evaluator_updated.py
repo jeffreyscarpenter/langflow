@@ -101,8 +101,8 @@ async def test_create_new_evaluation_config():
 
     # Mock config data
     config_data = {
-        "01_config_name": "test-config",
-        "02_evaluation_type": "LM Evaluation Harness",
+        "02_config_name": "test-config",
+        "01_evaluation_type": "LM Evaluation Harness",
         "03_task_name": "gsm8k",
         "04_hf_token": "test-hf-token",
         "05_few_shot_examples": 5,
