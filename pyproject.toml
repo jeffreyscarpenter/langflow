@@ -126,6 +126,8 @@ dependencies = [
     "docling_core>=2.36.1",
     "filelock>=3.18.0",
     "jigsawstack==0.2.7",
+    "nemo-microservices>=1.0.1",
+    "arize>=7.48.1",
 ]
 
 [dependency-groups]
@@ -176,7 +178,6 @@ dev = [
     "pytest-timeout>=2.3.1",
     "pyyaml>=6.0.2",
     "pyleak>=0.1.14",
-    "nemo-microservices>=1.0.1",
 ]
 
 [tool.uv.sources]
