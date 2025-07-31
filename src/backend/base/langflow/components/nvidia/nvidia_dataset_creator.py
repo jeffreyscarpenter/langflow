@@ -1,9 +1,11 @@
 import json
 from datetime import datetime, timezone
 from io import BytesIO
+from unittest.mock import patch
 
 import nemo_microservices
 import pandas as pd
+import requests
 from huggingface_hub import HfApi
 from loguru import logger
 from nemo_microservices import AsyncNeMoMicroservices
@@ -20,6 +22,27 @@ from langflow.io import (
     StrInput,
 )
 from langflow.schema import Data
+
+
+def create_auth_interceptor(auth_token, namespace):
+    """Create a function to intercept HTTP requests and add auth headers for namespace URLs."""
+    original_request = requests.Session.request
+
+    def patched_request(self, method, url, *args, **kwargs):
+        # Log all intercepted requests for debugging
+        logger.info(f"Intercepted Request: {method} {url}")
+
+        # Check if URL contains the namespace path
+        if url and namespace and f"/{namespace}/" in url:
+            headers = kwargs.get("headers", {})
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+                kwargs["headers"] = headers
+                logger.info("Intercepted and added Authorization header for namespace URL: %s", url)
+
+        return original_request(self, method, url, *args, **kwargs)
+
+    return patched_request
 
 
 class AuthenticatedHfApi(HfApi):
@@ -43,10 +66,18 @@ class AuthenticatedHfApi(HfApi):
         return headers
 
     def _request_wrapper(self, method, url, *args, **kwargs):
-        """Override to add authentication headers to all requests."""
-        headers = kwargs.get("headers", {})
-        headers["Authorization"] = f"Bearer {self.auth_token}"
-        kwargs["headers"] = headers
+        """Override to intercept requests and add auth headers for namespace URLs."""
+        # Log all requests for debugging
+        logger.info(f"HF API Request: {method} {url}")
+
+        # Check if URL contains the namespace path
+        if url and self.namespace and f"/{self.namespace}/" in url:
+            headers = kwargs.get("headers", {})
+            if self.auth_token:
+                headers["Authorization"] = f"Bearer {self.auth_token}"
+                kwargs["headers"] = headers
+                logger.info("Added Authorization header for namespace URL: %s", url)
+
         return super()._request_wrapper(method, url, *args, **kwargs)
 
 
@@ -132,7 +163,7 @@ class NvidiaDatasetCreatorComponent(Component):
         BoolInput(
             name="preserve_all_fields",
             display_name="Preserve All Fields",
-            info="If True, include all fields from input data in dataset files. If False, only include essential fields (prompt/completion/messages)",
+            info="If True, include all fields from input data in dataset files. If False, only include essential fields (prompt/completion/messages)",  # noqa: E501
             value=True,
             required=False,
             advanced=True,
@@ -264,8 +295,13 @@ class NvidiaDatasetCreatorComponent(Component):
         unknown_records = []
 
         records = data.to_dict("records")
-        for record in records:
+        logger.info(f"Classifying {len(records)} records")
+
+        for i, record in enumerate(records):
             record_type = self._classify_record_type(record)
+
+            if i < 5:  # Log first 5 records for debugging  # noqa: PLR2004
+                logger.info(f"Record {i}: type={record_type}, keys={list(record.keys())}")
 
             if record_type == "training":
                 training_records.append(record)
@@ -273,6 +309,11 @@ class NvidiaDatasetCreatorComponent(Component):
                 evaluation_records.append(record)
             else:
                 unknown_records.append(record)
+
+        logger.info(
+            f"Classification complete: Training={len(training_records)}, "
+            f"Evaluation={len(evaluation_records)}, Unknown={len(unknown_records)}"
+        )
 
         return {
             "training": training_records,
@@ -283,8 +324,8 @@ class NvidiaDatasetCreatorComponent(Component):
 
     def _classify_record_type(self, record: dict) -> str:
         """Classify a single record as training, evaluation, or unknown."""
-        # Check for evaluation indicators
-        if record.get("ideal_response") or record.get("expected_answer") or record.get("ground_truth"):
+        # Check for explicit evaluation flag first (highest priority)
+        if record.get("_is_evaluation") is True:
             return "evaluation"
 
         # Check for training indicators
@@ -295,15 +336,18 @@ class NvidiaDatasetCreatorComponent(Component):
         if record.get("messages"):
             return "training"
 
+        # Check for evaluation indicators (lowest priority)
+        if record.get("ideal_response") or record.get("expected_answer") or record.get("ground_truth"):
+            return "evaluation"
+
         return "unknown"
 
     def apply_training_split(self, training_records: list[dict]) -> tuple[list[dict], list[dict]]:
         """Apply training/validation split based on validation ratio."""
         total_records = len(training_records)
 
-        min_records = 2
-        if total_records < min_records:
-            error_msg = f"Insufficient records for split: {total_records} < {min_records}"
+        if total_records < 2:  # noqa: PLR2004
+            error_msg = f"Insufficient records for split: {total_records} < 2"
             raise ValueError(error_msg)
 
         # Calculate split based on validation ratio
@@ -384,17 +428,21 @@ class NvidiaDatasetCreatorComponent(Component):
 
         try:
             # Convert input data to DataFrame
-            df = self.convert_to_dataframe(data)
+            dataframe = self.convert_to_dataframe(data)
+            logger.info(
+                f"Converted input data to DataFrame with {len(dataframe)} rows and columns: {list(dataframe.columns)}"
+            )
 
             # Initialize statistics
-            self.upload_statistics["total_input_records"] = len(df)
+            self.upload_statistics["total_input_records"] = len(dataframe)
 
             # Determine model type
-            model_type = self.determine_model_type(df)
+            model_type = self.determine_model_type(dataframe)
             self.upload_statistics["model_type"] = model_type
 
             # Classify data
-            classified_data = self.classify_data(df)
+            logger.info(f"Classifying {len(dataframe)} records")
+            classified_data = self.classify_data(dataframe)
 
             # Update classification statistics
             self.upload_statistics["classified_records"] = {
@@ -403,6 +451,11 @@ class NvidiaDatasetCreatorComponent(Component):
                 "unknown": len(classified_data["unknown"]),
             }
 
+            logger.info(
+                f"Classification results: Training={len(classified_data['training'])}, "
+                f"Evaluation={len(classified_data['evaluation'])}, Unknown={len(classified_data['unknown'])}"
+            )
+
             # Initialize client for dataset operations
             nemo_client = self.get_nemo_client()
 
@@ -410,6 +463,7 @@ class NvidiaDatasetCreatorComponent(Component):
             await self.create_namespace_with_nemo_client(nemo_client, namespace)
 
             # Create HuggingFace repo
+            logger.info(f"Creating HF API with endpoint: {base_url}/v1/hf")
             hf_api = AuthenticatedHfApi(
                 endpoint=f"{base_url}/v1/hf",
                 auth_token=self.auth_token,
@@ -418,25 +472,32 @@ class NvidiaDatasetCreatorComponent(Component):
             )
             repo_id = f"{namespace}/{dataset_name}"
             repo_type = "dataset"
+            logger.info(f"Creating repo: {repo_id} with type: {repo_type}")
             hf_api.create_repo(repo_id, repo_type=repo_type, exist_ok=True)
 
             logger.info(f"Created/accessed repo: {repo_id}")
 
             # Process training data with split
             training_records = classified_data["training"]
+            logger.info(f"Processing training data: {len(training_records)} records")
             if training_records:
                 if self.validation_split_ratio > 0.0:
                     actual_training, validation_records = self.apply_training_split(training_records)
-                    await self.process_training_data(hf_api, repo_id, actual_training, validation_records)
+                    await self.process_training_data(hf_api, repo_id, actual_training, validation_records, model_type)
                 else:
-                    await self.process_training_data(hf_api, repo_id, training_records, [])
+                    await self.process_training_data(hf_api, repo_id, training_records, [], model_type)
                 logger.info("Uploaded training data")
+            else:
+                logger.info("No training records to process")
 
             # Process evaluation data
             evaluation_records = classified_data["evaluation"]
+            logger.info(f"Processing evaluation data: {len(evaluation_records)} records")
             if evaluation_records:
                 await self.upload_evaluation_data(hf_api, repo_id, evaluation_records)
                 logger.info("Uploaded evaluation data")
+            else:
+                logger.info("No evaluation records to process")
 
             # Register dataset in entity store using NeMo client
             file_url = f"hf://datasets/{repo_id}"
@@ -482,10 +543,14 @@ class NvidiaDatasetCreatorComponent(Component):
             self.log("Upload Statistics:")
             self.log(f"  Total input records: {self.upload_statistics['total_input_records']}")
             self.log(
-                f"  Classified records - Training: {self.upload_statistics['classified_records']['training']}, Evaluation: {self.upload_statistics['classified_records']['evaluation']}, Unknown: {self.upload_statistics['classified_records']['unknown']}"
+                f"  Classified records - Training: {self.upload_statistics['classified_records']['training']}, "
+                f"Evaluation: {self.upload_statistics['classified_records']['evaluation']}, "
+                f"Unknown: {self.upload_statistics['classified_records']['unknown']}"
             )
             self.log(
-                f"  Uploaded records - Training: {self.upload_statistics['uploaded_records']['training']}, Validation: {self.upload_statistics['uploaded_records']['validation']}, Evaluation: {self.upload_statistics['uploaded_records']['evaluation']}"
+                f"  Uploaded records - Training: {self.upload_statistics['uploaded_records']['training']}, "
+                f"Validation: {self.upload_statistics['uploaded_records']['validation']}, "
+                f"Evaluation: {self.upload_statistics['uploaded_records']['evaluation']}"
             )
             self.log(f"  Model type: {self.upload_statistics['model_type']}")
             if self.preserve_all_fields:
@@ -501,10 +566,14 @@ class NvidiaDatasetCreatorComponent(Component):
             exception_str = str(exc)
             error_msg = f"Error creating dataset: {exception_str}"
             logger.error(error_msg)
+            logger.error(f"Exception type: {type(exc).__name__}")
+            logger.error(f"Exception details: {exc}")
+            if hasattr(exc, "__cause__") and exc.__cause__:
+                logger.error(f"Caused by: {exc.__cause__}")
             raise ValueError(error_msg) from exc
 
     async def process_training_data(
-        self, hf_api, repo_id: str, training_records: list[dict], validation_records: list[dict]
+        self, hf_api, repo_id: str, training_records: list[dict], validation_records: list[dict], model_type: str
     ):
         """Process and upload training data with chunking support."""
         import asyncio
@@ -512,17 +581,20 @@ class NvidiaDatasetCreatorComponent(Component):
         try:
             chunk_size = getattr(self, "chunk_size", 100000)
             logger.info(f"Processing training data for repo: {repo_id}")
+            logger.info(f"Training records: {len(training_records)}, Validation records: {len(validation_records)}")
 
             tasks = []
 
             # Process training records
             if training_records:
+                logger.info(f"Processing {len(training_records)} training records in chunks of {chunk_size}")
                 chunk = []
-                for record in training_records:
+                for _i, record in enumerate(training_records):
                     # Filter fields based on preserve_all_fields setting
-                    filtered_record = self.filter_record_fields(record, self.upload_statistics["model_type"])
+                    filtered_record = self.filter_record_fields(record, model_type)
                     chunk.append(filtered_record)
                     if len(chunk) == chunk_size:
+                        logger.info(f"Creating upload task for chunk {self.chunk_number} with {len(chunk)} records")
                         chunk_df = pd.DataFrame(chunk)
                         task = self.upload_chunk(
                             chunk_df,
@@ -538,6 +610,7 @@ class NvidiaDatasetCreatorComponent(Component):
 
                 # Process any remaining training records
                 if chunk:
+                    logger.info(f"Creating upload task for final chunk {self.chunk_number} with {len(chunk)} records")
                     chunk_df = pd.DataFrame(chunk)
                     task = self.upload_chunk(
                         chunk_df,
@@ -550,6 +623,7 @@ class NvidiaDatasetCreatorComponent(Component):
                     tasks.append(task)
 
                 # Await all training upload tasks
+                logger.info(f"Awaiting {len(tasks)} upload tasks")
                 await asyncio.gather(*tasks)
                 self.upload_statistics["uploaded_records"]["training"] = len(training_records)
 
@@ -558,7 +632,7 @@ class NvidiaDatasetCreatorComponent(Component):
                 filtered_validation_records = []
                 for record in validation_records:
                     # Filter fields based on preserve_all_fields setting
-                    filtered_record = self.filter_record_fields(record, self.upload_statistics["model_type"])
+                    filtered_record = self.filter_record_fields(record, model_type)
                     filtered_validation_records.append(filtered_record)
 
                 validation_df = pd.DataFrame(filtered_validation_records)
@@ -582,30 +656,34 @@ class NvidiaDatasetCreatorComponent(Component):
             else:
                 file_name_training = f"training/{file_name_prefix}_chunk_{chunk_number}.jsonl"
 
+            logger.info(f"Uploading chunk {chunk_number} to {file_name_training} in repo {repo_id}")
+
             # Prepare BytesIO objects
             training_file_obj = BytesIO(json_data.encode("utf-8"))
             commit_message = f"Updated training file at time: {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-            # Use authenticated HuggingFace API directly
+            # Use authenticated HF API with request patching for Git LFS support
+            patched_request = create_auth_interceptor(self.auth_token, self.namespace)
+
             try:
-                hf_api.upload_file(
-                    path_or_fileobj=training_file_obj,
-                    path_in_repo=file_name_training,
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    commit_message=commit_message,
-                )
+                with patch.object(requests.Session, "request", patched_request):
+                    hf_api.upload_file(
+                        path_or_fileobj=training_file_obj,
+                        path_in_repo=file_name_training,
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        commit_message=commit_message,
+                    )
 
-                # Update file info
-                if is_validation:
-                    if "validation" not in self.upload_statistics["file_info"]:
-                        self.upload_statistics["file_info"]["validation"] = []
-                    self.upload_statistics["file_info"]["validation"].append(file_name_training)
-                else:
-                    if "training" not in self.upload_statistics["file_info"]:
-                        self.upload_statistics["file_info"]["training"] = []
-                    self.upload_statistics["file_info"]["training"].append(file_name_training)
-
+                    # Update file info
+                    if is_validation:
+                        if "validation" not in self.upload_statistics["file_info"]:
+                            self.upload_statistics["file_info"]["validation"] = []
+                        self.upload_statistics["file_info"]["validation"].append(file_name_training)
+                    else:
+                        if "training" not in self.upload_statistics["file_info"]:
+                            self.upload_statistics["file_info"]["training"] = []
+                        self.upload_statistics["file_info"]["training"].append(file_name_training)
             finally:
                 training_file_obj.close()
 
@@ -663,15 +741,19 @@ class NvidiaDatasetCreatorComponent(Component):
 
         if input_records:
             # Upload input file
+            logger.info(f"Uploading evaluation input data to {repo_id}")
             input_file_buffer = BytesIO(json.dumps(input_records, indent=4).encode("utf-8"))
             try:
-                hf_api.upload_file(
-                    path_or_fileobj=input_file_buffer,
-                    path_in_repo="input.json",
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    commit_message=f"Evaluation input data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-                )
+                # Use authenticated HF API with request patching for Git LFS support
+                patched_request = create_auth_interceptor(self.auth_token, self.namespace)
+                with patch.object(requests.Session, "request", patched_request):
+                    hf_api.upload_file(
+                        path_or_fileobj=input_file_buffer,
+                        path_in_repo="input.json",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        commit_message=f"Evaluation input data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",  # noqa: E501
+                    )
                 self.upload_statistics["uploaded_records"]["evaluation"] = len(input_records)
                 if "evaluation" not in self.upload_statistics["file_info"]:
                     self.upload_statistics["file_info"]["evaluation"] = []
@@ -681,15 +763,19 @@ class NvidiaDatasetCreatorComponent(Component):
 
         if output_records:
             # Upload output file
+            logger.info(f"Uploading evaluation output data to {repo_id}")
             output_file_buffer = BytesIO(json.dumps(output_records, indent=4).encode("utf-8"))
             try:
-                hf_api.upload_file(
-                    path_or_fileobj=output_file_buffer,
-                    path_in_repo="output.json",
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    commit_message=f"Evaluation output data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-                )
+                # Use authenticated HF API with request patching for Git LFS support
+                patched_request = create_auth_interceptor(self.auth_token, self.namespace)
+                with patch.object(requests.Session, "request", patched_request):
+                    hf_api.upload_file(
+                        path_or_fileobj=output_file_buffer,
+                        path_in_repo="output.json",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        commit_message=f"Evaluation output data at {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",  # noqa: E501
+                    )
                 if "evaluation" not in self.upload_statistics["file_info"]:
                     self.upload_statistics["file_info"]["evaluation"] = []
                 self.upload_statistics["file_info"]["evaluation"].append("output.json")
