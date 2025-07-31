@@ -60,29 +60,33 @@ class FileComponent(BaseFileComponent):
 
             frontend_node["outputs"] = []
 
-            if len(field_value) == 1:
-                # We need to check if the file is structured content
-                file_path = frontend_node["template"]["path"]["file_path"][0]
-                if file_path.endswith((".csv", ".xlsx", ".parquet")):
-                    frontend_node["outputs"].append(
-                        Output(display_name="Structured Content", name="dataframe", method="load_files_structured"),
-                    )
-                elif file_path.endswith(".json"):
-                    frontend_node["outputs"].append(
-                        Output(display_name="Structured Content", name="json", method="load_files_json"),
-                    )
+            # Always show these outputs
+            frontend_node["outputs"].append(
+                Output(display_name="Raw Content", name="message", method="load_files_message"),
+            )
+            frontend_node["outputs"].append(
+                Output(display_name="File Path", name="path", method="load_files_path"),
+            )
 
-                # All files get the raw content and path outputs
+            # Check if any files are structured (CSV, JSONL, etc.)
+            has_structured_files = any(
+                file_path.endswith((".csv", ".xlsx", ".parquet", ".jsonl"))
+                for file_path in frontend_node["template"]["path"]["file_path"]
+            )
+
+            if has_structured_files:
                 frontend_node["outputs"].append(
-                    Output(display_name="Raw Content", name="message", method="load_files_message"),
+                    Output(display_name="Structured Content", name="dataframe", method="load_files_structured"),
                 )
+
+            # Check if any files are JSON
+            has_json_files = any(
+                file_path.endswith(".json") for file_path in frontend_node["template"]["path"]["file_path"]
+            )
+
+            if has_json_files:
                 frontend_node["outputs"].append(
-                    Output(display_name="File Path", name="path", method="load_files_path"),
-                )
-            else:
-                # For multiple files, we only show the files output
-                frontend_node["outputs"].append(
-                    Output(display_name="Files", name="dataframe", method="load_files"),
+                    Output(display_name="JSON Content", name="json", method="load_files_json"),
                 )
 
         return frontend_node

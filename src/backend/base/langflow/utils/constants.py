@@ -95,6 +95,13 @@ LOADERS_INFO: list[dict[str, Any]] = [
         "allowdTypes": ["jsonl"],
     },
     {
+        "loader": "JSONLLoader",
+        "name": "JSONL (.jsonl)",
+        "import": "langchain_community.document_loaders.JSONLLoader",
+        "defaultFor": ["jsonl"],
+        "allowdTypes": ["jsonl"],
+    },
+    {
         "loader": "JSONLoader",
         "name": "JSON (.json)",
         "import": "langchain_community.document_loaders.JSONLoader",

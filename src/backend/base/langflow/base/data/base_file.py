@@ -288,6 +288,12 @@ class BaseFileComponent(Component, ABC):
         # Get file extension in lowercase
         ext = Path(file_path).suffix.lower()
 
+        # Handle JSONL files
+        if ext == ".jsonl":
+            import jsonlines
+            with jsonlines.open(file_path) as reader:
+                return list(reader)
+
         # Get the appropriate reader function or None
         reader = file_readers.get(ext)
 
@@ -298,29 +304,36 @@ class BaseFileComponent(Component, ABC):
         return None
 
     def load_files_structured(self) -> DataFrame:
-        """Load files and return as DataFrame with structured content.
+        """Load files and return as DataFrame with unified structured content.
 
-        Returns:
-            DataFrame: DataFrame containing structured content from all files
+        For CSV/JSONL files, returns one row per data row across all files.
+        For other files, returns one row per file.
         """
         data_list = self.load_files_core()
         if not data_list:
             return DataFrame()
 
-        # Get the file path from the first Data object
-        file_path = data_list[0].data.get(self.SERVER_FILE_PATH_FIELDNAME, None)
+        all_rows = []
 
-        # If file_path is provided and is a CSV, read it directly
-        if file_path and str(file_path).lower().endswith((".csv", ".xlsx", ".parquet")):
-            rows = self.load_files_structured_helper(file_path)
-        else:
-            # Convert Data objects to a list of dictionaries
-            # TODO: Parse according to docling standards
-            rows = [data_list[0].data]
+        for data in data_list:
+            file_path = data.data.get(self.SERVER_FILE_PATH_FIELDNAME)
 
-        self.status = DataFrame(rows)
+            if file_path and str(file_path).lower().endswith((".csv", ".xlsx", ".parquet", ".jsonl")):
+                # For structured files, get all rows and add file_path to each
+                rows = self.load_files_structured_helper(file_path)
+                if rows:
+                    for row in rows:
+                        row["file_path"] = file_path
+                        all_rows.append(row)
+            else:
+                # For non-structured files, create one row per file
+                row = dict(data.data) if data.data else {}
+                if file_path:
+                    row["file_path"] = file_path
+                all_rows.append(row)
 
-        return DataFrame(rows)
+        self.status = DataFrame(all_rows)
+        return DataFrame(all_rows)
 
     def parse_string_to_dict(self, s: str) -> dict:
         # Try JSON first (handles true/false/null)
