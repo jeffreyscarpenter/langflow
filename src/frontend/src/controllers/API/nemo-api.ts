@@ -299,6 +299,184 @@ class NeMoApiClient {
     return response.data;
   }
 
+  // Customization targets operations
+  async getCustomizationTargets(
+    page: number = 1,
+    pageSize: number = 10,
+    filter?: { base_model?: string; status?: string },
+  ) {
+    this.loadConfig(); // Refresh config
+    const params: any = { page, page_size: pageSize };
+
+    if (filter?.base_model) {
+      params.base_model = filter.base_model;
+    }
+    if (filter?.status) {
+      params.status = filter.status;
+    }
+
+    const response = await this.client.get("/nemo/v1/customization/targets", {
+      headers: this.getHeaders(),
+      params,
+    });
+    return response.data;
+  }
+
+  async getCustomizationTarget(targetId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(
+      `/nemo/v1/customization/targets/${targetId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  // Customization configs operations
+  async getCustomizationConfigs(
+    page: number = 1,
+    pageSize: number = 10,
+    filter?: { target_id?: string },
+  ) {
+    this.loadConfig(); // Refresh config
+    const params: any = { page, page_size: pageSize };
+
+    if (filter?.target_id) {
+      params.target_id = filter.target_id;
+    }
+
+    const response = await this.client.get("/nemo/v1/customization/configs", {
+      headers: this.getHeaders(),
+      params,
+    });
+    return response.data;
+  }
+
+  async getCustomizationConfig(configId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(
+      `/nemo/v1/customization/configs/${configId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  async deleteCustomizationTarget(targetId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.delete(
+      `/nemo/v1/customization/targets/${targetId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  async deleteCustomizationConfig(configId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.delete(
+      `/nemo/v1/customization/configs/${configId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  // Evaluation targets operations
+  async getEvaluationTargets(
+    page: number = 1,
+    pageSize: number = 10,
+    filter?: { target_type?: string },
+  ) {
+    this.loadConfig(); // Refresh config
+    const params: any = { page, page_size: pageSize };
+
+    if (filter?.target_type) {
+      params.target_type = filter.target_type;
+    }
+
+    const response = await this.client.get("/nemo/v1/evaluation/targets", {
+      headers: this.getHeaders(),
+      params,
+    });
+    return response.data;
+  }
+
+  async getEvaluationTarget(targetId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/targets/${targetId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  // Evaluation configs operations
+  async getEvaluationConfigs(
+    page: number = 1,
+    pageSize: number = 10,
+    filter?: { target_id?: string },
+  ) {
+    this.loadConfig(); // Refresh config
+    const params: any = {
+      page,
+      page_size: pageSize,
+      // Add cache-busting timestamp
+      _t: Date.now(),
+    };
+
+    if (filter?.target_id) {
+      params.target_id = filter.target_id;
+    }
+
+    console.log("API Client: Calling evaluation configs with params:", params);
+    const response = await this.client.get("/nemo/v1/evaluation/configs", {
+      headers: this.getHeaders(),
+      params,
+    });
+    console.log("API Client: Evaluation configs response:", response.data);
+    return response.data;
+  }
+
+  async getEvaluationConfig(configId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.get(
+      `/nemo/v1/evaluation/configs/${configId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  async deleteEvaluationTarget(targetId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.delete(
+      `/nemo/v1/evaluation/targets/${targetId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
+  async deleteEvaluationConfig(configId: string) {
+    this.loadConfig(); // Refresh config
+    const response = await this.client.delete(
+      `/nemo/v1/evaluation/configs/${configId}`,
+      {
+        headers: this.getHeaders(),
+      },
+    );
+    return response.data;
+  }
+
   // Evaluator job operations
   async getEvaluatorJobs(page: number = 1, pageSize: number = 10) {
     this.loadConfig(); // Refresh config

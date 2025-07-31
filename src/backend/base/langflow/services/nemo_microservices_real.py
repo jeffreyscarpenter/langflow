@@ -26,6 +26,9 @@ from nemo_microservices._types import NOT_GIVEN
 
 logger = logging.getLogger(__name__)
 
+# HTTP status constants
+HTTP_NOT_FOUND = 404
+
 
 def create_auth_interceptor(auth_token, namespace):
     """Create a function to intercept HTTP requests and add auth headers for namespace URLs."""
@@ -869,6 +872,578 @@ class RealNeMoMicroservicesService:
         except Exception:
             logger.exception("Exception getting container logs for job %s", job_id)
             raise
+
+    # =============================================================================
+    # Customization Targets Management
+    # =============================================================================
+
+    async def list_customization_targets(
+        self, page: int = 1, page_size: int = 10, filter_params: dict[str, Any] | None = None, sort: str = "-created_at"
+    ) -> dict[str, Any]:
+        """List customization targets with pagination and filtering."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get all targets first (NeMo API may not support server-side filtering)
+                response = await client.get(
+                    f"{self.base_url}/v1/customization/targets", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_data = response.json()
+                all_targets = response_data.get("data", [])
+
+                # Apply client-side filtering
+                if filter_params:
+                    filtered_targets = []
+                    for target in all_targets:
+                        match = True
+                        for key, value in filter_params.items():
+                            if key == "base_model":
+                                if not target.get("base_model", "").lower().startswith(value.lower()):
+                                    match = False
+                                    break
+                            elif key == "status" and target.get("status", "").lower() != value.lower():
+                                match = False
+                                break
+                        if match:
+                            filtered_targets.append(target)
+                    all_targets = filtered_targets
+
+                # Apply sorting
+                if sort == "-created_at":
+                    all_targets.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                elif sort == "created_at":
+                    all_targets.sort(key=lambda x: x.get("created_at", ""))
+                elif sort == "name":
+                    all_targets.sort(key=lambda x: x.get("name", ""))
+                elif sort == "-name":
+                    all_targets.sort(key=lambda x: x.get("name", ""), reverse=True)
+
+                # Apply client-side pagination
+                total_targets = len(all_targets)
+                start_index = (page - 1) * page_size
+                end_index = start_index + page_size
+                paginated_targets = all_targets[start_index:end_index]
+                total_pages = (total_targets + page_size - 1) // page_size
+
+                return {
+                    "data": paginated_targets,
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total_targets,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                }
+
+        except Exception as exc:
+            logger.exception("Failed to list customization targets")
+
+            # Handle authentication errors gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty targets list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials.",
+                }
+
+            msg = f"Failed to list customization targets: {exc}"
+            raise ValueError(msg) from exc
+
+    async def get_customization_target_details(self, target_id: str) -> dict[str, Any]:
+        """Get details of a specific customization target."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/customization/targets/{target_id}", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_data = response.json()
+
+        except Exception:
+            logger.exception("Failed to get customization target details")
+            raise
+        else:
+            return response_data
+
+    async def delete_customization_target(self, target_id: str, namespace: str | None = None) -> dict[str, Any]:
+        """Delete a specific customization target."""
+        logger.info("Attempting to delete customization target: %s", target_id)
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # NeMo API requires namespace in the URL path, use 'default' if not provided
+                ns = namespace or "default"
+                delete_url = f"{self.base_url}/v1/customization/targets/{ns}/{target_id}"
+                logger.info("DELETE request to: %s", delete_url)
+
+                response = await client.delete(delete_url, headers=self._get_auth_headers())
+                logger.info("DELETE response status: %s", response.status_code)
+
+                # Handle 404 as success (target already doesn't exist)
+                if response.status_code == HTTP_NOT_FOUND:
+                    logger.info("Customization target %s not found (404) - treating as successfully deleted", target_id)
+                    return {"message": "Target deleted successfully (was not found)", "target_id": target_id}
+
+                response.raise_for_status()
+
+                # Handle potential empty response body for DELETE operations
+                try:
+                    response_data = response.json()
+                except (ValueError, TypeError, KeyError):
+                    response_data = {"message": "Target deleted successfully", "target_id": target_id}
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == HTTP_NOT_FOUND:
+                logger.info("Customization target %s not found (404) - treating as successfully deleted", target_id)
+                return {"message": "Target deleted successfully (was not found)", "target_id": target_id}
+            logger.exception("Failed to delete customization target {target_id}: HTTP %s", e.response.status_code)
+            msg = f"Failed to delete target: HTTP {e.response.status_code} - {e.response.text}"
+            raise ValueError(msg) from e
+        except Exception:
+            logger.exception("Failed to delete customization target %s", target_id)
+            raise
+        else:
+            return response_data
+
+    # =============================================================================
+    # Customization Configs Management - Extended
+    # =============================================================================
+
+    async def list_customization_configs_paginated(
+        self, page: int = 1, page_size: int = 10, filter_params: dict[str, Any] | None = None, sort: str = "-created_at"
+    ) -> dict[str, Any]:
+        """List customization configs with pagination and filtering."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get all configs first
+                response = await client.get(
+                    f"{self.base_url}/v1/customization/configs", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_json = response.json()
+
+                # Handle different response formats - configs might return data directly or in "data" field
+                if isinstance(response_json, list):
+                    all_configs = response_json
+                elif isinstance(response_json, dict) and "data" in response_json:
+                    all_configs = response_json["data"]
+                elif isinstance(response_json, dict):
+                    # If it's a dict but no "data" field, it might be the configs data itself
+                    all_configs = [response_json] if response_json else []
+                else:
+                    all_configs = []
+
+                # Apply filtering if provided
+                if filter_params:
+                    filtered_configs = []
+                    for config in all_configs:
+                        match = True
+                        for key, value in filter_params.items():
+                            if key == "target_id":
+                                # Check if config's target ID matches (partial match)
+                                target = config.get("target", {})
+                                if isinstance(target, dict):
+                                    target_id = target.get("id", "")
+                                else:
+                                    target_id = str(target) if target else ""
+                                if not target_id.lower().startswith(value.lower()):
+                                    match = False
+                                    break
+                            # Add other filter logic as needed
+                        if match:
+                            filtered_configs.append(config)
+                    all_configs = filtered_configs
+
+                # Apply client-side pagination and sorting
+                total_configs = len(all_configs)
+
+                # Simple sorting by name for now (could be enhanced)
+                if sort == "-created_at":
+                    all_configs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                elif sort == "created_at":
+                    all_configs.sort(key=lambda x: x.get("created_at", ""))
+                elif sort == "name":
+                    all_configs.sort(key=lambda x: x.get("name", ""))
+                elif sort == "-name":
+                    all_configs.sort(key=lambda x: x.get("name", ""), reverse=True)
+
+                start_index = (page - 1) * page_size
+                end_index = start_index + page_size
+                paginated_configs = all_configs[start_index:end_index]
+
+                total_pages = (total_configs + page_size - 1) // page_size
+
+                return {
+                    "data": paginated_configs,
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total_configs,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                }
+
+        except Exception as exc:
+            logger.exception("Failed to list customization configs")
+
+            # Handle authentication errors gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty configs list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials.",
+                }
+
+            msg = f"Failed to list customization configs: {exc}"
+            raise ValueError(msg) from exc
+
+    async def get_customization_config_details(self, config_id: str) -> dict[str, Any]:
+        """Get details of a specific customization config."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/customization/configs/{config_id}", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_data = response.json()
+
+        except Exception:
+            logger.exception("Failed to get customization config details")
+            raise
+        else:
+            return response_data
+
+    async def delete_customization_config(self, config_id: str, namespace: str | None = None) -> dict[str, Any]:
+        """Delete a specific customization config."""
+        logger.info("Attempting to delete customization config: %s", config_id)
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # NeMo API requires namespace in the URL path, use 'default' if not provided
+                ns = namespace or "default"
+                delete_url = f"{self.base_url}/v1/customization/configs/{ns}/{config_id}"
+                logger.info("DELETE request to: %s", delete_url)
+
+                response = await client.delete(delete_url, headers=self._get_auth_headers())
+                logger.info("DELETE response status: %s", response.status_code)
+
+                # Handle 404 as success (config already doesn't exist)
+                if response.status_code == HTTP_NOT_FOUND:
+                    logger.info("Customization config %s not found (404) - treating as successfully deleted", config_id)
+                    return {"message": "Config deleted successfully (was not found)", "config_id": config_id}
+
+                response.raise_for_status()
+
+                # Handle potential empty response body for DELETE operations
+                try:
+                    response_data = response.json()
+                except (ValueError, TypeError, KeyError):
+                    response_data = {"message": "Config deleted successfully", "config_id": config_id}
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == HTTP_NOT_FOUND:
+                logger.info("Customization config %s not found (404) - treating as successfully deleted", config_id)
+                return {"message": "Config deleted successfully (was not found)", "config_id": config_id}
+            logger.exception("Failed to delete customization config {config_id}: HTTP %s", e.response.status_code)
+            msg = f"Failed to delete config: HTTP {e.response.status_code} - {e.response.text}"
+            raise ValueError(msg) from e
+        except Exception:
+            logger.exception("Failed to delete customization config %s", config_id)
+            raise
+        else:
+            return response_data
+
+    # =============================================================================
+    # Evaluation Targets Management
+    # =============================================================================
+
+    async def list_evaluation_targets_paginated(
+        self, page: int = 1, page_size: int = 10, filter_params: dict[str, Any] | None = None, sort: str = "-created_at"
+    ) -> dict[str, Any]:
+        """List evaluation targets with pagination and filtering."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get all targets first (NeMo API may not support server-side filtering)
+                response = await client.get(f"{self.base_url}/v1/evaluation/targets", headers=self._get_auth_headers())
+                response.raise_for_status()
+                response_data = response.json()
+                all_targets = response_data.get("data", [])
+
+                # Apply client-side filtering
+                if filter_params:
+                    filtered_targets = []
+                    for target in all_targets:
+                        match = True
+                        for key, value in filter_params.items():
+                            if key == "target_type" and target.get("type", "").lower() != value.lower():
+                                match = False
+                                break
+                        if match:
+                            filtered_targets.append(target)
+                    all_targets = filtered_targets
+
+                # Apply sorting
+                if sort == "-created_at":
+                    all_targets.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                elif sort == "created_at":
+                    all_targets.sort(key=lambda x: x.get("created_at", ""))
+                elif sort == "name":
+                    all_targets.sort(key=lambda x: x.get("name", ""))
+                elif sort == "-name":
+                    all_targets.sort(key=lambda x: x.get("name", ""), reverse=True)
+
+                # Apply client-side pagination
+                total_targets = len(all_targets)
+                start_index = (page - 1) * page_size
+                end_index = start_index + page_size
+                paginated_targets = all_targets[start_index:end_index]
+                total_pages = (total_targets + page_size - 1) // page_size
+
+                return {
+                    "data": paginated_targets,
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total_targets,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                }
+
+        except Exception as exc:
+            logger.exception("Failed to list evaluation targets")
+
+            # Handle authentication errors gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty targets list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials.",
+                }
+
+            msg = f"Failed to list evaluation targets: {exc}"
+            raise ValueError(msg) from exc
+
+    async def get_evaluation_target_details(self, target_id: str) -> dict[str, Any]:
+        """Get details of a specific evaluation target."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/evaluation/targets/{target_id}", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_data = response.json()
+
+        except Exception:
+            logger.exception("Failed to get evaluation target details")
+            raise
+        else:
+            return response_data
+
+    async def delete_evaluation_target(self, target_id: str, namespace: str | None = None) -> dict[str, Any]:
+        """Delete a specific evaluation target."""
+        logger.info("Attempting to delete evaluation target: %s", target_id)
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # NeMo API requires namespace in the URL path, use 'default' if not provided
+                ns = namespace or "default"
+                delete_url = f"{self.base_url}/v1/evaluation/targets/{ns}/{target_id}"
+                logger.info("DELETE request to: %s", delete_url)
+
+                response = await client.delete(delete_url, headers=self._get_auth_headers())
+                logger.info("DELETE response status: %s", response.status_code)
+
+                # Handle 404 as success (target already doesn't exist)
+                if response.status_code == HTTP_NOT_FOUND:
+                    logger.info("Evaluation target %s not found (404) - treating as successfully deleted", target_id)
+                    return {"message": "Target deleted successfully (was not found)", "target_id": target_id}
+
+                response.raise_for_status()
+
+                # Handle potential empty response body for DELETE operations
+                try:
+                    response_data = response.json()
+                except (ValueError, TypeError, KeyError):
+                    response_data = {"message": "Target deleted successfully", "target_id": target_id}
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == HTTP_NOT_FOUND:
+                logger.info("Evaluation target %s not found (404) - treating as successfully deleted", target_id)
+                return {"message": "Target deleted successfully (was not found)", "target_id": target_id}
+            logger.exception("Failed to delete evaluation target {target_id}: HTTP %s", e.response.status_code)
+            msg = f"Failed to delete target: HTTP {e.response.status_code} - {e.response.text}"
+            raise ValueError(msg) from e
+        except Exception:
+            logger.exception("Failed to delete evaluation target %s", target_id)
+            raise
+        else:
+            return response_data
+
+    # =============================================================================
+    # Evaluation Configs Management
+    # =============================================================================
+
+    async def list_evaluation_configs_paginated(
+        self, page: int = 1, page_size: int = 10, filter_params: dict[str, Any] | None = None, sort: str = "-created_at"
+    ) -> dict[str, Any]:
+        """List evaluation configs with pagination and filtering."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Get all configs first
+                response = await client.get(f"{self.base_url}/v1/evaluation/configs", headers=self._get_auth_headers())
+                response.raise_for_status()
+                response_json = response.json()
+
+                # Handle different response formats
+                if isinstance(response_json, list):
+                    all_configs = response_json
+                elif isinstance(response_json, dict) and "data" in response_json:
+                    all_configs = response_json["data"]
+                elif isinstance(response_json, dict):
+                    all_configs = [response_json] if response_json else []
+                else:
+                    all_configs = []
+
+                # Apply filtering if provided
+                if filter_params:
+                    filtered_configs = []
+                    for config in all_configs:
+                        match = True
+                        for key, value in filter_params.items():
+                            if key == "target_id":
+                                # Check if config's target ID matches (partial match)
+                                target = config.get("target", {})
+                                if isinstance(target, dict):
+                                    target_id = target.get("id", "")
+                                else:
+                                    target_id = str(target) if target else ""
+                                if not target_id.lower().startswith(value.lower()):
+                                    match = False
+                                    break
+                        if match:
+                            filtered_configs.append(config)
+                    all_configs = filtered_configs
+
+                # Apply client-side pagination and sorting
+                total_configs = len(all_configs)
+
+                # Simple sorting by name for now (could be enhanced)
+                if sort == "-created_at":
+                    all_configs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+                elif sort == "created_at":
+                    all_configs.sort(key=lambda x: x.get("created_at", ""))
+                elif sort == "name":
+                    all_configs.sort(key=lambda x: x.get("name", ""))
+                elif sort == "-name":
+                    all_configs.sort(key=lambda x: x.get("name", ""), reverse=True)
+
+                start_index = (page - 1) * page_size
+                end_index = start_index + page_size
+                paginated_configs = all_configs[start_index:end_index]
+
+                total_pages = (total_configs + page_size - 1) // page_size
+
+                return {
+                    "data": paginated_configs,
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total_configs,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1,
+                }
+
+        except Exception as exc:
+            logger.exception("Failed to list evaluation configs")
+
+            # Handle authentication errors gracefully
+            if "401" in str(exc) or "Unauthorized" in str(exc):
+                logger.warning("Authentication failed for NeMo microservices - returning empty configs list")
+                return {
+                    "data": [],
+                    "page": page,
+                    "page_size": page_size,
+                    "total": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False,
+                    "error": "Authentication failed. Please check your NeMo credentials.",
+                }
+
+            msg = f"Failed to list evaluation configs: {exc}"
+            raise ValueError(msg) from exc
+
+    async def get_evaluation_config_details(self, config_id: str) -> dict[str, Any]:
+        """Get details of a specific evaluation config."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/evaluation/configs/{config_id}", headers=self._get_auth_headers()
+                )
+                response.raise_for_status()
+                response_data = response.json()
+
+        except Exception:
+            logger.exception("Failed to get evaluation config details")
+            raise
+        else:
+            return response_data
+
+    async def delete_evaluation_config(self, config_id: str, namespace: str | None = None) -> dict[str, Any]:
+        """Delete a specific evaluation config."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # NeMo API requires namespace in the URL path, use 'default' if not provided
+                ns = namespace or "default"
+                delete_url = f"{self.base_url}/v1/evaluation/configs/{ns}/{config_id}"
+
+                response = await client.delete(delete_url, headers=self._get_auth_headers())
+
+                # Handle 404 as success (config already doesn't exist)
+                if response.status_code == HTTP_NOT_FOUND:
+                    logger.warning("Evaluation config %s not found (404) - treating as successfully deleted", config_id)
+                    return {"message": "Config deleted successfully (was not found)", "config_id": config_id}
+
+                response.raise_for_status()
+                logger.info("DELETE successful for config %s", config_id)
+
+                # Handle potential empty response body for DELETE operations
+                try:
+                    response_data = response.json()
+                except (ValueError, TypeError, KeyError):
+                    response_data = {"message": "Config deleted successfully", "config_id": config_id}
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == HTTP_NOT_FOUND:
+                logger.info("Evaluation config %s not found (404) - treating as successfully deleted", config_id)
+                return {"message": "Config deleted successfully (was not found)", "config_id": config_id}
+            logger.exception("Failed to delete evaluation config {config_id}: HTTP %s", e.response.status_code)
+            msg = f"Failed to delete config: HTTP {e.response.status_code} - {e.response.text}"
+            raise ValueError(msg) from e
+        except Exception:
+            logger.exception("Failed to delete evaluation config %s", config_id)
+            raise
+        else:
+            return response_data
+
+    # =============================================================================
+    # Evaluation Management
+    # =============================================================================
 
     async def get_evaluation_job_logs(self, job_id: str) -> dict[str, Any]:
         """Get logs for an evaluation job using NeMo Python SDK."""

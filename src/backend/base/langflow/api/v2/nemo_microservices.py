@@ -28,7 +28,7 @@ Note: This implementation requires proper NeMo configuration via global variable
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 
 from langflow.api.utils import CurrentActiveUser, DbSession
 from langflow.services.nemo_microservices_factory import get_nemo_service
@@ -348,16 +348,31 @@ async def upload_dataset_files(
 async def get_customization_configs(
     current_user: CurrentActiveUser,
     session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
+    target_id: Annotated[str | None, Query()] = None,
+    sort: str = "-created_at",
     x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
     x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
 ):
-    """Get available model configurations for customization.
+    """Get available model configurations for customization with optional pagination.
 
     This endpoint matches the NeMo Customizer API:
     GET /v1/customization/configs
 
     Used by the NeMo Customizer component to populate dropdown options
     for model selection, training types, and fine-tuning types.
+    Also supports pagination for the configs list UI.
+
+    Args:
+        current_user: Current authenticated user
+        session: Database session
+        page: Page number (1-based, default: 1)
+        page_size: Number of configs per page (default: 10, use large number for original behavior)
+        target_id: Filter by target ID (optional)
+        sort: Sort order (default: -created_at)
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
 
     Returns:
         Available model configurations with training and fine-tuning types
@@ -366,9 +381,86 @@ async def get_customization_configs(
         nemo_service = await get_nemo_service(
             current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
         )
-        return await nemo_service.get_customization_configs()
+
+        # If page_size is large, assume it's the original dropdown usage
+        large_page_size_threshold = 100
+        if page_size > large_page_size_threshold:
+            return await nemo_service.get_customization_configs()
+
+        # Otherwise, use paginated version
+        filter_params = {}
+        if target_id:
+            filter_params["target_id"] = target_id
+
+        return await nemo_service.list_customization_configs_paginated(
+            page=page, page_size=page_size, filter_params=filter_params, sort=sort
+        )
     except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to get customization configs: {e}") from e
+
+
+@router.get("/v1/customization/configs/{config_id}", response_model=dict)
+async def get_customization_config_details(
+    config_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get details of a specific customization config.
+
+    This endpoint provides access to customization config details:
+    GET /v1/customization/configs/{config_id}
+
+    Args:
+        config_id: ID of the config to retrieve
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Config details
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_customization_config_details(config_id)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get customization config details: {e}") from e
+
+
+@router.delete("/v1/customization/configs/{config_id}", response_model=dict)
+async def delete_customization_config(
+    config_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Delete a specific customization config.
+
+    This endpoint provides deletion of customization configs:
+    DELETE /v1/customization/configs/{config_id}
+
+    Args:
+        config_id: ID of the config to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.delete_customization_config(config_id, namespace="default")
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete customization config: {e}") from e
 
 
 @router.get("/v1/customization/jobs/{job_id}/status", response_model=dict)
@@ -625,7 +717,359 @@ async def list_all_customizer_jobs(
 
 
 # =============================================================================
+# Customization Targets Management - NeMo API Structure
+# =============================================================================
+
+
+@router.get("/v1/customization/targets", response_model=dict)
+async def list_customization_targets(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
+    base_model: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    sort: str = "-created_at",
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """List customization targets with pagination and filtering.
+
+    This endpoint matches the NeMo Customizer API:
+    GET /v1/customization/targets
+
+    Args:
+        current_user: Current authenticated user
+        session: Database session
+        page: Page number (1-based)
+        page_size: Number of targets per page (default: 10)
+        base_model: Filter by base model (optional)
+        status: Filter by status (optional)
+        sort: Sort order (default: -created_at)
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Paginated list of customization targets
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        filter_params = {}
+        if base_model:
+            filter_params["base_model"] = base_model
+        if status:
+            filter_params["status"] = status
+
+        return await nemo_service.list_customization_targets(
+            page=page, page_size=page_size, filter_params=filter_params, sort=sort
+        )
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list customization targets: {e}") from e
+
+
+@router.get("/v1/customization/targets/{target_id}", response_model=dict)
+async def get_customization_target_details(
+    target_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get details of a specific customization target.
+
+    This endpoint matches the NeMo Customizer API:
+    GET /v1/customization/targets/{target_id}
+
+    Args:
+        target_id: ID of the target to retrieve
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Target details
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_customization_target_details(target_id)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get customization target details: {e}") from e
+
+
+@router.delete("/v1/customization/targets/{target_id}", response_model=dict)
+async def delete_customization_target(
+    target_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Delete a specific customization target.
+
+    This endpoint matches the NeMo Customizer API:
+    DELETE /v1/customization/targets/{target_id}
+
+    Args:
+        target_id: ID of the target to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.delete_customization_target(target_id, namespace="default")
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete customization target: {e}") from e
+
+
+# =============================================================================
+# Customization Configs Management - Extended
+# =============================================================================
+
+
+# =============================================================================
 # Evaluation Management (Evaluator) - NeMo API Structure
+# =============================================================================
+
+# =============================================================================
+# Evaluation Targets Management
+# =============================================================================
+
+
+@router.get("/v1/evaluation/targets", response_model=dict)
+async def list_evaluation_targets(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
+    target_type: Annotated[str | None, Query()] = None,
+    sort: str = "-created_at",
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """List evaluation targets with pagination and filtering.
+
+    This endpoint matches the NeMo Evaluator API:
+    GET /v1/evaluation/targets
+
+    Args:
+        current_user: Current authenticated user
+        session: Database session
+        page: Page number (1-based)
+        page_size: Number of targets per page (default: 10)
+        target_type: Filter by target type (optional)
+        sort: Sort order (default: -created_at)
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Paginated list of evaluation targets
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        filter_params = {}
+        if target_type:
+            filter_params["target_type"] = target_type
+
+        return await nemo_service.list_evaluation_targets_paginated(
+            page=page, page_size=page_size, filter_params=filter_params, sort=sort
+        )
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list evaluation targets: {e}") from e
+
+
+@router.get("/v1/evaluation/targets/{target_id}", response_model=dict)
+async def get_evaluation_target_details(
+    target_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get details of a specific evaluation target.
+
+    This endpoint matches the NeMo Evaluator API:
+    GET /v1/evaluation/targets/{target_id}
+
+    Args:
+        target_id: ID of the target to retrieve
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Target details
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_evaluation_target_details(target_id)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation target details: {e}") from e
+
+
+@router.delete("/v1/evaluation/targets/{target_id}", response_model=dict)
+async def delete_evaluation_target(
+    target_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Delete a specific evaluation target.
+
+    This endpoint matches the NeMo Evaluator API:
+    DELETE /v1/evaluation/targets/{target_id}
+
+    Args:
+        target_id: ID of the target to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.delete_evaluation_target(target_id, namespace="default")
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete evaluation target: {e}") from e
+
+
+# =============================================================================
+# Evaluation Configs Management
+# =============================================================================
+
+
+@router.get("/v1/evaluation/configs", response_model=dict)
+async def list_evaluation_configs(
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    page: int = 1,
+    page_size: int = 10,
+    target_id: Annotated[str | None, Query()] = None,
+    sort: str = "-created_at",
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """List evaluation configs with pagination and filtering.
+
+    This endpoint provides paginated access to evaluation configs:
+    GET /v1/evaluation/configs
+
+    Args:
+        current_user: Current authenticated user
+        session: Database session
+        page: Page number (1-based)
+        page_size: Number of configs per page (default: 10)
+        target_id: Filter by target ID (optional)
+        sort: Sort order (default: -created_at)
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Paginated list of evaluation configs
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        filter_params = {}
+        if target_id:
+            filter_params["target_id"] = target_id
+
+        return await nemo_service.list_evaluation_configs_paginated(
+            page=page, page_size=page_size, filter_params=filter_params, sort=sort
+        )
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list evaluation configs: {e}") from e
+
+
+@router.get("/v1/evaluation/configs/{config_id}", response_model=dict)
+async def get_evaluation_config_details(
+    config_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Get details of a specific evaluation config.
+
+    This endpoint provides access to evaluation config details:
+    GET /v1/evaluation/configs/{config_id}
+
+    Args:
+        config_id: ID of the config to retrieve
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Config details
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.get_evaluation_config_details(config_id)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation config details: {e}") from e
+
+
+@router.delete("/v1/evaluation/configs/{config_id}", response_model=dict)
+async def delete_evaluation_config(
+    config_id: str,
+    current_user: CurrentActiveUser,
+    session: DbSession,
+    x_nemo_auth_token: Annotated[str | None, Header(alias="X-NeMo-Auth-Token")] = None,
+    x_nemo_base_url: Annotated[str | None, Header(alias="X-NeMo-Base-URL")] = None,
+):
+    """Delete a specific evaluation config.
+
+    This endpoint provides deletion of evaluation configs:
+    DELETE /v1/evaluation/configs/{config_id}
+
+    Args:
+        config_id: ID of the config to delete
+        current_user: Current authenticated user
+        session: Database session
+        x_nemo_auth_token: NeMo API authentication token (optional, from header)
+        x_nemo_base_url: NeMo API base URL (optional, from header)
+
+    Returns:
+        Deletion confirmation
+    """
+    try:
+        nemo_service = await get_nemo_service(
+            current_user.id, session, header_api_key=x_nemo_auth_token, header_base_url=x_nemo_base_url
+        )
+        return await nemo_service.delete_evaluation_config(config_id, namespace="default")
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete evaluation config: {e}") from e
+
+
+# =============================================================================
+# Evaluation Jobs Management
 # =============================================================================
 
 

@@ -2,16 +2,22 @@ import {
   Activity,
   AlertCircle,
   ArrowLeft,
+  Cpu,
   Database,
   Save,
   Settings,
+  Target,
   Wrench,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
+import ConfigList from "@/components/nemo/ConfigList";
 import DatasetFiles from "@/components/nemo/DatasetFiles";
 import DatasetList from "@/components/nemo/DatasetList";
+import EvaluationConfigList from "@/components/nemo/EvaluationConfigList";
+import EvaluationTargetList from "@/components/nemo/EvaluationTargetList";
 import EvaluatorJobList from "@/components/nemo/EvaluatorJobList";
 import JobList from "@/components/nemo/JobList";
+import TargetList from "@/components/nemo/TargetList";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +43,8 @@ const NeMoMicroservicesPage: React.FC = () => {
     null,
   );
   const [activeTab, setActiveTab] = useState("datasets");
+  const [customizerActiveTab, setCustomizerActiveTab] = useState("jobs");
+  const [evaluatorActiveTab, setEvaluatorActiveTab] = useState("jobs");
   const [showConfig, setShowConfig] = useState(false);
   const [config, setConfig] = useState<NeMoConfig>({
     baseUrl: "https://us-west-2.api-dev.ai.datastax.com/nvidia/nemo",
@@ -63,7 +71,9 @@ const NeMoMicroservicesPage: React.FC = () => {
 
   // Check if config is valid whenever it changes
   useEffect(() => {
-    setIsConfigValid(config.baseUrl && config.authToken && config.namespace);
+    setIsConfigValid(
+      !!(config.baseUrl && config.authToken && config.namespace),
+    );
   }, [config]);
 
   const handleDatasetSelect = (dataset: NeMoDataset) => {
@@ -216,16 +226,19 @@ const NeMoMicroservicesPage: React.FC = () => {
                 <Database className="h-4 w-4" />
                 <span>Datasets</span>
               </TabsTrigger>
-              <TabsTrigger value="jobs" className="flex items-center space-x-2">
+              <TabsTrigger
+                value="customizer"
+                className="flex items-center space-x-2"
+              >
                 <Wrench className="h-4 w-4" />
-                <span>Customizer Jobs</span>
+                <span>Customizer</span>
               </TabsTrigger>
               <TabsTrigger
                 value="evaluator"
                 className="flex items-center space-x-2"
               >
                 <Activity className="h-4 w-4" />
-                <span>Evaluator Jobs</span>
+                <span>Evaluator</span>
               </TabsTrigger>
             </TabsList>
 
@@ -233,12 +246,86 @@ const NeMoMicroservicesPage: React.FC = () => {
               <DatasetList onDatasetSelect={handleDatasetSelect} />
             </TabsContent>
 
-            <TabsContent value="jobs">
-              <JobList />
+            <TabsContent value="customizer">
+              <Tabs
+                value={customizerActiveTab}
+                onValueChange={setCustomizerActiveTab}
+              >
+                <TabsList className="grid w-full grid-cols-3 mb-4">
+                  <TabsTrigger
+                    value="jobs"
+                    className="flex items-center space-x-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Jobs</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="configs"
+                    className="flex items-center space-x-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Configs</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="targets"
+                    className="flex items-center space-x-2"
+                  >
+                    <Cpu className="h-4 w-4" />
+                    <span>Targets</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="jobs">
+                  <JobList />
+                </TabsContent>
+                <TabsContent value="configs">
+                  <ConfigList />
+                </TabsContent>
+                <TabsContent value="targets">
+                  <TargetList />
+                </TabsContent>
+              </Tabs>
             </TabsContent>
 
             <TabsContent value="evaluator">
-              <EvaluatorJobList />
+              <Tabs
+                value={evaluatorActiveTab}
+                onValueChange={setEvaluatorActiveTab}
+              >
+                <TabsList className="grid w-full grid-cols-3 mb-4">
+                  <TabsTrigger
+                    value="jobs"
+                    className="flex items-center space-x-2"
+                  >
+                    <Activity className="h-4 w-4" />
+                    <span>Jobs</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="configs"
+                    className="flex items-center space-x-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Configs</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="targets"
+                    className="flex items-center space-x-2"
+                  >
+                    <Target className="h-4 w-4" />
+                    <span>Targets</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="jobs">
+                  <EvaluatorJobList />
+                </TabsContent>
+                <TabsContent value="configs">
+                  <EvaluationConfigList />
+                </TabsContent>
+                <TabsContent value="targets">
+                  <EvaluationTargetList />
+                </TabsContent>
+              </Tabs>
             </TabsContent>
           </Tabs>
         )}

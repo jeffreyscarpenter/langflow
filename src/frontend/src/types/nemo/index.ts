@@ -75,6 +75,165 @@ export interface DeleteDatasetResponse {
 }
 
 // =============================================================================
+// Customization Target Types
+// =============================================================================
+
+export interface NeMoCustomizationTarget {
+  id: string;
+  name: string;
+  namespace: string;
+  description: string;
+  enabled: boolean;
+  base_model: string;
+  model_path: string;
+  model_uri: string;
+  tokenizer: Record<string, any>;
+  num_parameters: number;
+  precision: string;
+  status: string;
+  ownership: Record<string, any>;
+  custom_fields: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NeMoCustomizationTargetList {
+  data: NeMoCustomizationTarget[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  error?: string;
+}
+
+// =============================================================================
+// Customization Config Types
+// =============================================================================
+
+export interface NeMoCustomizationConfig {
+  id: string;
+  name: string;
+  namespace: string;
+  target: {
+    id: string;
+    name: string;
+  };
+  params: {
+    training_type: string;
+    finetuning_type: string;
+    max_seq_length: number;
+    prompt_template: string;
+    training_precision: string;
+    lora?: {
+      adapter_dim: number;
+      alpha: number;
+      target_modules: string[];
+    };
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NeMoCustomizationConfigList {
+  data: NeMoCustomizationConfig[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  error?: string;
+}
+
+// =============================================================================
+// Evaluation Target Types
+// =============================================================================
+
+export interface NeMoEvaluationTarget {
+  id: string;
+  name: string;
+  namespace: string;
+  description: string;
+  type: string; // "data_source" | "llm_model" | "retriever_pipeline" | "rag_pipeline"
+  params: {
+    // For LLM Model targets
+    endpoint?: string;
+    model?: string;
+    api_key?: string;
+
+    // For Data Source targets
+    dataset?: string;
+    rows?: any[];
+
+    // For Retriever Pipeline targets
+    embedding_model?: string;
+    re_ranker?: string;
+
+    // For RAG Pipeline targets
+    retriever?: any;
+    generator?: any;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NeMoEvaluationTargetList {
+  data: NeMoEvaluationTarget[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  error?: string;
+}
+
+// =============================================================================
+// Evaluation Config Types
+// =============================================================================
+
+export interface NeMoEvaluationConfig {
+  id: string;
+  name: string;
+  namespace: string;
+  target?: {
+    id: string;
+    name: string;
+  };
+  params: {
+    evaluation_type: string; // "agentic" | "bfcl" | "bigcode" | "custom" | "lm_harness" | "rag" | "retriever"
+    metrics?: string[];
+    task?: string;
+    dataset?: string;
+
+    // For custom evaluations
+    custom_metrics?: any[];
+
+    // For LM Harness evaluations
+    tasks?: string[];
+
+    // For RAG evaluations
+    retrieval_metrics?: string[];
+    generation_metrics?: string[];
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NeMoEvaluationConfigList {
+  data: NeMoEvaluationConfig[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+  error?: string;
+}
+
+// =============================================================================
 // Job Types (Customizer) - Real NeMo API Structure
 // =============================================================================
 
