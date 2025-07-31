@@ -38,60 +38,69 @@ class LMEvalHarnessConfigInput:
                     "description": "Create a new LM Evaluation Harness configuration",
                     "display_name": "Create LM Evaluation Config",
                     "field_order": [
-                        "01_config_name",
-                        "02_task_name",
-                        "03_hf_token",
-                        "04_few_shot_examples",
-                        "05_batch_size",
-                        "06_bootstrap_iterations",
-                        "07_limit",
-                        "08_top_p",
-                        "09_top_k",
-                        "10_temperature",
-                        "11_tokens_to_generate",
+                        "01_evaluation_type",
+                        "02_config_name",
+                        "03_task_name",
+                        "04_hf_token",
+                        "05_few_shot_examples",
+                        "06_batch_size",
+                        "07_bootstrap_iterations",
+                        "08_limit",
+                        "09_top_p",
+                        "10_top_k",
+                        "11_temperature",
+                        "12_tokens_to_generate",
                     ],
                     "template": {
-                        "01_config_name": StrInput(
+                        "01_evaluation_type": DropdownInput(
+                            name="evaluation_type",
+                            display_name="Evaluation Type",
+                            options=["LM Evaluation Harness", "Similarity Metrics", "Custom Evaluation"],
+                            value="LM Evaluation Harness",
+                            required=True,
+                            real_time_refresh=True,
+                        ),
+                        "02_config_name": StrInput(
                             name="config_name",
                             display_name="Config Name",
                             info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
                             required=True,
                         ),
-                        "02_task_name": StrInput(
+                        "03_task_name": StrInput(
                             name="task_name",
                             display_name="Task Name",
                             info="Task from https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.3/lm_eval/tasks#tasks",
                             value="gsm8k",
-                            required=True,
+                            required=False,
                         ),
-                        "03_hf_token": StrInput(
+                        "04_hf_token": StrInput(
                             name="hf_token",
                             display_name="HuggingFace Token",
                             info="Token for accessing HuggingFace to fetch the evaluation dataset.",
-                            required=True,
+                            required=False,
                         ),
-                        "04_few_shot_examples": IntInput(
+                        "05_few_shot_examples": IntInput(
                             name="few_shot_examples",
                             display_name="Few-shot Examples",
                             info="The number of few-shot examples before the input.",
                             value=5,
                             required=False,
                         ),
-                        "05_batch_size": IntInput(
+                        "06_batch_size": IntInput(
                             name="batch_size",
                             display_name="Batch Size",
                             info="The batch size used for evaluation.",
                             value=16,
                             required=False,
                         ),
-                        "06_bootstrap_iterations": IntInput(
+                        "07_bootstrap_iterations": IntInput(
                             name="bootstrap_iterations",
                             display_name="Bootstrap Iterations",
                             info="The number of iterations for bootstrap statistics.",
                             value=100000,
                             required=False,
                         ),
-                        "07_limit": IntInput(
+                        "08_limit": IntInput(
                             name="limit",
                             display_name="Limit",
                             info=(
@@ -101,7 +110,7 @@ class LMEvalHarnessConfigInput:
                             value=-1,
                             required=False,
                         ),
-                        "08_top_p": FloatInput(
+                        "09_top_p": FloatInput(
                             name="top_p",
                             display_name="Top_p",
                             info=(
@@ -111,14 +120,14 @@ class LMEvalHarnessConfigInput:
                             value=0.0,
                             required=False,
                         ),
-                        "09_top_k": IntInput(
+                        "10_top_k": IntInput(
                             name="top_k",
                             display_name="Top_k",
                             info="The top_k value to be used during generation sampling.",
                             value=1,
                             required=False,
                         ),
-                        "10_temperature": SliderInput(
+                        "11_temperature": SliderInput(
                             name="temperature",
                             display_name="Temperature",
                             range_spec=RangeSpec(min=0.0, max=1.0, step=0.01),
@@ -126,7 +135,7 @@ class LMEvalHarnessConfigInput:
                             info="The temperature to be used during generation sampling (0.0 to 1.0).",
                             required=False,
                         ),
-                        "11_tokens_to_generate": IntInput(
+                        "12_tokens_to_generate": IntInput(
                             name="tokens_to_generate",
                             display_name="Max Tokens",
                             info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
@@ -153,18 +162,27 @@ class SimilarityMetricsConfigInput:
                     "description": "Create a new Similarity Metrics configuration",
                     "display_name": "Create Similarity Metrics Config",
                     "field_order": [
-                        "01_config_name",
-                        "02_scorers",
-                        "03_num_samples",
+                        "01_evaluation_type",
+                        "02_config_name",
+                        "04_scorers",
+                        "05_num_samples",
                     ],
                     "template": {
-                        "01_config_name": StrInput(
+                        "01_evaluation_type": DropdownInput(
+                            name="evaluation_type",
+                            display_name="Evaluation Type",
+                            options=["LM Evaluation Harness", "Similarity Metrics", "Custom Evaluation"],
+                            value="Similarity Metrics",
+                            required=True,
+                            real_time_refresh=True,
+                        ),
+                        "02_config_name": StrInput(
                             name="config_name",
                             display_name="Config Name",
                             info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
                             required=True,
                         ),
-                        "02_scorers": MultiselectInput(
+                        "04_scorers": MultiselectInput(
                             name="scorers",
                             display_name="Scorers",
                             info="List of Scorers for evaluation.",
@@ -172,7 +190,7 @@ class SimilarityMetricsConfigInput:
                             value=["accuracy", "bleu", "rouge", "em", "bert", "f1"],
                             required=True,
                         ),
-                        "03_num_samples": IntInput(
+                        "05_num_samples": IntInput(
                             name="num_samples",
                             display_name="Number of Samples",
                             info="Number of samples to run inference on from the input_file.",
@@ -199,19 +217,28 @@ class CustomEvaluationConfigInput:
                     "description": "Create a new Custom Evaluation configuration",
                     "display_name": "Create Custom Evaluation Config",
                     "field_order": [
-                        "01_config_name",
-                        "02_evaluation_prompt",
-                        "03_metrics",
-                        "04_batch_size",
+                        "01_evaluation_type",
+                        "02_config_name",
+                        "04_evaluation_prompt",
+                        "05_metrics",
+                        "06_batch_size",
                     ],
                     "template": {
-                        "01_config_name": StrInput(
+                        "01_evaluation_type": DropdownInput(
+                            name="evaluation_type",
+                            display_name="Evaluation Type",
+                            options=["LM Evaluation Harness", "Similarity Metrics", "Custom Evaluation"],
+                            value="Custom Evaluation",
+                            required=True,
+                            real_time_refresh=True,
+                        ),
+                        "02_config_name": StrInput(
                             name="config_name",
                             display_name="Config Name",
                             info="Name for the new evaluation configuration (e.g., my-eval-config@v1.0.0)",
                             required=True,
                         ),
-                        "02_evaluation_prompt": StrInput(
+                        "04_evaluation_prompt": StrInput(
                             name="evaluation_prompt",
                             display_name="Evaluation Prompt",
                             info=(
@@ -221,7 +248,7 @@ class CustomEvaluationConfigInput:
                             value="Evaluate the following response: {{response}}",
                             required=True,
                         ),
-                        "03_metrics": MultiselectInput(
+                        "05_metrics": MultiselectInput(
                             name="metrics",
                             display_name="Metrics",
                             info="List of metrics to evaluate.",
@@ -229,7 +256,7 @@ class CustomEvaluationConfigInput:
                             value=["accuracy"],
                             required=True,
                         ),
-                        "04_batch_size": IntInput(
+                        "06_batch_size": IntInput(
                             name="batch_size",
                             display_name="Batch Size",
                             info="The batch size used for evaluation.",
@@ -293,10 +320,25 @@ class NvidiaEvaluatorComponent(Component):
                 self.base_url = None
             if not hasattr(self, "namespace"):
                 self.namespace = None
+            # Initialize dialog state
+            self._reset_dialog_state()
         except Exception:
             logger.exception("Error during NvidiaEvaluatorComponent initialization")
             # Re-raise the exception to prevent silent failures
             raise
+
+    def __getattribute__(self, name):
+        """Override __getattribute__ to always reset dialog state when component is accessed."""
+        if name == "inputs":
+            logger.debug("Component inputs accessed - resetting dialog state")
+            self._reset_dialog_state()
+        return super().__getattribute__(name)
+
+    def build(self, *args, **kwargs):
+        """Override build to always reset dialog state when component is built."""
+        logger.debug("Component build called - resetting dialog state")
+        self._reset_dialog_state()
+        return super().build(*args, **kwargs)
 
     def get_auth_headers(self):
         """Get authentication headers for API requests."""
@@ -468,7 +510,7 @@ class NvidiaEvaluatorComponent(Component):
             refresh_button=True,
             required=True,
             combobox=True,
-            dialog_inputs=asdict(EvaluationTypeSelectionInput()),
+            dialog_inputs=asdict(LMEvalHarnessConfigInput()),
         ),
         DropdownInput(
             name="existing_dataset",
@@ -614,18 +656,25 @@ class NvidiaEvaluatorComponent(Component):
     ) -> tuple[list[str], list[dict[str, Any]]]:
         """Fetch available evaluation configurations with metadata."""
         try:
+            logger.debug(f"Fetching evaluation configs for target: {target_name}")
             nemo_client = self.get_nemo_client()
             response = await nemo_client.evaluation.configs.list(extra_headers=self.get_auth_headers())
             configs = []
             configs_metadata = []
 
+            logger.debug(f"Response type: {type(response)}")
+            logger.debug(f"Response has data: {hasattr(response, 'data')}")
+
             if hasattr(response, "data") and response.data:
+                logger.debug(f"Found {len(response.data)} configs in response")
                 for config in response.data:
                     config_name = getattr(config, "name", "")
                     config_type = getattr(config, "type", "")
                     config_params = getattr(config, "params", {})
                     config_created = getattr(config, "created", None)
                     config_updated = getattr(config, "updated", None)
+
+                    logger.debug(f"Processing config: {config_name} (type: {config_type})")
 
                     # If target_name is provided, filter by target (if configs are target-specific)
                     if target_name:
@@ -640,8 +689,11 @@ class NvidiaEvaluatorComponent(Component):
                             config_type, config_params, config_created, config_updated
                         )
                         configs_metadata.append(metadata)
+                        logger.debug(f"Added config: {config_name}")
 
+                logger.debug(f"Returning {len(configs)} configs")
                 return configs, configs_metadata
+            logger.debug("No configs found in response")
             return configs, configs_metadata  # noqa: TRY300
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning("Failed to fetch evaluation configs: %s", exc)
@@ -702,52 +754,15 @@ class NvidiaEvaluatorComponent(Component):
         return metadata
 
     async def update_build_config(self, build_config, field_value, field_name=None):
-        """Updates the component's configuration based on the selected option."""
+        """Update the build configuration based on field changes."""
         try:
-            message = f"Updating build config: field_name={field_name}, field_value={field_value}"
-            logger.info(message)
-
-            # Defensive check - if auth_token is not set, don't try to fetch data
-            if not hasattr(self, "auth_token") or not self.auth_token:
-                logger.info("Auth token not set, skipping data fetching")
-                if hasattr(self, "log"):
-                    self.log("Authentication token not set, please configure component before refreshing data")
-                return build_config
-
-            # Handle base_url changes
-            if field_name == "base_url":
-                # Defensive check for base_url
-                if not hasattr(self, "base_url") or not self.base_url:
-                    logger.warning("Base URL not set, cannot fetch data")
-                    if hasattr(self, "log"):
-                        self.log("Base URL not configured, please set Base API URL before refreshing data")
-                    return build_config
-
-                base_url = self.base_url.rstrip("/")
-
-                # Fetch evaluation targets
-                targets, targets_metadata = await self.fetch_available_evaluation_targets()
-                build_config["target"]["options"] = targets
-                build_config["target"]["options_metadata"] = targets_metadata
-
-                # Fetch evaluation configs
-                configs, configs_metadata = await self.fetch_available_evaluation_configs()
-                build_config["config"]["options"] = configs
-                build_config["config"]["options_metadata"] = configs_metadata
-
-                # Fetch existing datasets
-                existing_datasets, existing_datasets_metadata = await self.fetch_existing_datasets(base_url)
-                build_config["existing_dataset"]["options"] = existing_datasets
-                build_config["existing_dataset"]["options_metadata"] = existing_datasets_metadata
-
-                # Debug logging
-                logger.debug("Updated build_config for base_url change:")
-                logger.debug("  Targets: %s options, %s metadata", len(targets), len(targets_metadata))
-                logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
-                logger.debug("  Datasets: %s options", len(existing_datasets))
+            logger.debug(
+                f"update_build_config called - field_name: {field_name}, "
+                f"field_value: {field_value}, type: {type(field_value)}"
+            )
 
             # Handle target refresh
-            elif field_name == "target":
+            if field_name == "target":
                 # Defensive check for base_url
                 if not hasattr(self, "base_url") or not self.base_url:
                     logger.warning("Base URL not set, cannot fetch targets")
@@ -755,50 +770,129 @@ class NvidiaEvaluatorComponent(Component):
                         self.log("Base URL not configured, please set Base API URL before refreshing targets")
                     return build_config
 
-                # Fetch evaluation targets
+                base_url = self.base_url.rstrip("/")
+                # Refresh target options
+                logger.info("Refreshing targets for field: %s", field_name)
                 targets, targets_metadata = await self.fetch_available_evaluation_targets()
                 build_config["target"]["options"] = targets
                 build_config["target"]["options_metadata"] = targets_metadata
-
-                # Update configs when target changes (if configs are target-specific)
-                if field_value:
-                    configs, configs_metadata = await self.fetch_available_evaluation_configs(field_value)
-                    build_config["config"]["options"] = configs
-                    build_config["config"]["options_metadata"] = configs_metadata
-
-                    # Debug logging
-                    logger.debug("Updated build_config for target change '%s':", field_value)
-                    logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
+                target_options = build_config["target"]["options"]
+                msg = f"Updated target options: {target_options}"
+                logger.info(msg)
+                if hasattr(self, "log"):
+                    self.log(f"Refreshed {len(target_options)} targets for evaluation")
 
             # Handle config refresh and dialog input changes
             elif field_name == "config":
+                logger.debug(f"Config field update - field_value: {field_value}, type: {type(field_value)}")
+                logger.debug(f"Current dialog state: {getattr(self, '_dialog_state', 'unknown')}")
+                logger.debug(f"Current selected type: {getattr(self, '_selected_evaluation_type', 'none')}")
+                logger.debug(f"Build config keys: {list(build_config.get('config', {}).keys())}")
+                if "dialog_inputs" in build_config.get("config", {}):
+                    logger.debug(f"Current dialog inputs: {build_config['config']['dialog_inputs']}")
+
+                # Handle config refresh (when user clicks refresh button)
+                if (
+                    field_value is None
+                    or field_value == ""
+                    or (isinstance(field_value, str) and field_value.strip() == "")
+                ):
+                    logger.debug("Config refresh requested - fetching available configs")
+                    # Fetch available configs (independent of target selection)
+                    configs, configs_metadata = await self.fetch_available_evaluation_configs()
+                    build_config["config"]["options"] = configs
+                    build_config["config"]["options_metadata"] = configs_metadata
+                    logger.debug(f"Fetched {len(configs)} configs")
+                    if hasattr(self, "log"):
+                        self.log(f"Refreshed {len(configs)} evaluation configurations")
+                    return build_config
+
                 # Handle dialog input changes - follow customizer pattern
                 if isinstance(field_value, dict):
-                    # Case 1: Evaluation type selection - switch to appropriate dialog
+                    logger.debug("Field value is a dict - checking for evaluation type selection")
+                    logger.debug(f"Field value keys: {list(field_value.keys())}")
+                    logger.debug(f"Field value content: {field_value}")
+                    # Case 1: Evaluation type selection - update field visibility
                     if "01_evaluation_type" in field_value:
-                        return self._switch_evaluation_dialog(build_config, field_value)
+                        evaluation_type = field_value["01_evaluation_type"]
+                        logger.debug(f"Found evaluation type selection: {evaluation_type}")
+                        return await self._update_dynamic_dialog_fields(build_config, evaluation_type)
+                    logger.debug("No '01_evaluation_type' key found in field_value")
 
                     # Case 2: New config creation - handle based on current dialog type
                     if "01_config_name" in field_value:
+                        logger.debug("Found config name in field_value - handling new config creation")
                         # Handle new config creation if needed
-                        pass
+
+                    # Case 3: Empty dict or dict without expected keys - might be a "Create New Config" request
+                    if not field_value or (not any(key.startswith("01_") for key in field_value)):
+                        logger.debug(
+                            "Field value is empty dict or doesn't contain expected keys - "
+                            "treating as 'Create New Config' request"
+                        )
+                        # Reset dialog state to type selection
+                        self._reset_dialog_state()
+
+                        # Set dialog inputs to LM Evaluation Harness (default full dialog)
+                        build_config["config"]["dialog_inputs"] = asdict(LMEvalHarnessConfigInput())
+
+                        logger.debug("Reset to LM Evaluation Harness dialog for 'Create New Config' (empty dict case)")
+
+                        # Fetch available configs for the current target
+                        if build_config.get("target", {}).get("value"):
+                            configs, configs_metadata = await self.fetch_available_evaluation_configs(
+                                build_config["target"]["value"]
+                            )
+                            build_config["config"]["options"] = configs
+                            build_config["config"]["options_metadata"] = configs_metadata
+                            logger.debug(f"Fetched {len(configs)} configs for target {build_config['target']['value']}")
+
+                        return build_config
                 else:
-                    # Fetch configs when config field is refreshed
-                    target_value = getattr(self, "target", None)
-                    configs, configs_metadata = await self.fetch_available_evaluation_configs(target_value)
-                    build_config["config"]["options"] = configs
-                    build_config["config"]["options_metadata"] = configs_metadata
+                    logger.debug("Field value is NOT a dict - this should trigger reset to full dialog")
+                    # SIMPLE APPROACH: Always reset to full dialog when user selects "Create New Config"
+                    # This handles all cases: empty value, string value, cancelled dialogs, etc.
 
-                    # Reset dialog to evaluation type selection when refreshed
-                    build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
+                    logger.debug("About to reset dialog state and set dialog inputs to full dialog")
 
-                    # Clear stored evaluation type
-                    if hasattr(self, "_selected_evaluation_type"):
-                        delattr(self, "_selected_evaluation_type")
+                    # Reset dialog state to type selection
+                    self._reset_dialog_state()
 
-                    # Debug logging
-                    logger.debug("Updated build_config for config refresh:")
-                    logger.debug("  Configs: %s options, %s metadata", len(configs), len(configs_metadata))
+                    # Set dialog inputs to LM Evaluation Harness (default full dialog)
+                    build_config["config"]["dialog_inputs"] = asdict(LMEvalHarnessConfigInput())
+
+                    logger.debug("Reset to LM Evaluation Harness dialog for 'Create New Config'")
+                    logger.debug(f"New dialog state: {self._dialog_state}")
+                    logger.debug(f"New selected type: {self._selected_evaluation_type}")
+
+                    # Fetch available configs for the current target
+                    if build_config.get("target", {}).get("value"):
+                        configs, configs_metadata = await self.fetch_available_evaluation_configs(
+                            build_config["target"]["value"]
+                        )
+                        build_config["config"]["options"] = configs
+                        build_config["config"]["options_metadata"] = configs_metadata
+                        logger.debug(f"Fetched {len(configs)} configs for target {build_config['target']['value']}")
+
+            # Handle dialog field changes directly (when field_name is the dialog field name)
+            elif field_name == "01_evaluation_type":
+                logger.debug(f"Dialog field change - evaluation type: {field_value}")
+                # Update the dialog fields based on the selected evaluation type
+                return await self._update_dynamic_dialog_fields(build_config, field_value)
+
+            # Handle config refresh button (alternative pattern)
+            elif field_name == "config" and (
+                field_value is None or field_value == "" or (isinstance(field_value, str) and field_value.strip() == "")
+            ):
+                logger.debug("Config refresh button clicked (alternative pattern)")
+                # Fetch available configs (independent of target selection)
+                configs, configs_metadata = await self.fetch_available_evaluation_configs()
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
+                logger.debug(f"Fetched {len(configs)} configs")
+                if hasattr(self, "log"):
+                    self.log(f"Refreshed {len(configs)} evaluation configurations")
+                return build_config
 
             # Handle existing dataset refresh
             elif field_name == "existing_dataset":
@@ -820,6 +914,29 @@ class NvidiaEvaluatorComponent(Component):
                 logger.info(msg)
                 if hasattr(self, "log"):
                     self.log(f"Refreshed {len(dataset_options)} datasets for evaluation")
+                return build_config
+
+            # Handle existing dataset refresh in dialog (when dialog opens or refresh button clicked)
+            elif field_name == "03_existing_dataset":
+                logger.debug("Dialog existing dataset refresh requested")
+                # Fetch available datasets
+                datasets, datasets_metadata = await self.fetch_existing_datasets()
+
+                # Update the dialog inputs to populate the existing_dataset field
+                if "dialog_inputs" in build_config.get("config", {}):
+                    dialog_inputs = build_config["config"]["dialog_inputs"]
+                    if "template" in dialog_inputs and "03_existing_dataset" in dialog_inputs["template"]:
+                        dialog_inputs["template"]["03_existing_dataset"]["options"] = datasets
+                        dialog_inputs["template"]["03_existing_dataset"]["options_metadata"] = datasets_metadata
+                        logger.debug(f"Updated dialog with {len(datasets)} datasets")
+                        if hasattr(self, "log"):
+                            self.log(f"Refreshed {len(datasets)} existing datasets in dialog")
+                    else:
+                        logger.warning("Dialog structure not ready for dataset refresh")
+                else:
+                    logger.warning("No dialog_inputs found for dataset refresh")
+
+                return build_config
 
             logger.info("Build config update completed successfully.")
         except (ValueError, AttributeError, ImportError, RuntimeError) as exc:
@@ -832,28 +949,100 @@ class NvidiaEvaluatorComponent(Component):
             return build_config
         return build_config
 
-    def _switch_evaluation_dialog(self, build_config: dict, field_value: dict) -> dict:
+    def get_template(self):
+        """Override get_template to always reset dialog state when component is accessed."""
+        logger.debug("Component template accessed - resetting dialog state")
+        self._reset_dialog_state()
+        return super().get_template()
+
+    @property
+    def dialog_inputs(self):
+        """Override dialog_inputs to always return fresh type selection dialog."""
+        logger.debug("Dialog inputs accessed - returning fresh type selection dialog")
+        self._reset_dialog_state()
+        return asdict(EvaluationTypeSelectionInput())
+
+    def get_dialog_inputs(self):
+        """Override to always return fresh type selection dialog."""
+        logger.debug("Getting dialog inputs - always returning fresh type selection dialog")
+        self._reset_dialog_state()
+        return asdict(EvaluationTypeSelectionInput())
+
+    def _force_dialog_reset(self, build_config: dict) -> dict:
+        """Force reset the dialog to type selection regardless of current state."""
+        logger.debug("Force resetting dialog to type selection")
+
+        # Reset dialog state to type selection
+        self._reset_dialog_state()
+
+        # Set dialog inputs to type selection
+        build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
+
+        logger.debug("Forced dialog reset completed")
+        return build_config
+
+    def _reset_dialog_state(self):
+        """Reset the dialog state to initial type selection."""
+        self._selected_evaluation_type = None
+        self._dialog_state = "type_selection"  # "type_selection", "config_creation"
+        logger.debug("Reset dialog state to type_selection - cleared selected type and set state to type_selection")
+
+    async def _update_dynamic_dialog_fields(self, build_config: dict, evaluation_type: str) -> dict:
+        """Update the dynamic dialog fields based on the selected evaluation type."""
+        logger.debug(f"Updating dynamic dialog fields for evaluation type: {evaluation_type}")
+
+        # Store the selected evaluation type
+        self._selected_evaluation_type = evaluation_type
+        self._dialog_state = "config_creation"
+
+        # Switch to the appropriate dialog based on evaluation type
+        if evaluation_type == "LM Evaluation Harness":
+            logger.debug("Switching to LM Evaluation Harness dialog")
+            build_config["config"]["dialog_inputs"] = asdict(LMEvalHarnessConfigInput())
+        elif evaluation_type == "Similarity Metrics":
+            logger.debug("Switching to Similarity Metrics dialog")
+            build_config["config"]["dialog_inputs"] = asdict(SimilarityMetricsConfigInput())
+            # Note: Dataset selection removed - all configs are template-based
+        elif evaluation_type == "Custom Evaluation":
+            logger.debug("Switching to Custom Evaluation dialog")
+            build_config["config"]["dialog_inputs"] = asdict(CustomEvaluationConfigInput())
+            # Note: Dataset selection removed - all configs are template-based
+        else:
+            logger.warning(f"Unknown evaluation type: {evaluation_type}")
+            # Default to evaluation type selection dialog
+            build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
+            self._dialog_state = "type_selection"
+
+        return build_config
+
+    async def _switch_evaluation_dialog(self, build_config: dict, field_value: dict) -> dict:
         """Switch to the appropriate evaluation dialog based on evaluation type selection."""
         evaluation_type = field_value["01_evaluation_type"]
 
+        logger.debug(f"Switching evaluation dialog - selected type: {evaluation_type}")
+        logger.debug(f"Previous dialog state: {getattr(self, '_dialog_state', 'unknown')}")
+
         # Store the selected evaluation type for later use
-        if not hasattr(self, "_selected_evaluation_type"):
-            self._selected_evaluation_type = evaluation_type
-        else:
-            self._selected_evaluation_type = evaluation_type
+        self._selected_evaluation_type = evaluation_type
+        self._dialog_state = "config_creation"
 
         # Switch to the appropriate dialog based on evaluation type
         if evaluation_type == "LM Evaluation Harness":
             build_config["config"]["dialog_inputs"] = asdict(LMEvalHarnessConfigInput())
         elif evaluation_type == "Similarity Metrics":
             build_config["config"]["dialog_inputs"] = asdict(SimilarityMetricsConfigInput())
+            # Populate existing dataset field for Similarity Metrics
+            await self._populate_dialog_dataset_field(build_config)
         elif evaluation_type == "Custom Evaluation":
             build_config["config"]["dialog_inputs"] = asdict(CustomEvaluationConfigInput())
+            # Populate existing dataset field for Custom Evaluation
+            await self._populate_dialog_dataset_field(build_config)
         else:
             # Default to evaluation type selection dialog
             build_config["config"]["dialog_inputs"] = asdict(EvaluationTypeSelectionInput())
+            self._dialog_state = "type_selection"
 
-        logger.info(f"Switched to {evaluation_type} dialog")
+        logger.info(f"Switched to {evaluation_type} dialog (state: {self._dialog_state})")
         return build_config
 
     async def evaluate(self) -> Data:
@@ -939,143 +1128,134 @@ class NvidiaEvaluatorComponent(Component):
     async def _create_new_evaluation_config(self, config_data: dict) -> str:
         """Create a new evaluation configuration and return its ID."""
         try:
-            nemo_client = self.get_nemo_client()
-
             # Determine evaluation type from stored selection or config data
             evaluation_type = getattr(self, "_selected_evaluation_type", None)
             if not evaluation_type:
                 # Fallback to config data if not stored
                 evaluation_type = config_data.get("01_evaluation_type", "LM Evaluation Harness")
 
+            # Get config name
+            config_name = config_data.get("02_config_name", "evaluation_config")
+
+            # Note: Dataset selection removed from dialog - all configs are template-based
+            # Users can select datasets at runtime when running evaluations
+            dataset_url = None
+
+            # Build evaluation parameters based on type
             if evaluation_type == "LM Evaluation Harness":
-                # Build LM Evaluation Harness config
-                task_name = config_data.get("02_task_name", "gsm8k")
-                hf_token = config_data.get("03_hf_token")
-
-                if not hf_token:
-                    error_msg = "HuggingFace token is required for LM Evaluation Harness"
-                    raise ValueError(error_msg)
-
-                config_params = {
-                    "hf_token": hf_token,
-                    "use_greedy": True,
-                    "top_p": config_data.get("08_top_p", 0.0),
-                    "top_k": config_data.get("09_top_k", 1),
-                    "temperature": config_data.get("10_temperature", 0.0),
-                    "stop": [],
-                    "tokens_to_generate": config_data.get("11_tokens_to_generate", 1024),
-                }
-
-                # Create config
-                response = await nemo_client.evaluation.configs.create(
-                    type="lm_eval_harness",
-                    namespace=getattr(self, "namespace", "default"),
-                    tasks={
-                        task_name: {
-                            "params": {
-                                "num_fewshot": config_data.get("04_few_shot_examples", 5),
-                                "batch_size": config_data.get("05_batch_size", 16),
-                                "bootstrap_iters": config_data.get("06_bootstrap_iterations", 100000),
-                                "limit": config_data.get("07_limit", -1),
-                            },
-                        }
-                    },
-                    params=config_params,
-                    extra_headers=self.get_auth_headers(),
-                )
-
+                params = self._build_lm_eval_harness_params(config_data)
             elif evaluation_type == "Similarity Metrics":
-                # Build Similarity Metrics config
-                scorers = config_data.get("02_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
-
-                # Create metrics in SDK format
-                metrics_dict = {}
-                for score in scorers:
-                    metric_name = score.lower()
-                    if metric_name == "em":
-                        metrics_dict["exact_match"] = {
-                            "type": "string-check",
-                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                        }
-                    else:
-                        metrics_dict[metric_name] = {
-                            "type": "string-check",
-                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                        }
-
-                # Create config
-                response = await nemo_client.evaluation.configs.create(
-                    type="custom",
-                    namespace=getattr(self, "namespace", "default"),
-                    params={"parallelism": 8},
-                    tasks={
-                        "default_task": {
-                            "type": "completion",
-                            "params": {"template": {"prompt": "{{item.prompt}}"}},
-                            "metrics": metrics_dict,
-                            "dataset": {"files_url": "placeholder"},  # Will be updated when used
-                        }
-                    },
-                    extra_headers=self.get_auth_headers(),
-                )
-
+                params = self._build_similarity_metrics_params(config_data)
             elif evaluation_type == "Custom Evaluation":
-                # Build Custom Evaluation config
-                evaluation_prompt = config_data.get(
-                    "02_evaluation_prompt", "Evaluate the following response: {{response}}"
-                )
-                metrics = config_data.get("03_metrics", ["accuracy"])
-                batch_size = config_data.get("04_batch_size", 16)
-
-                # Create metrics in SDK format
-                metrics_dict = {}
-                for metric in metrics:
-                    metric_name = metric.lower()
-                    if metric_name == "custom":
-                        # For custom metrics, we'll use a simple string check
-                        metrics_dict["custom_evaluation"] = {
-                            "type": "string-check",
-                            "params": {"check": ["{{response}}", "!=", ""]},
-                        }
-                    elif metric_name == "em":
-                        metrics_dict["exact_match"] = {
-                            "type": "string-check",
-                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                        }
-                    else:
-                        metrics_dict[metric_name] = {
-                            "type": "string-check",
-                            "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
-                        }
-
-                # Create config
-                response = await nemo_client.evaluation.configs.create(
-                    type="custom",
-                    namespace=getattr(self, "namespace", "default"),
-                    params={"parallelism": batch_size},
-                    tasks={
-                        "custom_task": {
-                            "type": "completion",
-                            "params": {"template": {"prompt": evaluation_prompt}},
-                            "metrics": metrics_dict,
-                            "dataset": {"files_url": "placeholder"},  # Will be updated when used
-                        }
-                    },
-                    extra_headers=self.get_auth_headers(),
-                )
-
+                params = self._build_custom_evaluation_params(config_data)
             else:
                 error_msg = f"Unsupported evaluation type: {evaluation_type}"
                 raise ValueError(error_msg)
 
-            config_id = response.id
-            self.log(f"Created new evaluation config with ID: {config_id}")
-            return config_id  # noqa: TRY300
+            # Use the new template system to create config
+            return await self.create_config(config_name, evaluation_type, params, dataset_url)
 
         except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
             error_msg = f"Error creating evaluation config: {exc}"
             self.log(error_msg)
             raise ValueError(error_msg) from exc
+
+    def _build_lm_eval_harness_params(self, config_data: dict) -> dict:
+        """Build parameters for LM Evaluation Harness config."""
+        task_name = config_data.get("05_task_name", "gsm8k")
+        hf_token = config_data.get("06_hf_token")
+
+        if not hf_token:
+            error_msg = "HuggingFace token is required for LM Evaluation Harness"
+            raise ValueError(error_msg)
+
+        return {
+            "hf_token": hf_token,
+            "use_greedy": True,
+            "top_p": config_data.get("11_top_p", 0.0),
+            "top_k": config_data.get("12_top_k", 1),
+            "temperature": config_data.get("13_temperature", 0.0),
+            "stop": [],
+            "tokens_to_generate": config_data.get("14_tokens_to_generate", 1024),
+            "tasks": {
+                task_name: {
+                    "params": {
+                        "num_fewshot": config_data.get("07_few_shot_examples", 5),
+                        "batch_size": config_data.get("08_batch_size", 16),
+                        "bootstrap_iters": config_data.get("09_bootstrap_iterations", 100000),
+                        "limit": config_data.get("10_limit", -1),
+                    },
+                }
+            },
+        }
+
+    def _build_similarity_metrics_params(self, config_data: dict) -> dict:
+        """Build parameters for Similarity Metrics config."""
+        scorers = config_data.get("04_scorers", ["accuracy", "bleu", "rouge", "em", "bert", "f1"])
+
+        # Create metrics in SDK format
+        metrics_dict = {}
+        for score in scorers:
+            metric_name = score.lower()
+            if metric_name == "em":
+                metrics_dict["exact_match"] = {
+                    "type": "string-check",
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                }
+            else:
+                metrics_dict[metric_name] = {
+                    "type": "string-check",
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                }
+
+        return {
+            "parallelism": 8,
+            "tasks": {
+                "default_task": {
+                    "type": "completion",
+                    "params": {"template": {"prompt": "{{item.prompt}}"}},
+                    "metrics": metrics_dict,
+                }
+            },
+        }
+
+    def _build_custom_evaluation_params(self, config_data: dict) -> dict:
+        """Build parameters for Custom Evaluation config."""
+        evaluation_prompt = config_data.get("04_evaluation_prompt", "Evaluate the following response: {{response}}")
+        metrics = config_data.get("05_metrics", ["accuracy"])
+        batch_size = config_data.get("06_batch_size", 16)
+
+        # Create metrics in SDK format
+        metrics_dict = {}
+        for metric in metrics:
+            metric_name = metric.lower()
+            if metric_name == "custom":
+                # For custom metrics, we'll use a simple string check
+                metrics_dict["custom_evaluation"] = {
+                    "type": "string-check",
+                    "params": {"check": ["{{response}}", "!=", ""]},
+                }
+            elif metric_name == "em":
+                metrics_dict["exact_match"] = {
+                    "type": "string-check",
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                }
+            else:
+                metrics_dict[metric_name] = {
+                    "type": "string-check",
+                    "params": {"check": ["{{response}}", "==", "{{item.ideal_response}}"]},
+                }
+
+        return {
+            "parallelism": batch_size,
+            "tasks": {
+                "custom_task": {
+                    "type": "completion",
+                    "params": {"template": {"prompt": evaluation_prompt}},
+                    "metrics": metrics_dict,
+                }
+            },
+        }
 
     async def _get_target_id(self, target_name: str) -> str:
         """Get target ID from target name."""
@@ -1293,3 +1473,271 @@ class NvidiaEvaluatorComponent(Component):
             except (asyncio.CancelledError, RuntimeError, OSError):
                 logger.exception("Unexpected error while checking evaluation job status")
                 await asyncio.sleep(poll_interval_seconds)
+
+    def extract_dataset_id(self, dataset_url: str) -> str:
+        """Extract dataset ID from HF URL for naming conventions.
+
+        Args:
+            dataset_url: HuggingFace dataset URL
+
+        Returns:
+            Dataset ID for use in config naming
+        """
+        # hf://datasets/default/my-dataset/v1 -> my-dataset_v1
+        # hf://datasets/namespace/dataset-name/version -> dataset-name_version
+        parts = dataset_url.split("/")
+        min_parts_for_dataset_id = 4
+        if len(parts) >= min_parts_for_dataset_id:
+            dataset_name = parts[-2]
+            version = parts[-1]
+            return f"{dataset_name}_{version}"
+        return "unknown_dataset"
+
+    async def create_config(
+        self, config_name: str, evaluation_type: str, params: dict, dataset_url: str | None = None
+    ) -> str:
+        """Create config with optional dataset - defaults to template if no dataset provided.
+
+        Args:
+            config_name: Name for the configuration
+            evaluation_type: Type of evaluation (LM Evaluation Harness, Similarity Metrics, Custom Evaluation)
+            params: Evaluation parameters
+            dataset_url: Optional dataset URL for direct config creation
+
+        Returns:
+            Config ID from NeMo API
+        """
+        if dataset_url:
+            # Direct config creation with specific dataset
+            return await self.create_direct_config(config_name, evaluation_type, params, dataset_url)
+        # Template config creation (default behavior)
+        return await self.create_template_config(config_name, evaluation_type, params)
+
+    async def create_template_config(self, config_name: str, evaluation_type: str, params: dict) -> str:
+        """Create template config with user-provided name.
+
+        Args:
+            config_name: Name for the configuration
+            evaluation_type: Type of evaluation
+            params: Evaluation parameters
+
+        Returns:
+            Template config ID from NeMo API
+        """
+        try:
+            nemo_client = self.get_nemo_client()
+
+            # Generate template config with placeholder dataset
+            template_config = {
+                "name": f"{config_name}_template",
+                "type": evaluation_type,
+                "params": params,
+                "tasks": {"template_task": {"dataset": {"files_url": "hf://datasets/template/placeholder"}}},
+            }
+
+            # Create via NeMo API
+            response = await nemo_client.evaluation.configs.create(
+                type=self._get_config_type(evaluation_type),
+                namespace=getattr(self, "namespace", "default"),
+                params=params,
+                tasks=template_config["tasks"],
+                extra_headers=self.get_auth_headers(),
+            )
+
+            config_id = response.id
+            self.log(f"Created template config with ID: {config_id}")
+            return config_id
+
+        except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error creating template config: {exc}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+        else:
+            return config_id
+
+    async def create_direct_config(self, config_name: str, evaluation_type: str, params: dict, dataset_url: str) -> str:
+        """Create direct config with specific dataset.
+
+        Args:
+            config_name: Name for the configuration
+            evaluation_type: Type of evaluation
+            params: Evaluation parameters
+            dataset_url: Dataset URL for the config
+
+        Returns:
+            Direct config ID from NeMo API
+        """
+        try:
+            nemo_client = self.get_nemo_client()
+
+            # Extract dataset ID for naming
+            dataset_id = self.extract_dataset_id(dataset_url)
+            direct_config_name = f"{config_name}_dataset_{dataset_id}"
+
+            # Create direct config with specific dataset
+            direct_config = {
+                "name": direct_config_name,
+                "type": evaluation_type,
+                "params": params,
+                "tasks": {"main_task": {"dataset": {"files_url": dataset_url}}},
+            }
+
+            # Create via NeMo API
+            response = await nemo_client.evaluation.configs.create(
+                type=self._get_config_type(evaluation_type),
+                namespace=getattr(self, "namespace", "default"),
+                params=params,
+                tasks=direct_config["tasks"],
+                extra_headers=self.get_auth_headers(),
+            )
+
+            config_id = response.id
+            self.log(f"Created direct config with ID: {config_id}")
+
+        except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error creating direct config: {exc}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+        else:
+            return config_id
+
+    async def create_runtime_config(self, template_config_id: str, dataset_url: str, config_name: str) -> str:
+        """Create runtime config from template with specific dataset.
+
+        Args:
+            template_config_id: ID of the template config
+            dataset_url: Dataset URL for the runtime config
+            config_name: Base name for the runtime config
+
+        Returns:
+            Runtime config ID from NeMo API
+        """
+        try:
+            # Check if runtime config already exists
+            dataset_id = self.extract_dataset_id(dataset_url)
+            existing_config = await self.find_runtime_config(template_config_id, dataset_id)
+            if existing_config:
+                self.log(f"Found existing runtime config: {existing_config['id']}")
+                return existing_config["id"]
+
+            # Fetch template config
+            nemo_client = self.get_nemo_client()
+            template_config = await nemo_client.evaluation.configs.retrieve(
+                config_id=template_config_id,
+                extra_headers=self.get_auth_headers(),
+            )
+
+            # Generate runtime config name
+            runtime_name = f"{config_name}_dataset_{dataset_id}"
+
+            # Create runtime config by copying template and replacing dataset
+            runtime_config = self._copy_template_config(template_config, dataset_url, runtime_name)
+
+            # Create via NeMo API
+            response = await nemo_client.evaluation.configs.create(
+                type=runtime_config["type"],
+                namespace=getattr(self, "namespace", "default"),
+                params=runtime_config["params"],
+                tasks=runtime_config["tasks"],
+                extra_headers=self.get_auth_headers(),
+            )
+
+            config_id = response.id
+            self.log(f"Created runtime config with ID: {config_id}")
+
+        except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            error_msg = f"Error creating runtime config: {exc}"
+            self.log(error_msg)
+            raise ValueError(error_msg) from exc
+        else:
+            return config_id
+
+    async def find_runtime_config(self, template_config_id: str, dataset_id: str) -> dict | None:
+        """Find existing runtime config for template + dataset combination.
+
+        Args:
+            template_config_id: ID of the template config
+            dataset_id: Dataset ID to search for
+
+        Returns:
+            Runtime config dict if found, None otherwise
+        """
+        try:
+            nemo_client = self.get_nemo_client()
+
+            # Get template config to extract base name
+            template_config = await nemo_client.evaluation.configs.retrieve(
+                config_id=template_config_id,
+                extra_headers=self.get_auth_headers(),
+            )
+
+            base_name = template_config.name.replace("_template", "")
+            expected_name = f"{base_name}_dataset_{dataset_id}"
+
+            # List all configs and find matching one
+            response = await nemo_client.evaluation.configs.list(
+                extra_headers=self.get_auth_headers(),
+            )
+
+            if hasattr(response, "data") and response.data:
+                for config in response.data:
+                    if getattr(config, "name", "") == expected_name:
+                        return {
+                            "id": getattr(config, "id", ""),
+                            "name": getattr(config, "name", ""),
+                            "type": getattr(config, "type", ""),
+                        }
+
+            return None
+
+        except (NeMoMicroservicesError, httpx.HTTPStatusError, httpx.RequestError) as exc:
+            self.log(f"Error finding runtime config: {exc}")
+            return None
+        else:
+            return None
+
+    def _get_config_type(self, evaluation_type: str) -> str:
+        """Get NeMo config type from evaluation type.
+
+        Args:
+            evaluation_type: Human-readable evaluation type
+
+        Returns:
+            NeMo API config type
+        """
+        type_mapping = {
+            "LM Evaluation Harness": "lm_eval_harness",
+            "Similarity Metrics": "custom",
+            "Custom Evaluation": "custom",
+        }
+        return type_mapping.get(evaluation_type, "custom")
+
+    def _copy_template_config(self, template_config, dataset_url: str, runtime_name: str) -> dict:
+        """Copy template config and replace dataset.
+
+        Args:
+            template_config: Template config from NeMo API
+            dataset_url: Dataset URL for runtime config
+            runtime_name: Name for the runtime config
+
+        Returns:
+            Runtime config dict
+        """
+        # Convert template config to dict if needed
+        template_dict = template_config.model_dump() if hasattr(template_config, "model_dump") else template_config
+
+        # Create runtime config by copying template
+        runtime_config = {
+            "name": runtime_name,
+            "type": template_dict.get("type", "custom"),
+            "params": template_dict.get("params", {}),
+            "tasks": {},
+        }
+
+        # Copy tasks and replace dataset URLs
+        for task_name, task_config in template_dict.get("tasks", {}).items():
+            runtime_config["tasks"][task_name] = task_config.copy()
+            if "dataset" in runtime_config["tasks"][task_name]:
+                runtime_config["tasks"][task_name]["dataset"]["files_url"] = dataset_url
+
+        return runtime_config

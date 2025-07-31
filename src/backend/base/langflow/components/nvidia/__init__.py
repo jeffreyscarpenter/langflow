@@ -2,6 +2,7 @@ import sys
 
 from .nvidia import NVIDIAModelComponent
 from .nvidia_customizer import NvidiaCustomizerComponent
+from .nvidia_data_preparation import NeMoDataPreparationComponent
 from .nvidia_embedding import NVIDIAEmbeddingsComponent
 from .nvidia_evaluator import NvidiaEvaluatorComponent
 from .nvidia_ingest import NvidiaIngestComponent
@@ -13,6 +14,7 @@ if sys.platform == "win32":
     __all__ = [
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
+        "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
         "NvidiaIngestComponent",
@@ -23,6 +25,7 @@ else:
     __all__ = [
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
+        "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
         "NvidiaIngestComponent",

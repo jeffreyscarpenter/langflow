@@ -1,3 +1,3 @@
-from .arize_ai_datastore import ArizeAIDatastoreComponent
+from .arize_dataset import ArizeAIDatastoreComponent
 
 __all__ = ["ArizeAIDatastoreComponent"]

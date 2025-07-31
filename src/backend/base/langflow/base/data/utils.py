@@ -18,6 +18,7 @@ TEXT_FILE_TYPES = [
     "mdx",
     "csv",
     "json",
+    "jsonl",
     "yaml",
     "yml",
     "xml",
@@ -151,6 +152,13 @@ def parse_text_file_to_data(file_path: str, *, silent_errors: bool) -> Data | No
             elif isinstance(loaded_json, list):
                 loaded_json = [normalize_text(item) if isinstance(item, str) else item for item in loaded_json]
             text = orjson.dumps(loaded_json).decode("utf-8")
+
+        elif file_path.endswith(".jsonl"):
+            import jsonlines
+            with jsonlines.open(file_path) as reader:
+                records = list(reader)
+            # Return as a list of records, similar to how CSV works
+            return Data(data={"file_path": file_path, "records": records, "text": str(records)})
 
         elif file_path.endswith((".yaml", ".yml")):
             text = yaml.safe_load(text)
