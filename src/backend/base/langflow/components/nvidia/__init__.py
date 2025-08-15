@@ -1,5 +1,7 @@
 import sys
 
+from .nemo_guardrails import NVIDIANeMoGuardrailsComponent
+from .nemo_guardrails_validator import NVIDIANeMoGuardrailsValidator
 from .nvidia import NVIDIAModelComponent
 from .nvidia_customizer import NvidiaCustomizerComponent
 from .nvidia_data_preparation import NeMoDataPreparationComponent
@@ -14,6 +16,8 @@ if sys.platform == "win32":
     __all__ = [
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
+        "NVIDIANeMoGuardrailsComponent",
+        "NVIDIANeMoGuardrailsValidator",
         "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
@@ -25,6 +29,8 @@ else:
     __all__ = [
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
+        "NVIDIANeMoGuardrailsComponent",
+        "NVIDIANeMoGuardrailsValidator",
         "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
