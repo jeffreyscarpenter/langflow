@@ -29,7 +29,7 @@ export const URLs = {
   PUBLIC_FLOW: `flows/public_flow`,
   MCP: `mcp/project`,
   MCP_SERVERS: `mcp/servers`,
-  SETTINGS: `settings`,
+  KNOWLEDGE_BASES: `knowledge_bases`,
 } as const;
 
 // IMPORTANT: FOLDERS endpoint now points to 'projects' for backward compatibility

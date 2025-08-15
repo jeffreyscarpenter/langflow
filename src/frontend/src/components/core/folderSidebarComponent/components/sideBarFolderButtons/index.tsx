@@ -27,7 +27,6 @@ import {
   ENABLE_DATASTAX_LANGFLOW,
   ENABLE_FILE_MANAGEMENT,
   ENABLE_MCP_NOTICE,
-  ENABLE_NEMO_MICROSERVICES,
 } from "@/customization/feature-flags";
 import { useCustomNavigate } from "@/customization/hooks/use-custom-navigate";
 import { track } from "@/customization/utils/analytics";
@@ -54,13 +53,11 @@ type SideBarFoldersButtonsComponentProps = {
   handleChangeFolder?: (id: string) => void;
   handleDeleteFolder?: (item: FolderType) => void;
   handleFilesClick?: () => void;
-  handleNeMoDataStoreClick?: () => void;
 };
 const SideBarFoldersButtonsComponent = ({
   handleChangeFolder,
   handleDeleteFolder,
   handleFilesClick,
-  handleNeMoDataStoreClick,
 }: SideBarFoldersButtonsComponentProps) => {
   const location = useLocation();
   const pathname = location.pathname;
@@ -73,8 +70,7 @@ const SideBarFoldersButtonsComponent = ({
   const currentFolder = pathname.split("/");
   const urlWithoutPath =
     pathname.split("/").length < (ENABLE_CUSTOM_PARAM ? 5 : 4);
-  const checkPathFiles = pathname.includes("files");
-  const checkPathNeMoDataStore = pathname.includes("nemo");
+  const checkPathFiles = pathname.includes("assets");
 
   const checkPathName = (itemId: string) => {
     if (urlWithoutPath && itemId === myCollectionId && !checkPathFiles) {
@@ -358,6 +354,14 @@ const SideBarFoldersButtonsComponent = ({
     });
   };
 
+  const handleFilesNavigation = () => {
+    _navigate("/assets/files");
+  };
+
+  const handleKnowledgeNavigation = () => {
+    _navigate("/assets/knowledge-bases");
+  };
+
   return (
     <Sidebar
       collapsible={isMobile ? "offcanvas" : "none"}
@@ -473,27 +477,22 @@ const SideBarFoldersButtonsComponent = ({
         <SidebarFooter className="border-t">
           <div className="grid w-full items-center gap-2 p-2">
             {/* TODO: Remove this on cleanup */}
-            {ENABLE_DATASTAX_LANGFLOW && <CustomStoreButton />}
+            {ENABLE_DATASTAX_LANGFLOW && <CustomStoreButton />}{" "}
             <SidebarMenuButton
-              isActive={checkPathFiles}
-              onClick={() => handleFilesClick?.()}
+              onClick={handleKnowledgeNavigation}
+              size="md"
+              className="text-sm"
+            >
+              <ForwardedIconComponent name="Library" className="h-4 w-4" />
+              Knowledge
+            </SidebarMenuButton>
+            <SidebarMenuButton
+              onClick={handleFilesNavigation}
               size="md"
               className="text-sm"
             >
               <ForwardedIconComponent name="File" className="h-4 w-4" />
               My Files
-            </SidebarMenuButton>
-            <SidebarMenuButton
-              isActive={checkPathNeMoDataStore}
-              onClick={() => {
-                console.log("NeMo Microservices clicked!");
-                handleNeMoDataStoreClick?.();
-              }}
-              size="md"
-              className="text-sm"
-            >
-              <ForwardedIconComponent name="Activity" className="h-4 w-4" />
-              NeMo Microservices
             </SidebarMenuButton>
           </div>
         </SidebarFooter>

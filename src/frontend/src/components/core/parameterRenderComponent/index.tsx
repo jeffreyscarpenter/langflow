@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import type { handleOnNewValueType } from "@/CustomNodes/hooks/use-handle-new-value";
 import CodeAreaComponent from "@/components/core/parameterRenderComponent/components/codeAreaComponent";
 import SliderComponent from "@/components/core/parameterRenderComponent/components/sliderComponent";
@@ -6,13 +5,12 @@ import TableNodeComponent from "@/components/core/parameterRenderComponent/compo
 import TabComponent from "@/components/core/parameterRenderComponent/components/tabComponent";
 import { TEXT_FIELD_TYPES } from "@/constants/constants";
 import CustomConnectionComponent from "@/customization/components/custom-connectionComponent";
+import CustomInputFileComponent from "@/customization/components/custom-input-file";
 import CustomLinkComponent from "@/customization/components/custom-linkComponent";
 import type { APIClassType, InputFieldType } from "@/types/api";
 import DictComponent from "./components/dictComponent";
 import { EmptyParameterComponent } from "./components/emptyParameterComponent";
 import FloatComponent from "./components/floatComponent";
-import InputDatasetComponent from "./components/inputDatasetComponent";
-import InputFileComponent from "./components/inputFileComponent";
 import InputListComponent from "./components/inputListComponent";
 import IntComponent from "./components/intComponent";
 import KeypairListComponent from "./components/keypairListComponent";
@@ -172,7 +170,7 @@ export function ParameterRenderComponent({
         );
       case "file":
         return (
-          <InputFileComponent
+          <CustomInputFileComponent
             {...baseInputProps}
             fileTypes={templateData.fileTypes}
             file_path={templateData.file_path}
@@ -289,16 +287,6 @@ export function ParameterRenderComponent({
             editNode={editNode}
             disabled={disabled}
             value={templateValue}
-          />
-        );
-      case "dataset":
-        return (
-          <InputDatasetComponent
-            {...baseInputProps}
-            datasetTypes={templateData.datasetTypes}
-            dataset_path={templateData.dataset_path}
-            isList={templateData.list ?? false}
-            id={`inputdataset_${id}`}
           />
         );
       default:
