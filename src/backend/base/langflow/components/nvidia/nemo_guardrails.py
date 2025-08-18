@@ -8,7 +8,7 @@ from nemo_microservices import AsyncNeMoMicroservices
 from langflow.base.models.model import LCModelComponent
 from langflow.components.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.field_typing import LanguageModel
-from langflow.inputs import BoolInput, DropdownInput, FloatInput, IntInput, MessageInput, MultilineInput
+from langflow.inputs import BoolInput, DropdownInput, FloatInput, IntInput
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import MESSAGE_SENDER_AI, Message
 
@@ -169,29 +169,10 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
     name = "NVIDIANemoGuardrails"
     beta = True
 
-    def __init__(self, **kwargs):
-        LCModelComponent.__init__(self, **kwargs)
-        NeMoGuardrailsBase.__init__(self, **kwargs)
-
     inputs = [
-        MessageInput(name="input_value", display_name="Input"),
-        MultilineInput(
-            name="system_message",
-            display_name="System Message",
-            info="System message to pass to the model.",
-            advanced=True,
-        ),
-        BoolInput(name="stream", display_name="Stream", info="Stream the response from the model.", advanced=True),
-        # Mode selection
-        DropdownInput(
-            name="mode",
-            display_name="Mode",
-            options=["wrapped", "check"],
-            value="wrapped",
-            info="Wrapped: Use guardrails-wrapped LLM. Check: Validate input/output only.",
-            required=True,
-        ),
-        # LLM parameters (for wrapped mode)
+        *LCModelComponent._base_inputs,
+        *NeMoGuardrailsBase._base_inputs,
+        # LLM parameters
         IntInput(
             name="max_tokens",
             display_name="Max Tokens",
@@ -248,12 +229,11 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             advanced=True,
             value=False,
         ),
-        *NeMoGuardrailsBase.get_common_inputs(),
-        # Model selection (from available models in the config) - only visible in wrapped mode
+        # Model selection (from available models in the config)
         DropdownInput(
             name="model",
             display_name="Model",
-            info="Select a model to use with the guardrails configuration (wrapped mode only)",
+            info="Select a model to use with the guardrails configuration",
             options=[],
             refresh_button=True,
             required=True,
@@ -292,56 +272,7 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             return []
 
     async def _handle_update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
-        """Override base class method to handle mode-specific logic."""
-        # Handle mode selection
-        if field_name == "mode":
-            # Ensure all required fields exist in build_config
-            for field in [
-                "model",
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "top_k",
-                "seed",
-                "frequency_penalty",
-                "presence_penalty",
-                "json_mode",
-            ]:
-                if field not in build_config:
-                    build_config[field] = {"show": False}
-
-            if field_value == "wrapped":
-                # Show model selection and LLM parameters, fetch available models
-                build_config["model"]["show"] = True
-                build_config["max_tokens"]["show"] = True
-                build_config["temperature"]["show"] = True
-                build_config["top_p"]["show"] = True
-                build_config["top_k"]["show"] = True
-                build_config["seed"]["show"] = True
-                build_config["frequency_penalty"]["show"] = True
-                build_config["presence_penalty"]["show"] = True
-                build_config["json_mode"]["show"] = True
-                try:
-                    models = await self.fetch_guardrails_models()
-                    build_config["model"]["options"] = models
-                    if models and not build_config["model"].get("value"):
-                        build_config["model"]["value"] = models[0]
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"Error fetching models for wrapped mode: {e}")
-                    build_config["model"]["options"] = []
-            else:
-                # Hide model selection and LLM parameters in check mode
-                build_config["model"]["show"] = False
-                build_config["model"]["value"] = ""
-                build_config["max_tokens"]["show"] = False
-                build_config["temperature"]["show"] = False
-                build_config["top_p"]["show"] = False
-                build_config["top_k"]["show"] = False
-                build_config["seed"]["show"] = False
-                build_config["frequency_penalty"]["show"] = False
-                build_config["presence_penalty"]["show"] = False
-                build_config["json_mode"]["show"] = False
-
+        """Override base class method to handle model refresh logic."""
         # Handle model refresh
         if field_name == "model":
             logger.info("Handling model refresh request")
@@ -378,8 +309,8 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
                     result["model"]["options"] = []
             return result
 
-        # If we handled mode or model refresh, return the updated build_config
-        if field_name in ["mode", "model"]:
+        # If we handled model refresh, return the updated build_config
+        if field_name == "model":
             return build_config
 
         return None
@@ -388,15 +319,26 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
         """Build a language model that uses the guardrails microservice."""
         logger.info(
             f"Building guardrails model with config: {getattr(self, 'guardrails_config', 'None')}, "
-            f"model: {getattr(self, 'model', 'None')}, mode: {getattr(self, 'mode', 'None')}"
+            f"model: {getattr(self, 'model', 'None')}"
         )
+
+        # Add debug logging to see what attributes are actually set
+        logger.debug(f"Component attributes: {self._attributes if hasattr(self, '_attributes') else 'No _attributes'}")
+        logger.debug(f"Component inputs: {self._inputs if hasattr(self, '_inputs') else 'No _inputs'}")
+        logger.debug(f"guardrails_config attribute exists: {hasattr(self, 'guardrails_config')}")
+        logger.debug(f"guardrails_config value: {getattr(self, 'guardrails_config', 'NOT_SET')}")
+        logger.debug(f"guardrails_config type: {type(getattr(self, 'guardrails_config', 'NOT_SET'))}")
 
         # Validate configuration
         guardrails_config_required = "Guardrails configuration is required"
         base_url_required = "Base URL is required"
         auth_token_required = "Authentication token is required"  # noqa: S105
         namespace_required = "Namespace is required"
+        model_required = "Model selection is required"
 
+        if not hasattr(self, "model") or not self.model:
+            logger.error("Model selection is required but not set")
+            raise ValueError(model_required)
         if not hasattr(self, "guardrails_config") or not self.guardrails_config:
             logger.error("Guardrails configuration is required but not set")
             raise ValueError(guardrails_config_required)
@@ -410,53 +352,28 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             logger.error("Namespace is required but not set")
             raise ValueError(namespace_required)
 
-        # Mode-specific validation
-        mode = getattr(self, "mode", "wrapped")
-        if mode == "wrapped":
-            model_required = "Model selection is required for wrapped mode"
-            if not hasattr(self, "model") or not self.model:
-                logger.error("Model selection is required for wrapped mode but not set")
-                raise ValueError(model_required)
+        logger.info(
+            f"Creating GuardrailsMicroserviceModel with "
+            f"base_url: {self.base_url}, config_id: {self.guardrails_config}, "
+            f"model: {self.model}"
+        )
 
-            logger.info(
-                f"Creating GuardrailsMicroserviceModel for wrapped mode with "
-                f"base_url: {self.base_url}, config_id: {self.guardrails_config}, "
-                f"model: {self.model}"
-            )
-
-            # Create a custom language model that delegates to the microservice
-            return GuardrailsMicroserviceModel(
-                base_url=self.base_url,
-                auth_token=self.auth_token,
-                config_id=self.guardrails_config,
-                model_name=self.model,
-                stream=self.stream,
-                max_tokens=getattr(self, "max_tokens", 1024),
-                temperature=getattr(self, "temperature", 0.7),
-                top_p=getattr(self, "top_p", 0.9),
-                top_k=getattr(self, "top_k", 40),
-                seed=getattr(self, "seed", None),
-                frequency_penalty=getattr(self, "frequency_penalty", 0.0),
-                presence_penalty=getattr(self, "presence_penalty", 0.0),
-                json_mode=getattr(self, "json_mode", False),
-            )
-        # Check mode - return a validation-only model
-        logger.info(f"Creating validation-only model for check mode with config_id: {self.guardrails_config}")
-
-        # For check mode, we'll handle the validation in text_response
-        # Return a simple model that just passes through
-        class CheckModeModel:
-            def __init__(self, component):
-                self.component = component
-
-            async def invoke(self, inputs: dict, **kwargs):  # noqa: ARG002
-                # This will be handled in text_response
-                return inputs.get("messages", [])
-
-            def with_config(self, config: dict):  # noqa: ARG002
-                return self
-
-        return CheckModeModel(self)
+        # Create a custom language model that delegates to the microservice
+        return GuardrailsMicroserviceModel(
+            base_url=self.base_url,
+            auth_token=self.auth_token,
+            config_id=self.guardrails_config,
+            model_name=self.model,
+            stream=self.stream,
+            max_tokens=getattr(self, "max_tokens", 1024),
+            temperature=getattr(self, "temperature", 0.7),
+            top_p=getattr(self, "top_p", 0.9),
+            top_k=getattr(self, "top_k", 40),
+            seed=getattr(self, "seed", None),
+            frequency_penalty=getattr(self, "frequency_penalty", 0.0),
+            presence_penalty=getattr(self, "presence_penalty", 0.0),
+            json_mode=getattr(self, "json_mode", False),
+        )
 
     async def text_response(self) -> Message:
         """Custom text_response method with proper LangChain tracing."""
@@ -479,13 +396,8 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             logger.error("Empty input text provided")
             raise ValueError(empty_message_error)
 
-        # Mode-specific handling
-        mode = getattr(self, "mode", "wrapped")
-        logger.info(f"Processing in {mode} mode")
-
-        if mode == "wrapped":
-            return await self._wrapped_mode_response(input_text)
-        return await self._check_mode_response(input_text)
+        logger.info("Processing with guardrails-wrapped LLM")
+        return await self._wrapped_mode_response(input_text)
 
     async def _wrapped_mode_response(self, input_text: str) -> Message:
         """Handle wrapped mode: LLM + guardrails together."""
@@ -573,42 +485,3 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
 
         logger.info("text_response completed successfully")
         return lf_message or Message(text=result)
-
-    async def _check_mode_response(self, input_text: str) -> Message:
-        """Handle check mode: validate input only."""
-        logger.info("Processing check mode response")
-
-        try:
-            # Check input rails using guardrail.checks.create
-            client = self.get_nemo_client()
-
-            logger.debug("Making API call to guardrail.checks.create for input validation")
-
-            input_check = await client.guardrail.checks.create(
-                messages=[{"role": "user", "content": input_text}],
-                guardrails={"config_id": self.guardrails_config},
-                extra_headers=self.get_auth_headers(),
-            )
-
-            logger.debug(f"Input check result: {input_check}")
-
-            if input_check.status == "blocked":
-                logger.info("Input blocked by guardrails")
-                self.status = "Input blocked by guardrails"
-                return Message(text="I cannot process that request.")
-
-            # If input is safe, return the original input for the next component
-            logger.info("Input passed guardrails validation")
-            self.status = "Input validated successfully"
-            return Message(text=input_text)
-
-        except Exception as e:
-            logger.error(f"Error in check mode: {e}")
-            logger.error(f"Exception type: {type(e)}")
-            if hasattr(e, "response") and e.response:
-                logger.error(f"Response status: {e.response.status_code}")
-                logger.error(f"Response text: {e.response.text}")
-            if message := self._get_exception_message(e):
-                logger.error(f"Exception message: {message}")
-                raise ValueError(message) from e
-            raise

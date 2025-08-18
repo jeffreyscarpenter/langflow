@@ -18,10 +18,6 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
     icon = "Shield"
     name = "NVIDIANeMoGuardrailsValidator"
 
-    def __init__(self, *args, **kwargs):
-        Component.__init__(self, *args, **kwargs)
-        NeMoGuardrailsBase.__init__(self, *args, **kwargs)
-
     inputs = [
         MessageInput(name="input_value", display_name="Input"),
         MultilineInput(
@@ -30,7 +26,7 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
             info="System message to include in validation context.",
             advanced=True,
         ),
-        *NeMoGuardrailsBase.get_common_inputs(),
+        *NeMoGuardrailsBase._base_inputs,
         # Validation mode
         DropdownInput(
             name="validation_mode",

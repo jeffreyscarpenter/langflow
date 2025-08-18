@@ -124,7 +124,44 @@ class GuardrailsConfigInput:
 class NeMoGuardrailsBase:
     """Base class for NeMo Guardrails components with shared functionality."""
 
-    def __init__(self, *args, **kwargs):  # noqa: ARG002
+    _base_inputs = [
+        # Single authentication setup (like other NeMo components)
+        MessageTextInput(
+            name="base_url",
+            display_name="NeMo Base URL",
+            value="https://us-west-2.api-dev.ai.datastax.com/nvidia",
+            info="Base URL for NeMo microservices",
+            required=True,
+        ),
+        SecretStrInput(
+            name="auth_token",
+            display_name="Authentication Token",
+            info="Authentication token for NeMo microservices",
+            required=True,
+        ),
+        StrInput(
+            name="namespace",
+            display_name="Namespace",
+            value="default",
+            info="Namespace for NeMo microservices (e.g., default, my-org)",
+            advanced=True,
+            required=True,
+        ),
+        # Guardrails configuration selection
+        DropdownInput(
+            name="guardrails_config",
+            display_name="Guardrails Configuration",
+            info="Select a guardrails configuration or create a new one",
+            options=[],
+            refresh_button=True,
+            required=True,
+            combobox=True,
+            dialog_inputs=asdict(GuardrailsConfigInput()),
+        ),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._dialog_state = "config_selection"  # "config_selection", "config_creation"
         logger.debug("Reset dialog state to config_selection")
 
@@ -355,6 +392,7 @@ class NeMoGuardrailsBase:
             if field_name not in build_config:
                 build_config[field_name] = {}
             build_config[field_name]["value"] = field_value
+            logger.debug(f"Set {field_name}.value = {field_value}")
 
         return build_config
 
@@ -419,38 +457,4 @@ class NeMoGuardrailsBase:
     @classmethod
     def get_common_inputs(cls):
         """Get the common inputs shared between guardrails components."""
-        return [
-            # Single authentication setup (like other NeMo components)
-            MessageTextInput(
-                name="base_url",
-                display_name="NeMo Base URL",
-                value="https://us-west-2.api-dev.ai.datastax.com/nvidia",
-                info="Base URL for NeMo microservices",
-                required=True,
-            ),
-            SecretStrInput(
-                name="auth_token",
-                display_name="Authentication Token",
-                info="Authentication token for NeMo microservices",
-                required=True,
-            ),
-            StrInput(
-                name="namespace",
-                display_name="Namespace",
-                value="default",
-                info="Namespace for NeMo microservices (e.g., default, my-org)",
-                advanced=True,
-                required=True,
-            ),
-            # Guardrails configuration selection
-            DropdownInput(
-                name="guardrails_config",
-                display_name="Guardrails Configuration",
-                info="Select a guardrails configuration or create a new one",
-                options=[],
-                refresh_button=True,
-                required=True,
-                combobox=True,
-                dialog_inputs=asdict(GuardrailsConfigInput()),
-            ),
-        ]
+        return cls._base_inputs
