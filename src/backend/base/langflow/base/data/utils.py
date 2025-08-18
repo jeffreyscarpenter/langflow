@@ -155,6 +155,7 @@ def parse_text_file_to_data(file_path: str, *, silent_errors: bool) -> Data | No
 
         elif file_path.endswith(".jsonl"):
             import jsonlines
+
             with jsonlines.open(file_path) as reader:
                 records = list(reader)
             # Return as a list of records, similar to how CSV works

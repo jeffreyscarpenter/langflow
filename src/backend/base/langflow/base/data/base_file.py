@@ -291,6 +291,7 @@ class BaseFileComponent(Component, ABC):
         # Handle JSONL files
         if ext == ".jsonl":
             import jsonlines
+
             with jsonlines.open(file_path) as reader:
                 return list(reader)
 

@@ -571,6 +571,7 @@
                   "mdx",
                   "csv",
                   "json",
+                  "jsonl",
                   "yaml",
                   "yml",
                   "xml",
