@@ -135,12 +135,14 @@ class NeMoGuardrailsBase:
             value="https://us-west-2.api-dev.ai.datastax.com/nvidia",
             info="Base URL for NeMo microservices",
             required=True,
+            real_time_refresh=True,
         ),
         SecretStrInput(
             name="auth_token",
             display_name="Authentication Token",
             info="Authentication token for NeMo microservices",
             required=True,
+            real_time_refresh=True,
         ),
         StrInput(
             name="namespace",
@@ -149,10 +151,11 @@ class NeMoGuardrailsBase:
             info="Namespace for NeMo microservices (e.g., default, my-org)",
             advanced=True,
             required=True,
+            real_time_refresh=True,
         ),
         # Guardrails configuration selection
         DropdownInput(
-            name="guardrails_config",
+            name="config",
             display_name="Guardrails Configuration",
             info="Select a guardrails configuration or create a new one",
             options=[],
@@ -163,12 +166,6 @@ class NeMoGuardrailsBase:
             dialog_inputs=asdict(GuardrailsConfigInput()),
         ),
     ]
-
-    def __init__(self, *args, **kwargs):  # noqa: ARG002
-        # This is a mixin class, so we don't call super().__init__()
-        # The actual component classes that inherit from this will handle initialization
-        self._dialog_state = "config_selection"  # "config_selection", "config_creation"
-        logger.debug("Reset dialog state to config_selection")
 
     def get_auth_headers(self):
         """Get authentication headers for API requests."""
@@ -404,7 +401,7 @@ class NeMoGuardrailsBase:
     async def _handle_update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
         """Handle specific update_build_config logic. Override in subclasses for custom behavior."""
         # Handle dialog interactions for config creation first
-        if field_name == "guardrails_config" and isinstance(field_value, dict) and "01_config_name" in field_value:
+        if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
             # Handle config creation dialog
             # Config creation request
             try:
@@ -413,13 +410,13 @@ class NeMoGuardrailsBase:
 
                 # Refresh the config list
                 configs, configs_metadata = await self.fetch_guardrails_configs()
-                build_config["guardrails_config"]["options"] = configs
-                build_config["guardrails_config"]["options_metadata"] = configs_metadata
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
 
                 # Set the newly created config as selected
                 config_name = field_value.get("01_config_name")
                 if config_name in configs:
-                    build_config["guardrails_config"]["value"] = config_name
+                    build_config["config"]["value"] = config_name
 
                 return config_id  # noqa: TRY300
             except Exception as e:  # noqa: BLE001
@@ -427,17 +424,30 @@ class NeMoGuardrailsBase:
                 return {"error": f"Failed to create config: {e}"}
 
         # Handle guardrails config updates
-        if field_name == "guardrails_config":
+        if field_name == "config":
             try:
+                # Preserve the current selection before refreshing
+                current_value = build_config.get("config", {}).get("value")
+                logger.debug(f"Preserving current config selection: {current_value}")
+
                 # Fetch available configs
                 configs, configs_metadata = await self.fetch_guardrails_configs()
-                build_config["guardrails_config"]["options"] = configs
-                build_config["guardrails_config"]["options_metadata"] = configs_metadata
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
+
+                # Restore the current selection if it's still valid
+                if current_value and current_value in configs:
+                    build_config["config"]["value"] = current_value
+                    logger.debug(f"Restored config selection: {current_value}")
+                elif current_value:
+                    logger.warning(
+                        f"Previously selected config '{current_value}' no longer available in refreshed list"
+                    )
 
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error updating guardrails config: {e}")
-                build_config["guardrails_config"]["options"] = []
-                build_config["guardrails_config"]["options_metadata"] = []
+                build_config["config"]["options"] = []
+                build_config["config"]["options_metadata"] = []
 
             return build_config
 

@@ -18,9 +18,8 @@ def component():
         base_url="https://test.api.nvidia.com/nemo",
         auth_token="test_token",  # noqa: S106
         namespace="test_namespace",
-        guardrails_config="test_config",
+        config="test_config",
         model="test_model",
-        mode="wrapped",
     )
 
 
@@ -334,7 +333,7 @@ class TestNVIDIANeMoGuardrailsComponent:
         assert isinstance(model, GuardrailsMicroserviceModel)
         assert model.base_url == component.base_url
         assert model.auth_token == component.auth_token
-        assert model.config_id == component.guardrails_config
+        assert model.config_id == component.config
         assert model.model_name == component.model
 
     def test_build_model_missing_config(self):
@@ -355,7 +354,8 @@ class TestNVIDIANeMoGuardrailsComponent:
             base_url="https://test.api.nvidia.com/nemo",
             auth_token="test_token",  # noqa: S106
             namespace="test_namespace",
-            guardrails_config="test_config",
+            config="test_config",
+            model="test_model",
         )
 
         with pytest.raises(ValueError, match="Model selection is required"):
@@ -366,7 +366,7 @@ class TestNVIDIANeMoGuardrailsComponent:
         component = NVIDIANeMoGuardrailsComponent()
         component.auth_token = "test_token"  # noqa: S105
         component.namespace = "test_namespace"
-        component.guardrails_config = "test_config"
+        component.config = "test_config"
         component.model = "test_model"
         # Clear the default base_url
         component.base_url = ""
@@ -379,7 +379,7 @@ class TestNVIDIANeMoGuardrailsComponent:
         component = NVIDIANeMoGuardrailsComponent(
             base_url="https://test.api.nvidia.com/nemo",
             namespace="test_namespace",
-            guardrails_config="test_config",
+            config="test_config",
             model="test_model",
         )
 
@@ -391,7 +391,7 @@ class TestNVIDIANeMoGuardrailsComponent:
         component = NVIDIANeMoGuardrailsComponent(
             base_url="https://test.api.nvidia.com/nemo",
             auth_token="test_token",  # noqa: S106
-            guardrails_config="test_config",
+            config="test_config",
             model="test_model",
         )
         # Clear the default namespace
@@ -404,56 +404,19 @@ class TestNVIDIANeMoGuardrailsComponent:
     async def test_update_build_config_guardrails_config(self, component):
         """Test build config update for guardrails config field."""
         build_config = {
-            "guardrails_config": {"options": [], "options_metadata": []},
+            "config": {"options": [], "options_metadata": []},
             "model": {"options": [], "value": ""},
         }
 
         with patch.object(component, "fetch_guardrails_configs", new_callable=AsyncMock) as mock_fetch_configs:
             mock_fetch_configs.return_value = (["config1", "config2"], [{"icon": "Shield"}, {"icon": "Shield"}])
 
-            with patch.object(component, "fetch_guardrails_models", new_callable=AsyncMock) as mock_fetch_models:
-                mock_fetch_models.return_value = ["model1", "model2"]
+            await component.update_build_config(build_config, "config1", "config")
 
-                await component.update_build_config(build_config, "config1", "guardrails_config")
-
-                assert build_config["guardrails_config"]["options"] == ["config1", "config2"]
-                assert build_config["model"]["options"] == ["model1", "model2"]
-                assert build_config["model"]["value"] == "model1"
-
-                @pytest.mark.asyncio
-                async def test_update_build_config_config_creation(self, component):  # noqa: ARG001
-                    """Test build config update for config creation."""
-                    build_config = {
-                        "guardrails_config": {"options": [], "options_metadata": []},
-                        "model": {"options": [], "value": ""},
-                    }
-
-                    config_data = {
-                        "01_config_name": "new_config",
-                        "02_config_description": "New config description",
-                        "03_rail_types": ["content_safety_input"],
-                    }
-
-                    with patch.object(component, "create_guardrails_config", new_callable=AsyncMock) as mock_create:
-                        mock_create.return_value = "new_config_id"
-
-                        with patch.object(
-                            component, "fetch_guardrails_configs", new_callable=AsyncMock
-                        ) as mock_fetch_configs:
-                            mock_fetch_configs.return_value = (["new_config"], [{"icon": "Shield"}])
-
-                            with patch.object(
-                                component, "fetch_guardrails_models", new_callable=AsyncMock
-                            ) as mock_fetch_models:
-                                mock_fetch_models.return_value = ["model1"]
-
-                                result = await component.update_build_config(
-                                    build_config, config_data, "guardrails_config"
-                                )
-
-                                assert result == "new_config_id"
-                                assert build_config["guardrails_config"]["value"] == "new_config"
-                                assert build_config["model"]["value"] == "model1"
+            assert build_config["config"]["options"] == ["config1", "config2"]
+            # Model should not be affected by config refresh since they are independent
+            assert build_config["model"]["options"] == []
+            assert build_config["model"]["value"] == ""
 
     @pytest.mark.asyncio
     async def test_update_build_config_model_refresh(self, component):
@@ -471,7 +434,7 @@ class TestNVIDIANeMoGuardrailsComponent:
     @pytest.mark.asyncio
     async def test_update_build_config_model_refresh_no_config(self, component):
         """Test model refresh when no config is selected."""
-        component.guardrails_config = ""
+        component.config = ""
         build_config = {"model": {"options": ["old_model"], "value": "old_model"}}
 
         # Mock the fetch_guardrails_models to return empty list

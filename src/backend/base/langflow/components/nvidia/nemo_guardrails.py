@@ -170,12 +170,6 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
     beta = True
     code_class_base_inheritance: ClassVar[str] = None
 
-    def __init__(self, *args, **kwargs):
-        # Initialize the LCModelComponent first
-        LCModelComponent.__init__(self, *args, **kwargs)
-        # Then initialize the NeMoGuardrailsBase mixin
-        NeMoGuardrailsBase.__init__(self, *args, **kwargs)
-
     inputs = [
         *LCModelComponent._base_inputs,
         *NeMoGuardrailsBase._nemo_base_inputs,
@@ -279,102 +273,75 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             return []
 
     async def _handle_update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
-        """Override base class method to handle model refresh logic."""
+        """Handle model refresh logic. Let base class handle everything else."""
         # Handle model refresh
         if field_name == "model":
-            logger.info("Handling model refresh request")
-            try:
-                # Fetch all available models for guardrails (independent of config)
-                logger.debug("Refreshing available models for guardrails")
-                models = await self.fetch_guardrails_models()
-                build_config["model"]["options"] = models
-                if models:
-                    if not build_config["model"].get("value"):
-                        build_config["model"]["value"] = models[0]
-                else:
-                    # No models available, clear the value
-                    build_config["model"]["value"] = ""
-                logger.info(f"Refreshed {len(models)} available models for guardrails")
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Error refreshing models: {e}")
-                build_config["model"]["options"] = []
+            return await self._handle_model_refresh(build_config)
+
+        # Let the base class handle everything else (config refresh, etc.)
+        return await super()._handle_update_build_config(build_config, field_value, field_name)
+
+    async def _handle_model_refresh(self, build_config: dotdict) -> dotdict:
+        """Handle model refresh with selection preservation."""
+        logger.info("Handling model refresh request")
+
+        try:
+            # Preserve the current selection before refreshing
+            current_value = build_config.get("model", {}).get("value")
+            logger.debug(f"Preserving current model selection: {current_value}")
+
+            # Fetch all available models for guardrails
+            logger.debug("Refreshing available models for guardrails")
+            models = await self.fetch_guardrails_models()
+            build_config["model"]["options"] = models
+
+            # Restore the current selection if it's still valid
+            if current_value and current_value in models:
+                build_config["model"]["value"] = current_value
+                logger.debug(f"Restored model selection: {current_value}")
+            elif models and not current_value:
+                # Only set default if no current selection
+                build_config["model"]["value"] = models[0]
+                logger.debug(f"Set default model selection: {models[0]}")
+            elif current_value:
+                logger.warning(f"Previously selected model '{current_value}' no longer available in refreshed list")
+                # Clear the value when the selected model is no longer available
+                build_config["model"]["value"] = ""
+            else:
+                # No models available, clear the value
                 build_config["model"]["value"] = ""
 
-        # Call the base class method for common functionality
-        result = await super()._handle_update_build_config(build_config, field_value, field_name)
-        if result is not None:
-            # If the base class returned a build_config (not a config_id), we need to also fetch models
-            if isinstance(result, dict) and field_name == "guardrails_config":
-                try:
-                    # Fetch available models independently (not tied to specific config)
-                    models = await self.fetch_guardrails_models()
-                    result["model"]["options"] = models
-                    if models and not result["model"].get("value"):
-                        result["model"]["value"] = models[0]
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"Error fetching models for guardrails config update: {e}")
-                    result["model"]["options"] = []
-            return result
+            logger.info(f"Refreshed {len(models)} available models for guardrails")
 
-        # If we handled model refresh, return the updated build_config
-        if field_name == "model":
-            return build_config
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error refreshing models: {e}")
+            build_config["model"]["options"] = []
+            build_config["model"]["value"] = ""
 
-        return None
+        return build_config
 
     def build_model(self) -> LanguageModel:
         """Build a language model that uses the guardrails microservice."""
         logger.info(
-            f"Building guardrails model with config: {getattr(self, 'guardrails_config', 'None')}, "
+            f"Building guardrails model with config: {getattr(self, 'config', 'None')}, "
             f"model: {getattr(self, 'model', 'None')}"
         )
 
-        # Comprehensive debugging to see all attributes
-        logger.debug("=== COMPONENT DEBUGGING ===")
-        logger.debug(f"Component class: {self.__class__.__name__}")
-        logger.debug(f"Component ID: {getattr(self, '_id', 'No ID')}")
-
-        # List all attributes in _attributes
-        if hasattr(self, "_attributes"):
-            logger.debug(f"Component _attributes: {self._attributes}")
-            logger.debug("Individual _attributes:")
-            for key, value in self._attributes.items():
-                logger.debug(f"  _attributes['{key}'] = {value} (type: {type(value)})")
+        # Debug: Check if config is set
+        if hasattr(self, "_inputs") and "config" in self._inputs:
+            logger.debug(f"config input value: {getattr(self._inputs['config'], 'value', 'No value')}")
         else:
-            logger.debug("No _attributes found")
+            available_inputs = list(self._inputs.keys()) if hasattr(self, "_inputs") else "No _inputs"
+            logger.debug(f"config not found in _inputs. Available inputs: {available_inputs}")
 
-        # List all inputs and their values
-        if hasattr(self, "_inputs"):
-            logger.debug("Component _inputs:")
-            for key, input_obj in self._inputs.items():
-                value = getattr(input_obj, "value", "No value attribute")
-                logger.debug(f"  _inputs['{key}'].value = {value} (type: {type(value)})")
-        else:
-            logger.debug("No _inputs found")
-
-        # List all direct attributes
-        logger.debug("Direct component attributes:")
-        for attr_name in dir(self):
-            if not attr_name.startswith("_") and not callable(getattr(self, attr_name)):
-                try:
-                    value = getattr(self, attr_name)
-                    logger.debug(f"  {attr_name} = {value} (type: {type(value)})")
-                except (AttributeError, TypeError) as e:
-                    logger.debug(f"  {attr_name} = <error accessing: {e}>")
-
-        # Check specific attributes we care about
-        logger.debug("=== SPECIFIC ATTRIBUTE CHECKS ===")
-        for attr_name in ["guardrails_config", "model", "base_url", "auth_token", "namespace"]:
-            try:
-                value = getattr(self, attr_name, "NOT_FOUND")
-                logger.debug(f"getattr(self, '{attr_name}') = {value} (type: {type(value)})")
-            except (AttributeError, TypeError) as e:
-                logger.debug(f"getattr(self, '{attr_name}') = <error: {e}>")
-
-        logger.debug("=== END COMPONENT DEBUGGING ===")
+        # Debug: Check _validate_inputs behavior
+        has_attributes = hasattr(self, "_attributes")
+        logger.debug(f"_attributes has config: {'config' in self._attributes if has_attributes else 'No _attributes'}")
+        config_value = self._attributes.get("config", "Not found") if has_attributes else "No _attributes"
+        logger.debug(f"_attributes config value: {config_value}")
 
         # Validate configuration
-        guardrails_config_required = "Guardrails configuration is required"
+        config_required = "Guardrails configuration is required"
         base_url_required = "Base URL is required"
         auth_token_required = "Authentication token is required"  # noqa: S105
         namespace_required = "Namespace is required"
@@ -383,30 +350,32 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
         if not hasattr(self, "model") or not self.model:
             logger.error("Model selection is required but not set")
             raise ValueError(model_required)
-        if not hasattr(self, "guardrails_config") or not self.guardrails_config:
+
+        if not hasattr(self, "config") or not self.config:
             logger.error("Guardrails configuration is required but not set")
-            raise ValueError(guardrails_config_required)
+            raise ValueError(config_required)
+
         if not hasattr(self, "base_url") or not self.base_url:
             logger.error("Base URL is required but not set")
             raise ValueError(base_url_required)
+
         if not hasattr(self, "auth_token") or not self.auth_token:
             logger.error("Authentication token is required but not set")
             raise ValueError(auth_token_required)
+
         if not hasattr(self, "namespace") or not self.namespace:
             logger.error("Namespace is required but not set")
             raise ValueError(namespace_required)
 
         logger.info(
-            f"Creating GuardrailsMicroserviceModel with "
-            f"base_url: {self.base_url}, config_id: {self.guardrails_config}, "
-            f"model: {self.model}"
+            f"Creating GuardrailsMicroserviceModel with base_url: {self.base_url}, "
+            f"config_id: {self.config}, model: {self.model}"
         )
 
-        # Create a custom language model that delegates to the microservice
         return GuardrailsMicroserviceModel(
             base_url=self.base_url,
             auth_token=self.auth_token,
-            config_id=self.guardrails_config,
+            config_id=self.config,
             model_name=self.model,
             stream=self.stream,
             max_tokens=getattr(self, "max_tokens", 1024),
