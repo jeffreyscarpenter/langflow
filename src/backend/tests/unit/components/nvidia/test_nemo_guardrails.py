@@ -12,14 +12,21 @@ from langflow.components.nvidia.nemo_guardrails_base import (
 
 
 @pytest.fixture
-def component():
+async def component():
     """Create a test instance of the NeMo Guardrails component."""
-    return NVIDIANeMoGuardrailsComponent(
-        base_url="https://test.api.nvidia.com/nemo",
-        auth_token="test_token",  # noqa: S106
-        namespace="test_namespace",
-        config="test_config",
-        model="test_model",
+    from tests.base import ComponentTestBase
+
+    # Use the proper component setup method
+    test_base = ComponentTestBase()
+    return await test_base.component_setup(
+        NVIDIANeMoGuardrailsComponent,
+        {
+            "base_url": "https://test.api.nvidia.com/nemo",
+            "auth_token": "test_token",
+            "namespace": "test_namespace",
+            "config": "test_config",
+            "model": "test_model",
+        },
     )
 
 
@@ -326,7 +333,8 @@ class TestNVIDIANeMoGuardrailsComponent:
         assert "jailbreak detection heuristics" in params["rails"]["input"]["flows"]
         assert len(params["prompts"]) == 0
 
-    def test_build_model_success(self, component):
+    @pytest.mark.asyncio
+    async def test_build_model_success(self, component):
         """Test successful model building."""
         model = component.build_model()
 
