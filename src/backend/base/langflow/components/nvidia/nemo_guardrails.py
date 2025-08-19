@@ -169,6 +169,12 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
     name = "NVIDIANemoGuardrails"
     beta = True
 
+    def __init__(self, *args, **kwargs):
+        # Initialize the LCModelComponent first
+        LCModelComponent.__init__(self, *args, **kwargs)
+        # Then initialize the NeMoGuardrailsBase mixin
+        NeMoGuardrailsBase.__init__(self, *args, **kwargs)
+
     inputs = [
         *LCModelComponent._base_inputs,
         *NeMoGuardrailsBase._base_inputs,
@@ -322,12 +328,49 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             f"model: {getattr(self, 'model', 'None')}"
         )
 
-        # Add debug logging to see what attributes are actually set
-        logger.debug(f"Component attributes: {self._attributes if hasattr(self, '_attributes') else 'No _attributes'}")
-        logger.debug(f"Component inputs: {self._inputs if hasattr(self, '_inputs') else 'No _inputs'}")
-        logger.debug(f"guardrails_config attribute exists: {hasattr(self, 'guardrails_config')}")
-        logger.debug(f"guardrails_config value: {getattr(self, 'guardrails_config', 'NOT_SET')}")
-        logger.debug(f"guardrails_config type: {type(getattr(self, 'guardrails_config', 'NOT_SET'))}")
+        # Comprehensive debugging to see all attributes
+        logger.debug("=== COMPONENT DEBUGGING ===")
+        logger.debug(f"Component class: {self.__class__.__name__}")
+        logger.debug(f"Component ID: {getattr(self, '_id', 'No ID')}")
+
+        # List all attributes in _attributes
+        if hasattr(self, "_attributes"):
+            logger.debug(f"Component _attributes: {self._attributes}")
+            logger.debug("Individual _attributes:")
+            for key, value in self._attributes.items():
+                logger.debug(f"  _attributes['{key}'] = {value} (type: {type(value)})")
+        else:
+            logger.debug("No _attributes found")
+
+        # List all inputs and their values
+        if hasattr(self, "_inputs"):
+            logger.debug("Component _inputs:")
+            for key, input_obj in self._inputs.items():
+                value = getattr(input_obj, "value", "No value attribute")
+                logger.debug(f"  _inputs['{key}'].value = {value} (type: {type(value)})")
+        else:
+            logger.debug("No _inputs found")
+
+        # List all direct attributes
+        logger.debug("Direct component attributes:")
+        for attr_name in dir(self):
+            if not attr_name.startswith("_") and not callable(getattr(self, attr_name)):
+                try:
+                    value = getattr(self, attr_name)
+                    logger.debug(f"  {attr_name} = {value} (type: {type(value)})")
+                except (AttributeError, TypeError) as e:
+                    logger.debug(f"  {attr_name} = <error accessing: {e}>")
+
+        # Check specific attributes we care about
+        logger.debug("=== SPECIFIC ATTRIBUTE CHECKS ===")
+        for attr_name in ["guardrails_config", "model", "base_url", "auth_token", "namespace"]:
+            try:
+                value = getattr(self, attr_name, "NOT_FOUND")
+                logger.debug(f"getattr(self, '{attr_name}') = {value} (type: {type(value)})")
+            except (AttributeError, TypeError) as e:
+                logger.debug(f"getattr(self, '{attr_name}') = <error: {e}>")
+
+        logger.debug("=== END COMPONENT DEBUGGING ===")
 
         # Validate configuration
         guardrails_config_required = "Guardrails configuration is required"
