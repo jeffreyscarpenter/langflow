@@ -373,85 +373,65 @@ class NeMoGuardrailsBase:
         logger.debug(f"Built guardrails params: {json.dumps(params, indent=2)}")
         return params
 
-    async def update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
-        """Update build configuration and show/hide inputs based on selections."""
-        logger.info(f"Updating build config for field: {field_name}, value: {field_value}")
+    async def _update_config_field(self, build_config: dotdict, field_name: str, field_value: Any) -> dotdict:
+        """Helper method to update a field in build_config with value preservation."""
+        if field_name not in build_config:
+            build_config[field_name] = {}
 
-        # Call the specific handler method
-        result = await self._handle_update_build_config(build_config, field_value, field_name)
-        logger.debug(f"Handler result: {result}")
+        # Preserve current selection before updating
+        current_value = build_config[field_name].get("value")
+        logger.debug(f"Preserving current {field_name} selection: {current_value}")
 
-        # If the handler returned a specific result (like config_id), return it
-        if result is not None and not isinstance(result, dict):
-            return result
-
-        # If the handler returned a dict (build_config), or None, continue with normal processing
-        if result is not None:
-            build_config = result
-
-        # Handle basic field value setting (parent class method is not async)
-        if field_name and field_value is not None:
-            if field_name not in build_config:
-                build_config[field_name] = {}
-            build_config[field_name]["value"] = field_value
-            logger.debug(f"Set {field_name}.value = {field_value}")
+        # Update the field value
+        build_config[field_name]["value"] = field_value
+        logger.debug(f"Set {field_name}.value = {field_value}")
 
         return build_config
 
-    async def _handle_update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
-        """Handle specific update_build_config logic. Override in subclasses for custom behavior."""
-        # Handle dialog interactions for config creation first
-        if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
-            # Handle config creation dialog
-            # Config creation request
-            try:
-                config_id = await self.create_guardrails_config(field_value)
-                logger.info(f"Config creation completed with ID: {config_id}")
+    async def _refresh_config_options(self, build_config: dotdict) -> dotdict:
+        """Helper method to refresh config options with selection preservation."""
+        try:
+            # Preserve the current selection before refreshing
+            current_value = build_config.get("config", {}).get("value")
+            logger.debug(f"Preserving current config selection: {current_value}")
 
-                # Refresh the config list
-                configs, configs_metadata = await self.fetch_guardrails_configs()
-                build_config["config"]["options"] = configs
-                build_config["config"]["options_metadata"] = configs_metadata
+            # Fetch available configs
+            configs, configs_metadata = await self.fetch_guardrails_configs()
+            build_config["config"]["options"] = configs
+            build_config["config"]["options_metadata"] = configs_metadata
 
-                # Set the newly created config as selected
-                config_name = field_value.get("01_config_name")
-                if config_name in configs:
-                    build_config["config"]["value"] = config_name
+            # Restore the current selection if it's still valid
+            if current_value and current_value in configs:
+                build_config["config"]["value"] = current_value
+                logger.debug(f"Restored config selection: {current_value}")
+            elif current_value:
+                logger.warning(f"Previously selected config '{current_value}' no longer available in refreshed list")
 
-                return config_id  # noqa: TRY300
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Config creation failed: {e}")
-                return {"error": f"Failed to create config: {e}"}
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error updating guardrails config: {e}")
+            build_config["config"]["options"] = []
+            build_config["config"]["options_metadata"] = []
 
-        # Handle guardrails config updates
-        if field_name == "config":
-            try:
-                # Preserve the current selection before refreshing
-                current_value = build_config.get("config", {}).get("value")
-                logger.debug(f"Preserving current config selection: {current_value}")
+        return build_config
 
-                # Fetch available configs
-                configs, configs_metadata = await self.fetch_guardrails_configs()
-                build_config["config"]["options"] = configs
-                build_config["config"]["options_metadata"] = configs_metadata
+    async def _handle_config_creation(self, build_config: dotdict, field_value: dict) -> str:
+        """Helper method to handle config creation dialog."""
+        try:
+            config_id = await self.create_guardrails_config(field_value)
+            logger.info(f"Config creation completed with ID: {config_id}")
 
-                # Restore the current selection if it's still valid
-                if current_value and current_value in configs:
-                    build_config["config"]["value"] = current_value
-                    logger.debug(f"Restored config selection: {current_value}")
-                elif current_value:
-                    logger.warning(
-                        f"Previously selected config '{current_value}' no longer available in refreshed list"
-                    )
+            # Refresh the config list
+            await self._refresh_config_options(build_config)
 
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Error updating guardrails config: {e}")
-                build_config["config"]["options"] = []
-                build_config["config"]["options_metadata"] = []
+            # Set the newly created config as selected
+            config_name = field_value.get("01_config_name")
+            if config_name in build_config["config"]["options"]:
+                build_config["config"]["value"] = config_name
 
-            return build_config
-
-        return None
+            return config_id  # noqa: TRY300
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Config creation failed: {e}")
+            return {"error": f"Failed to create config: {e}"}
 
     def _get_nemo_exception_message(self, e: Exception):
         """Get a message from an exception."""

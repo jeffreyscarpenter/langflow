@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import Any
 
 from loguru import logger
 
@@ -6,6 +6,7 @@ from langflow.base.models.model import Component
 from langflow.components.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.inputs import DropdownInput, MessageInput, MultilineInput
 from langflow.io import Output
+from langflow.schema.dotdict import dotdict
 from langflow.schema.message import Message
 
 
@@ -19,13 +20,6 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
     documentation: str = "https://docs.nvidia.com/nemo/microservices/latest/guardrails/index.html"
     icon = "Shield"
     name = "NVIDIANeMoGuardrailsValidator"
-    code_class_base_inheritance: ClassVar[str] = None
-
-    def __init__(self, *args, **kwargs):
-        # Initialize the Component first
-        Component.__init__(self, *args, **kwargs)
-        # Then initialize the NeMoGuardrailsBase mixin
-        NeMoGuardrailsBase.__init__(self, *args, **kwargs)
 
     inputs = [
         MessageInput(name="input_value", display_name="Input"),
@@ -51,6 +45,27 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
         Output(display_name="Validated Output", name="validated_output", method="process"),
         Output(display_name="Validation Error", name="validation_error", method="process"),
     ]
+
+    async def update_build_config(
+        self, build_config: dotdict, field_value: Any, field_name: str | None = None
+    ) -> dotdict | str:
+        """Update build configuration for the guardrails validator component."""
+        logger.info(f"Updating build config for field: {field_name}, value: {field_value}")
+
+        # Handle config creation dialog
+        if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
+            return await self._handle_config_creation(build_config, field_value)
+
+        # Handle config refresh
+        if field_name == "config":
+            await self._refresh_config_options(build_config)
+            return build_config
+
+        # Handle basic field value setting
+        if field_name and field_value is not None:
+            await self._update_config_field(build_config, field_name, field_value)
+
+        return build_config
 
     async def process(self) -> dict[str, Message]:
         """Process the input through guardrails validation."""

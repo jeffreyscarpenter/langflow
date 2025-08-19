@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -159,7 +159,7 @@ class GuardrailsMicroserviceModel:
         return self
 
 
-class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
+class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
     display_name = "NeMo Guardrails"
     description = (
         "Apply guardrails to LLM interactions using the NeMo Guardrails microservice. "
@@ -168,7 +168,6 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
     icon = "NVIDIA"
     name = "NVIDIANemoGuardrails"
     beta = True
-    code_class_base_inheritance: ClassVar[str] = None
 
     inputs = [
         *LCModelComponent._base_inputs,
@@ -272,14 +271,30 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             logger.error(f"Error fetching models using NeMo microservices client: {exc}")
             return []
 
-    async def _handle_update_build_config(self, build_config: dotdict, field_value: Any, field_name: str | None = None):
-        """Handle model refresh logic. Let base class handle everything else."""
+    async def update_build_config(
+        self, build_config: dotdict, field_value: Any, field_name: str | None = None
+    ) -> dotdict | str:
+        """Update build configuration for the guardrails component."""
+        logger.info(f"Updating build config for field: {field_name}, value: {field_value}")
+
+        # Handle config creation dialog
+        if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
+            return await self._handle_config_creation(build_config, field_value)
+
+        # Handle config refresh
+        if field_name == "config":
+            await self._refresh_config_options(build_config)
+            return build_config
+
         # Handle model refresh
         if field_name == "model":
             return await self._handle_model_refresh(build_config)
 
-        # Let the base class handle everything else (config refresh, etc.)
-        return await super()._handle_update_build_config(build_config, field_value, field_name)
+        # Handle basic field value setting
+        if field_name and field_value is not None:
+            await self._update_config_field(build_config, field_name, field_value)
+
+        return build_config
 
     async def _handle_model_refresh(self, build_config: dotdict) -> dotdict:
         """Handle model refresh with selection preservation."""
@@ -326,19 +341,6 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             f"Building guardrails model with config: {getattr(self, 'config', 'None')}, "
             f"model: {getattr(self, 'model', 'None')}"
         )
-
-        # Debug: Check if config is set
-        if hasattr(self, "_inputs") and "config" in self._inputs:
-            logger.debug(f"config input value: {getattr(self._inputs['config'], 'value', 'No value')}")
-        else:
-            available_inputs = list(self._inputs.keys()) if hasattr(self, "_inputs") else "No _inputs"
-            logger.debug(f"config not found in _inputs. Available inputs: {available_inputs}")
-
-        # Debug: Check _validate_inputs behavior
-        has_attributes = hasattr(self, "_attributes")
-        logger.debug(f"_attributes has config: {'config' in self._attributes if has_attributes else 'No _attributes'}")
-        config_value = self._attributes.get("config", "Not found") if has_attributes else "No _attributes"
-        logger.debug(f"_attributes config value: {config_value}")
 
         # Validate configuration
         config_required = "Guardrails configuration is required"
