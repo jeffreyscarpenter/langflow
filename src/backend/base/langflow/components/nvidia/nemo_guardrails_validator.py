@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from loguru import logger
 
 from langflow.base.models.model import Component
@@ -17,6 +19,7 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
     documentation: str = "https://docs.nvidia.com/nemo/microservices/latest/guardrails/index.html"
     icon = "Shield"
     name = "NVIDIANeMoGuardrailsValidator"
+    code_class_base_inheritance: ClassVar[str] = None
 
     def __init__(self, *args, **kwargs):
         # Initialize the Component first

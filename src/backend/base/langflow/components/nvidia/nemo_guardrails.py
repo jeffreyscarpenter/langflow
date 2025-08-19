@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 from loguru import logger
@@ -168,16 +168,13 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
     icon = "NVIDIA"
     name = "NVIDIANemoGuardrails"
     beta = True
+    code_class_base_inheritance: ClassVar[str] = None
 
     def __init__(self, *args, **kwargs):
         # Initialize the LCModelComponent first
         LCModelComponent.__init__(self, *args, **kwargs)
         # Then initialize the NeMoGuardrailsBase mixin
         NeMoGuardrailsBase.__init__(self, *args, **kwargs)
-
-    def set_class_code(self) -> None:
-        """Override to prevent setting _code for built-in components."""
-        # Built-in components don't need code, so we do nothing
 
     inputs = [
         *LCModelComponent._base_inputs,

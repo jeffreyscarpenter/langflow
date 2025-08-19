@@ -351,12 +351,12 @@ class TestNVIDIANeMoGuardrailsValidator:
         mock_exception = Mock()
         mock_exception.body = {"message": "Test error message"}
 
-        message = validator._get_exception_message(mock_exception)
+        message = validator._get_nemo_exception_message(mock_exception)
         assert message == "Test error message"
 
         # Test with exception without body
         mock_exception2 = Mock()
         mock_exception2.body = None
 
-        message = validator._get_exception_message(mock_exception2)
+        message = validator._get_nemo_exception_message(mock_exception2)
         assert message is None
