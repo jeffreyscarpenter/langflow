@@ -279,20 +279,48 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
 
         # Handle config creation dialog
         if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
-            return await self._handle_config_creation(build_config, field_value)
+            try:
+                config_id = await self.create_guardrails_config(field_value)
+                logger.info(f"Config creation completed with ID: {config_id}")
+
+                # Refresh the config list
+                configs, configs_metadata = await self.fetch_guardrails_configs()
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
+
+                # Set the newly created config as selected
+                config_name = field_value.get("01_config_name")
+                if config_name in configs:
+                    build_config["config"]["value"] = config_name
+                else:
+                    pass
+                return config_id  # noqa: TRY300
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Config creation failed: {e}")
+                return {"error": f"Failed to create config: {e}"}
 
         # Handle config refresh
-        if field_name == "config":
-            await self._refresh_config_options(build_config)
-            return build_config
+        if field_name == "config" and (field_value is None or field_value == ""):
+            try:
+                # Preserve current selection
+                current_value = build_config.get("config", {}).get("value")
+
+                # Fetch available configs
+                configs, configs_metadata = await self.fetch_guardrails_configs()
+                build_config["config"]["options"] = configs
+                build_config["config"]["options_metadata"] = configs_metadata
+
+                # Restore selection if still valid
+                if current_value and current_value in configs:
+                    build_config["config"]["value"] = current_value
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Error refreshing configs: {e}")
+                build_config["config"]["options"] = []
+                build_config["config"]["options_metadata"] = []
 
         # Handle model refresh
-        if field_name == "model":
+        if field_name == "model" and (field_value is None or field_value == ""):
             return await self._handle_model_refresh(build_config)
-
-        # Handle basic field value setting
-        if field_name and field_value is not None:
-            await self._update_config_field(build_config, field_name, field_value)
 
         return build_config
 
