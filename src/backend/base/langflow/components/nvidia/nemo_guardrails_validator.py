@@ -18,6 +18,12 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
     icon = "Shield"
     name = "NVIDIANeMoGuardrailsValidator"
 
+    def __init__(self, *args, **kwargs):
+        # Initialize the Component first
+        Component.__init__(self, *args, **kwargs)
+        # Then initialize the NeMoGuardrailsBase mixin
+        NeMoGuardrailsBase.__init__(self, *args, **kwargs)
+
     inputs = [
         MessageInput(name="input_value", display_name="Input"),
         MultilineInput(

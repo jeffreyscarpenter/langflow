@@ -124,6 +124,9 @@ class GuardrailsConfigInput:
 class NeMoGuardrailsBase:
     """Base class for NeMo Guardrails components with shared functionality."""
 
+    # This is a mixin class that provides shared functionality
+    # It should not be instantiated directly
+
     _base_inputs = [
         # Single authentication setup (like other NeMo components)
         MessageTextInput(
@@ -156,12 +159,14 @@ class NeMoGuardrailsBase:
             refresh_button=True,
             required=True,
             combobox=True,
+            real_time_refresh=True,
             dialog_inputs=asdict(GuardrailsConfigInput()),
         ),
     ]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):  # noqa: ARG002
+        # This is a mixin class, so we don't call super().__init__()
+        # The actual component classes that inherit from this will handle initialization
         self._dialog_state = "config_selection"  # "config_selection", "config_creation"
         logger.debug("Reset dialog state to config_selection")
 
