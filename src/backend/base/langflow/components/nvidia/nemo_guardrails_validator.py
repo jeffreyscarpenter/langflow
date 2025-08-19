@@ -32,7 +32,7 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
             info="System message to include in validation context.",
             advanced=True,
         ),
-        *NeMoGuardrailsBase._base_inputs,
+        *NeMoGuardrailsBase._nemo_base_inputs,
         # Validation mode
         DropdownInput(
             name="validation_mode",
@@ -106,7 +106,7 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
             if hasattr(e, "response") and e.response:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response text: {e.response.text}")
-            if message := self._get_exception_message(e):
+            if message := self._get_nemo_exception_message(e):
                 logger.error(f"Exception message: {message}")
                 raise ValueError(message) from e
             raise

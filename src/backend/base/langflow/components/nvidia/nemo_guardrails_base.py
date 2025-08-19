@@ -127,7 +127,7 @@ class NeMoGuardrailsBase:
     # This is a mixin class that provides shared functionality
     # It should not be instantiated directly
 
-    _base_inputs = [
+    _nemo_base_inputs = [
         # Single authentication setup (like other NeMo components)
         MessageTextInput(
             name="base_url",
@@ -443,7 +443,7 @@ class NeMoGuardrailsBase:
 
         return None
 
-    def _get_exception_message(self, e: Exception):
+    def _get_nemo_exception_message(self, e: Exception):
         """Get a message from an exception."""
         try:
             if hasattr(e, "body") and isinstance(e.body, dict):

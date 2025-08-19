@@ -175,9 +175,13 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
         # Then initialize the NeMoGuardrailsBase mixin
         NeMoGuardrailsBase.__init__(self, *args, **kwargs)
 
+    def set_class_code(self) -> None:
+        """Override to prevent setting _code for built-in components."""
+        # Built-in components don't need code, so we do nothing
+
     inputs = [
         *LCModelComponent._base_inputs,
-        *NeMoGuardrailsBase._base_inputs,
+        *NeMoGuardrailsBase._nemo_base_inputs,
         # LLM parameters
         IntInput(
             name="max_tokens",
@@ -521,7 +525,7 @@ class NVIDIANeMoGuardrailsComponent(NeMoGuardrailsBase, LCModelComponent):
             if hasattr(e, "response") and e.response:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response text: {e.response.text}")
-            if message := self._get_exception_message(e):
+            if message := self._get_nemo_exception_message(e):
                 logger.error(f"Exception message: {message}")
                 raise ValueError(message) from e
             raise
