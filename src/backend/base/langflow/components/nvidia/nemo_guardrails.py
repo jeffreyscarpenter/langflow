@@ -8,7 +8,7 @@ from nemo_microservices import AsyncNeMoMicroservices
 from langflow.base.models.model import LCModelComponent
 from langflow.components.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.field_typing import LanguageModel
-from langflow.inputs import BoolInput, DropdownInput, FloatInput, IntInput
+from langflow.inputs import DropdownInput, FloatInput, IntInput
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import MESSAGE_SENDER_AI, Message
 
@@ -27,11 +27,6 @@ class GuardrailsMicroserviceModel:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        top_k: int = 40,
-        seed: int | None = None,
-        frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0,
-        json_mode: bool = False,
     ):
         self.base_url = base_url
         self.auth_token = auth_token
@@ -41,20 +36,12 @@ class GuardrailsMicroserviceModel:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
-        self.top_k = top_k
-        self.seed = seed
-        self.frequency_penalty = frequency_penalty
-        self.presence_penalty = presence_penalty
-        self.json_mode = json_mode
         self.client = AsyncNeMoMicroservices(base_url=base_url)
         logger.info(
             f"Initialized GuardrailsMicroserviceModel with config_id: {config_id}, "
             f"model: {model_name}, stream: {stream}"
         )
-        logger.debug(
-            f"LLM parameters: max_tokens={max_tokens}, temperature={temperature}, "
-            f"top_p={top_p}, top_k={top_k}, seed={seed}"
-        )
+        logger.debug(f"LLM parameters: max_tokens={max_tokens}, temperature={temperature}, top_p={top_p}")
 
     def get_auth_headers(self):
         """Get authentication headers for API requests."""
@@ -74,7 +61,7 @@ class GuardrailsMicroserviceModel:
         logger.debug(f"Input messages: {messages}")
 
         try:
-            # Prepare the request payload with all LLM parameters
+            # Prepare the request payload with only supported parameters
             payload = {
                 "model": self.model_name,
                 "messages": messages,
@@ -82,17 +69,9 @@ class GuardrailsMicroserviceModel:
                 "max_tokens": self.max_tokens,
                 "temperature": self.temperature,
                 "top_p": self.top_p,
-                "top_k": self.top_k,
-                "frequency_penalty": self.frequency_penalty,
-                "presence_penalty": self.presence_penalty,
+                "stream": self.stream,
                 **kwargs,
             }
-
-            # Add optional parameters only if they have values
-            if self.seed is not None:
-                payload["seed"] = self.seed
-            if self.json_mode:
-                payload["response_format"] = {"type": "json_object"}
 
             if self.stream:
                 # For streaming, we'll use the chat completions endpoint
@@ -120,17 +99,9 @@ class GuardrailsMicroserviceModel:
                     "max_tokens": self.max_tokens,
                     "temperature": self.temperature,
                     "top_p": self.top_p,
-                    "top_k": self.top_k,
-                    "frequency_penalty": self.frequency_penalty,
-                    "presence_penalty": self.presence_penalty,
+                    "stream": self.stream,
                     **kwargs,
                 }
-
-                # Add optional parameters
-                if self.seed is not None:
-                    client_params["seed"] = self.seed
-                if self.json_mode:
-                    client_params["response_format"] = {"type": "json_object"}
 
                 response = await self.client.guardrail.chat.completions.create(**client_params)
                 logger.debug(f"Non-streaming response received: {type(response)}")
@@ -194,41 +165,9 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
             advanced=True,
             value=0.9,
         ),
-        IntInput(
-            name="top_k",
-            display_name="Top K",
-            info="Limits the number of tokens considered for each step.",
-            advanced=True,
-            value=40,
-        ),
-        IntInput(
-            name="seed",
-            display_name="Seed",
-            info="Random seed for reproducible results.",
-            advanced=True,
-            value=None,
-        ),
-        FloatInput(
-            name="frequency_penalty",
-            display_name="Frequency Penalty",
-            info="Reduces repetition of common tokens.",
-            advanced=True,
-            value=0.0,
-        ),
-        FloatInput(
-            name="presence_penalty",
-            display_name="Presence Penalty",
-            info="Reduces repetition of any token.",
-            advanced=True,
-            value=0.0,
-        ),
-        BoolInput(
-            name="json_mode",
-            display_name="JSON Mode",
-            info="Force the model to respond with valid JSON.",
-            advanced=True,
-            value=False,
-        ),
+        # Note: top_k, seed, frequency_penalty, and presence_penalty are NOT supported
+        # by the NeMo Guardrails API according to official documentation
+        # These parameters are removed to prevent "unexpected keyword argument" errors
         # Model selection (from available models in the config)
         DropdownInput(
             name="model",
@@ -238,6 +177,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
             refresh_button=True,
             required=True,
             combobox=True,
+            real_time_refresh=True,
         ),
     ]
 
@@ -304,6 +244,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
             try:
                 # Preserve current selection
                 current_value = build_config.get("config", {}).get("value")
+                logger.debug(f"Config refresh - preserving current value: {current_value}")
 
                 # Fetch available configs
                 configs, configs_metadata = await self.fetch_guardrails_configs()
@@ -313,13 +254,26 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
                 # Restore selection if still valid
                 if current_value and current_value in configs:
                     build_config["config"]["value"] = current_value
+                    logger.debug(f"Config refresh - restored selection: {current_value}")
+                else:
+                    logger.debug(
+                        f"Config refresh - no valid selection to restore. "
+                        f"current_value: {current_value}, available: {configs}"
+                    )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error refreshing configs: {e}")
                 build_config["config"]["options"] = []
                 build_config["config"]["options_metadata"] = []
 
+        # Handle existing config selection
+        if field_name == "config" and isinstance(field_value, str):
+            logger.debug(f"Config selection: {field_value}")
+            build_config["config"]["value"] = field_value
+            return build_config
+
         # Handle model refresh
         if field_name == "model" and (field_value is None or field_value == ""):
+            logger.debug("Model refresh requested")
             return await self._handle_model_refresh(build_config)
 
         return build_config
@@ -371,7 +325,6 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
         )
 
         # Validate configuration
-        config_required = "Guardrails configuration is required"
         base_url_required = "Base URL is required"
         auth_token_required = "Authentication token is required"  # noqa: S105
         namespace_required = "Namespace is required"
@@ -381,9 +334,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
             logger.error("Model selection is required but not set")
             raise ValueError(model_required)
 
-        if not hasattr(self, "config") or not self.config:
-            logger.error("Guardrails configuration is required but not set")
-            raise ValueError(config_required)
+        # temp fix for config
+        config = self.config or "self-check"
+
+        # if not hasattr(self, "config") or not self.config:
+        #    logger.error("Guardrails configuration is required but not set")
+        #    raise ValueError(config_required)
 
         if not hasattr(self, "base_url") or not self.base_url:
             logger.error("Base URL is required but not set")
@@ -405,17 +361,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
         return GuardrailsMicroserviceModel(
             base_url=self.base_url,
             auth_token=self.auth_token,
-            config_id=self.config,
+            config_id=config,
             model_name=self.model,
             stream=self.stream,
             max_tokens=getattr(self, "max_tokens", 1024),
             temperature=getattr(self, "temperature", 0.7),
             top_p=getattr(self, "top_p", 0.9),
-            top_k=getattr(self, "top_k", 40),
-            seed=getattr(self, "seed", None),
-            frequency_penalty=getattr(self, "frequency_penalty", 0.0),
-            presence_penalty=getattr(self, "presence_penalty", 0.0),
-            json_mode=getattr(self, "json_mode", False),
         )
 
     async def text_response(self) -> Message:
@@ -481,6 +432,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
                     # Extract text from streaming response
                     if isinstance(result, dict) and "choices" in result:
                         stream_text = result["choices"][0]["message"]["content"]
+                    elif hasattr(result, "choices") and result.choices:
+                        stream_text = result.choices[0].message.content
+                    elif hasattr(result, "content"):
+                        stream_text = result.content
+                    elif isinstance(result, str):
+                        stream_text = result
                     else:
                         stream_text = str(result)
 
@@ -499,15 +456,36 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
                     result = await output.invoke({"messages": messages})
                     if isinstance(result, dict) and "choices" in result:
                         result = result["choices"][0]["message"]["content"]
+                    elif hasattr(result, "choices") and result.choices:
+                        result = result.choices[0].message.content
+                    elif hasattr(result, "content"):
+                        result = result.content
+                    elif isinstance(result, str):
+                        pass
+                    else:
+                        result = str(result)
             else:
                 # Non-streaming
                 result = await output.invoke({"messages": messages})
+                logger.debug(f"Raw result type: {type(result)}")
+                logger.debug(f"Raw result: {result}")
+
+                # Handle different response types
                 if isinstance(result, dict) and "choices" in result:
+                    # Standard OpenAI-style response
                     result = result["choices"][0]["message"]["content"]
+                elif hasattr(result, "choices") and result.choices:
+                    # NeMo Guardrails response object
+                    result = result.choices[0].message.content
                 elif hasattr(result, "content"):
+                    # Direct content attribute
                     result = result.content
-                # elif isinstance(result, str):
-                #     result = result  # This is redundant
+                elif isinstance(result, str):
+                    # Already a string
+                    pass
+                else:
+                    # Fallback to string representation
+                    result = str(result)
 
             # Set status
             if isinstance(result, dict):
