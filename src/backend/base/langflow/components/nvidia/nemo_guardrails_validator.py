@@ -3,7 +3,7 @@ from typing import Any
 from loguru import logger
 
 from langflow.base.models.model import Component
-from langflow.components.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
+from langflow.base.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.inputs import DropdownInput, MessageInput, MultilineInput
 from langflow.io import Output
 from langflow.schema.dotdict import dotdict

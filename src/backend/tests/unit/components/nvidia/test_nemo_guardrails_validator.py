@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from langflow.components.nvidia.nemo_guardrails_base import (
+from langflow.base.nvidia.nemo_guardrails_base import (
     GuardrailsConfigInput,
 )
 from langflow.components.nvidia.nemo_guardrails_validator import (

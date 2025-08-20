@@ -2,12 +2,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
+from langflow.base.nvidia.nemo_guardrails_base import (
+    GuardrailsConfigInput,
+)
 from langflow.components.nvidia.nemo_guardrails import (
     GuardrailsMicroserviceModel,
     NVIDIANeMoGuardrailsComponent,
-)
-from langflow.components.nvidia.nemo_guardrails_base import (
-    GuardrailsConfigInput,
 )
 
 

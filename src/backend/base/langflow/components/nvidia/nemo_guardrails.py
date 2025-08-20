@@ -9,7 +9,7 @@ from nemo_microservices import AsyncNeMoMicroservices
 from pydantic import Field
 
 from langflow.base.models.model import LCModelComponent
-from langflow.components.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
+from langflow.base.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.field_typing import LanguageModel
 from langflow.inputs import DropdownInput, FloatInput, IntInput
 from langflow.schema.dotdict import dotdict
