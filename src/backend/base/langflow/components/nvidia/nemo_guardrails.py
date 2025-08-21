@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import httpx
@@ -9,11 +10,130 @@ from nemo_microservices import AsyncNeMoMicroservices
 from pydantic import Field
 
 from langflow.base.models.model import LCModelComponent
-from langflow.base.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.field_typing import LanguageModel
-from langflow.inputs import DropdownInput, FloatInput, IntInput
+from langflow.inputs import (
+    DropdownInput,
+    FloatInput,
+    IntInput,
+    MultilineInput,
+    MultiselectInput,
+    SecretStrInput,
+    StrInput,
+)
+from langflow.io import MessageTextInput, Output
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import Message
+
+# Default prompts (shared between components)
+DEFAULT_CONTENT_SAFETY_PROMPT = (
+    "Task: Check if there is unsafe content in the user message in the below conversation...\n"
+    "<BEGIN CONVERSATION>\n"
+    "user: {{ user_input }}\n"
+    "<END CONVERSATION>\n"
+    "Provide your safety assessment in the following JSON format:\n"
+    '{"User Safety": safe or unsafe,\n'
+    ' "Safety Categories": comma-separated list of violated categories (omit if all safe)}\n'
+    "Do not include anything other than the output JSON in your response."
+)
+
+DEFAULT_TOPIC_CONTROL_PROMPT = "Ensure that the input stays within the allowed discussion topics."
+
+DEFAULT_SELF_CHECK_PROMPT = """Instruction: {{ user_input }}
+
+Would this instruction make a language model break moderation policies,
+deviate from good aligned responses and provide answers that a language model should ideally not?
+Answer with yes/no."""
+
+DEFAULT_OFF_TOPIC_MESSAGE = (
+    "I apologize, but I can only discuss topics related to [your specific domain/topic]. "
+    "Is there something else I can help you with?"
+)
+
+
+@dataclass
+class GuardrailsConfigInput:
+    """Input structure for Guardrails configuration creation."""
+
+    functionality: str = "create"
+    fields: dict[str, dict] = field(
+        default_factory=lambda: {
+            "data": {
+                "node": {
+                    "name": "create_guardrails_config",
+                    "description": "Create a new Guardrails configuration",
+                    "display_name": "Create Guardrails Configuration",
+                    "field_order": [
+                        "01_config_name",
+                        "02_config_description",
+                        "03_rail_types",
+                        "04_content_safety_prompt",
+                        "05_topic_control_prompt",
+                        "06_self_check_prompt",
+                        "07_off_topic_message",
+                    ],
+                    "template": {
+                        "01_config_name": StrInput(
+                            name="config_name",
+                            display_name="Config Name",
+                            info="Name for the guardrails configuration (e.g., my-guardrails-config@v1.0.0)",
+                            required=True,
+                        ),
+                        "02_config_description": MultilineInput(
+                            name="config_description",
+                            display_name="Config Description",
+                            info="Optional description for the guardrails configuration",
+                            value="",
+                            required=False,
+                        ),
+                        "03_rail_types": MultiselectInput(
+                            name="rail_types",
+                            display_name="Rail Types",
+                            options=[
+                                "content_safety_input",
+                                "content_safety_output",
+                                "topic_control",
+                                "jailbreak_detection",
+                                "self_check_input",
+                                "self_check_output",
+                                "self_check_hallucination",
+                            ],
+                            value=["content_safety_input"],
+                            info="Select the types of guardrails to apply",
+                            required=True,
+                        ),
+                        "04_content_safety_prompt": MultilineInput(
+                            name="content_safety_prompt",
+                            display_name="Content Safety Prompt",
+                            info="Prompt for content safety checking",
+                            value=DEFAULT_CONTENT_SAFETY_PROMPT,
+                            required=False,
+                        ),
+                        "05_topic_control_prompt": MultilineInput(
+                            name="topic_control_prompt",
+                            display_name="Topic Control Prompt",
+                            info="Prompt for topic control checking",
+                            value=DEFAULT_TOPIC_CONTROL_PROMPT,
+                            required=False,
+                        ),
+                        "06_self_check_prompt": MultilineInput(
+                            name="self_check_prompt",
+                            display_name="Self Check Prompt",
+                            info="Prompt for self-checking guardrails",
+                            value=DEFAULT_SELF_CHECK_PROMPT,
+                            required=False,
+                        ),
+                        "07_off_topic_message": MultilineInput(
+                            name="off_topic_message",
+                            display_name="Off-Topic Message",
+                            info="Message to display when input is off-topic",
+                            value=DEFAULT_OFF_TOPIC_MESSAGE,
+                            required=False,
+                        ),
+                    },
+                }
+            }
+        }
+    )
 
 
 class GuardrailsMicroserviceModel(BaseChatModel):
@@ -249,7 +369,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
         return self
 
 
-class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
+class NVIDIANeMoGuardrailsComponent(LCModelComponent):
     display_name = "NeMo Guardrails"
     description = (
         "Apply guardrails to LLM interactions using the NeMo Guardrails microservice. "
@@ -261,8 +381,53 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
 
     inputs = [
         *LCModelComponent._base_inputs,
-        *NeMoGuardrailsBase._nemo_base_inputs,
-        # LLM parameters
+        # Single authentication setup (like other NeMo components)
+        MessageTextInput(
+            name="base_url",
+            display_name="NeMo Base URL",
+            value="https://us-west-2.api-dev.ai.datastax.com/nvidia",
+            info="Base URL for NeMo microservices",
+            required=True,
+            real_time_refresh=True,
+        ),
+        SecretStrInput(
+            name="auth_token",
+            display_name="Authentication Token",
+            info="Authentication token for NeMo microservices",
+            required=True,
+            real_time_refresh=True,
+        ),
+        StrInput(
+            name="namespace",
+            display_name="Namespace",
+            value="default",
+            info="Namespace for NeMo microservices (e.g., default, my-org)",
+            advanced=True,
+            required=True,
+            real_time_refresh=True,
+        ),
+        # Mode selection
+        DropdownInput(
+            name="mode",
+            display_name="Mode",
+            options=["chat", "check"],
+            value="chat",
+            info="Chat mode: Generate responses with guardrails. Check mode: Validate input/output only.",
+            required=True,
+        ),
+        # Guardrails configuration selection
+        DropdownInput(
+            name="config",
+            display_name="Guardrails Configuration",
+            info="Select a guardrails configuration or create a new one",
+            options=[],
+            refresh_button=True,
+            required=True,
+            combobox=True,
+            real_time_refresh=True,
+            dialog_inputs=asdict(GuardrailsConfigInput()),
+        ),
+        # LLM parameters (only shown in chat mode)
         IntInput(
             name="max_tokens",
             display_name="Max Tokens",
@@ -294,43 +459,263 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
             combobox=True,
             real_time_refresh=True,
         ),
+        # Validation mode (only shown in check mode)
+        DropdownInput(
+            name="validation_mode",
+            display_name="Validation Mode",
+            options=["input", "output"],
+            value="input",
+            info="Validate input (before LLM) or output (after LLM) - only used in check mode",
+            required=False,
+        ),
     ]
 
-    async def fetch_guardrails_models(self) -> list[str]:
-        """Fetch available models for guardrails using the NeMo microservices client."""
-        logger.info("Fetching available models for guardrails using NeMo microservices client")
+    outputs = [
+        Output(display_name="Validated Output", name="validated_output", method="process"),
+        Output(display_name="Validation Error", name="validation_error", method="process"),
+    ]
+
+    def get_auth_headers(self):
+        """Get authentication headers for API requests."""
+        if not hasattr(self, "auth_token") or not self.auth_token:
+            return {
+                "accept": "application/json",
+                "Content-Type": "application/json",
+            }
+        return {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.auth_token}",
+        }
+
+    def get_nemo_client(self) -> AsyncNeMoMicroservices:
+        """Get an authenticated NeMo microservices client."""
+        return AsyncNeMoMicroservices(
+            base_url=self.base_url,
+        )
+
+    async def fetch_guardrails_configs(self) -> tuple[list[str], list[dict[str, Any]]]:
+        """Fetch available guardrails configurations with metadata."""
+        namespace = getattr(self, "namespace", "default")
+        logger.info(f"Fetching guardrails configs from {self.base_url} with namespace: {namespace}")
         try:
+            nemo_client = self.get_nemo_client()
+            logger.debug(f"Making API call to guardrail.configs.list with namespace: {namespace}")
+            response = await nemo_client.guardrail.configs.list(extra_headers=self.get_auth_headers())
+            configs = []
+            configs_metadata = []
+
+            if hasattr(response, "data") and response.data:
+                logger.debug(f"Found {len(response.data)} configs in response")
+                for config in response.data:
+                    config_name = getattr(config, "name", "")
+                    config_description = getattr(config, "description", "")
+                    config_created = getattr(config, "created", None)
+                    config_updated = getattr(config, "updated", None)
+
+                    logger.debug(f"Processing config: {config_name}")
+
+                    if config_name:
+                        configs.append(config_name)
+                        # Build metadata for this config
+                        metadata = self._build_config_metadata(config_description, config_created, config_updated)
+                        configs_metadata.append(metadata)
+                        logger.debug(f"Added config: {config_name}")
+
+            logger.info(f"Successfully fetched {len(configs)} guardrails configurations")
+            return configs, configs_metadata  # noqa: TRY300
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error fetching guardrails configs: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            if hasattr(e, "response") and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            return [], []
+
+    def _build_config_metadata(self, description: str, created: Any, updated: Any) -> dict[str, Any]:
+        """Build metadata for a guardrails configuration."""
+        metadata = {
+            "icon": "Settings",
+            "description": description if description else "Guardrails configuration",
+        }
+
+        if created:
+            metadata["created"] = str(created)
+        if updated:
+            metadata["updated"] = str(updated)
+
+        return metadata
+
+    async def create_guardrails_config(self, config_data: dict) -> str:
+        """Create a new guardrails configuration using the NeMo microservices client."""
+        config_name = config_data.get("01_config_name")
+        namespace = getattr(self, "namespace", "default")
+        logger.info(f"Creating guardrails config '{config_name}' in namespace '{namespace}'")
+        logger.debug(f"Config data: {config_data}")
+
+        try:
+            # Extract config name
+            config_name_required = "Config name is required"
+            if not config_name:
+                raise ValueError(config_name_required)
+            logger.debug(f"Config name extracted: {config_name}")
+
+            # Extract description
+            description = config_data.get("02_config_description", "")
+            logger.debug(f"Description extracted: {description}")
+
+            # Extract rail types
+            rail_types = config_data.get("03_rail_types", ["content_safety_input"])
+            logger.debug(f"Rail types extracted: {rail_types}")
+
+            # Build the configuration parameters
+            logger.debug("Building guardrails parameters...")
+            params = self._build_guardrails_params(config_data, rail_types)
+            logger.debug(f"Built parameters: {json.dumps(params, indent=2)}")
+
+            # Create the config using the NeMo microservices client
+            logger.debug(f"Creating config with name: {config_name}, namespace: {namespace}")
+            logger.debug(f"Built parameters: {json.dumps(params, indent=2)}")
+            logger.debug(f"Description: {description}")
+            logger.debug(f"Using base_url: {self.base_url}")
+            logger.debug(f"Auth headers: {self.get_auth_headers()}")
+
             client = self.get_nemo_client()
-            logger.debug("Using NeMo microservices client to fetch models")
+            logger.debug("Making API call to guardrail.configs.create...")
 
-            # Use the client's models resource
-            models_response = await client.guardrail.models.list(extra_headers=self.get_auth_headers())
-            logger.debug(f"Models response: {models_response}")
+            # Call the API with the correct parameter structure
+            create_kwargs = {
+                "name": config_name,
+                "namespace": namespace,
+                "data": params,
+                "extra_headers": self.get_auth_headers(),
+            }
 
-            model_names = []
-            if hasattr(models_response, "data") and models_response.data:
-                for model in models_response.data:
-                    logger.debug(f"Processing model: {model}")
-                    # Check for both 'name' and 'id' attributes (some APIs use different field names)
-                    if hasattr(model, "name") and model.name:
-                        model_names.append(model.name)
-                        logger.debug(f"Added model by name: {model.name}")
-                    elif hasattr(model, "id") and model.id:
-                        model_names.append(model.id)
-                        logger.debug(f"Added model by id: {model.id}")
+            # Add description if provided
+            if description:
+                create_kwargs["description"] = description
 
-            logger.debug(f"Found {len(model_names)} available models for guardrails")
-            return model_names  # noqa: TRY300
+            logger.debug(
+                f"API call kwargs: {json.dumps({k: v for k, v in create_kwargs.items() if k != 'extra_headers'}, indent=2)}"  # noqa: E501
+            )
 
-        except Exception as exc:  # noqa: BLE001
-            logger.error(f"Error fetching models using NeMo microservices client: {exc}")
-            return []
+            result = await client.guardrail.configs.create(**create_kwargs)
+
+            logger.debug(f"API call completed. Result type: {type(result)}")
+            logger.debug(f"Result object: {result}")
+
+            config_id = result.name
+            logger.info(f"Successfully created guardrails config '{config_name}' with ID: {config_id}")
+            logger.debug(f"Returning config_id: {config_id}")
+
+            return config_id  # noqa: TRY300
+
+        except Exception as e:
+            error_msg = f"Failed to create guardrails config '{config_name}': {e!s}"
+            logger.error(error_msg)
+            logger.error(f"Exception type: {type(e)}")
+            logger.error(f"Exception details: {e}")
+            raise
+
+    def _build_guardrails_params(self, config_data: dict, rail_types: list[str]) -> dict:
+        """Build parameters for guardrails configuration."""
+        logger.debug(f"Building guardrails params with rail_types: {rail_types}")
+        logger.debug(f"Config data keys: {list(config_data.keys())}")
+
+        params = {
+            "models": [],  # Required field for guardrails config
+            "rails": {
+                "input": {"flows": []},
+                "output": {"flows": []},
+            },
+            "prompts": [],
+        }
+
+        # Add rail types to flows
+        for rail_type in rail_types:
+            if rail_type == "content_safety_input":
+                params["rails"]["input"]["flows"].append("content safety check input")
+            elif rail_type == "content_safety_output":
+                params["rails"]["output"]["flows"].append("content safety check output")
+            elif rail_type == "topic_control":
+                params["rails"]["input"]["flows"].append("topic safety check input")
+            elif rail_type == "jailbreak_detection":
+                params["rails"]["input"]["flows"].append("jailbreak detection")
+            elif rail_type == "self_check_input":
+                params["rails"]["input"]["flows"].append("self check input")
+            elif rail_type == "self_check_output":
+                params["rails"]["output"]["flows"].append("self check output")
+            elif rail_type == "self_check_hallucination":
+                params["rails"]["output"]["flows"].append("self check hallucination")
+
+        # Add prompts
+        if "content_safety_input" in rail_types:
+            content_safety_prompt = config_data.get("04_content_safety_prompt", DEFAULT_CONTENT_SAFETY_PROMPT)
+            params["prompts"].append({"task": "content_safety_check_input", "content": content_safety_prompt})
+
+        if "content_safety_output" in rail_types:
+            content_safety_prompt = config_data.get("04_content_safety_prompt", DEFAULT_CONTENT_SAFETY_PROMPT)
+            params["prompts"].append({"task": "content_safety_check_output", "content": content_safety_prompt})
+
+        if "topic_control" in rail_types:
+            topic_control_prompt = config_data.get("05_topic_control_prompt", DEFAULT_TOPIC_CONTROL_PROMPT)
+            params["prompts"].append({"task": "topic_safety_check_input", "content": topic_control_prompt})
+
+        if "self_check_input" in rail_types:
+            self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
+            params["prompts"].append({"task": "self_check_input", "content": self_check_prompt})
+
+        if "self_check_output" in rail_types:
+            self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
+            params["prompts"].append({"task": "self_check_output", "content": self_check_prompt})
+
+        if "self_check_hallucination" in rail_types:
+            self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
+            params["prompts"].append({"task": "self_check_hallucination", "content": self_check_prompt})
+
+        # Add jailbreak detection
+        if "jailbreak_detection" in rail_types:
+            params["rails"]["input"]["flows"].append("jailbreak detection heuristics")
+
+        logger.debug(f"Built guardrails params: {json.dumps(params, indent=2)}")
+        return params
+
+    def _get_nemo_exception_message(self, e: Exception):
+        """Get a message from an exception."""
+        try:
+            if hasattr(e, "body") and isinstance(e.body, dict):
+                message = e.body.get("message")
+                if message:
+                    return message
+        except Exception:  # noqa: S110, BLE001
+            pass
+        return None
 
     async def update_build_config(
         self, build_config: dotdict, field_value: Any, field_name: str | None = None
     ) -> dotdict | str:
         """Update build configuration for the guardrails component."""
         logger.info(f"Updating build config for field: {field_name}, value: {field_value}")
+
+        # Handle mode changes - update visibility of inputs
+        if field_name == "mode":
+            mode = field_value
+            logger.info(f"Mode changed to: {mode}")
+
+            # Update visibility of LLM-specific inputs
+            if mode == "chat":
+                build_config["max_tokens"]["show"] = True
+                build_config["temperature"]["show"] = True
+                build_config["top_p"]["show"] = True
+                build_config["model"]["show"] = True
+                build_config["validation_mode"]["show"] = False
+            else:  # check mode
+                build_config["max_tokens"]["show"] = False
+                build_config["temperature"]["show"] = False
+                build_config["top_p"]["show"] = False
+                build_config["model"]["show"] = False
+                build_config["validation_mode"]["show"] = True
 
         # Handle config creation dialog
         if field_name == "config" and isinstance(field_value, dict) and "01_config_name" in field_value:
@@ -393,6 +778,160 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
 
         return build_config
 
+    async def _validate_input(self) -> Message:
+        """Validate input using guardrails check endpoint."""
+        logger.info("Starting guardrails validation process")
+
+        # Prepare input
+        input_text = ""
+        if hasattr(self, "system_message") and self.system_message:
+            input_text += f"{self.system_message}\n\n"
+        if hasattr(self, "input_value") and self.input_value:
+            if isinstance(self.input_value, Message):
+                input_text += self.input_value.text
+            else:
+                input_text += str(self.input_value)
+
+        logger.debug(f"Prepared input text: {input_text[:200]}...")  # Log first 200 chars
+
+        empty_message_error = "The message you want to validate is empty."
+        if not input_text.strip():
+            logger.error("Empty input text provided")
+            raise ValueError(empty_message_error)
+
+        validation_mode = getattr(self, "validation_mode", "input")
+        logger.info(f"Processing validation in {validation_mode} mode")
+
+        try:
+            # Validate using guardrail.checks.create
+            client = self.get_nemo_client()
+
+            logger.debug("Making API call to guardrail.checks.create for validation")
+
+            # Determine message role based on validation mode
+            role = "user" if validation_mode == "input" else "assistant"
+
+            validation_check = await client.guardrail.checks.create(
+                messages=[{"role": role, "content": input_text}],
+                guardrails={"config_id": self.config},
+                extra_headers=self.get_auth_headers(),
+            )
+
+            logger.debug(f"Validation check result: {validation_check}")
+
+            if validation_check.status == "blocked":
+                logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
+                self.status = f"{validation_mode.capitalize()} blocked by guardrails"
+                return Message(text=f"I cannot process that {validation_mode}.")
+
+            # If validation passes, return the original input
+            logger.info(f"{validation_mode.capitalize()} passed guardrails validation")
+            self.status = f"{validation_mode.capitalize()} validated successfully"
+            return Message(text=input_text)
+
+        except Exception as e:
+            logger.error(f"Error in validation: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            if hasattr(e, "response") and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            if message := self._get_nemo_exception_message(e):
+                logger.error(f"Exception message: {message}")
+                raise ValueError(message) from e
+            raise
+
+    async def process(self) -> dict[str, Message]:
+        """Process the input through guardrails validation (for check mode)."""
+        logger.info("Starting guardrails validation process")
+
+        # Prepare input
+        input_text = ""
+        if hasattr(self, "system_message") and self.system_message:
+            input_text += f"{self.system_message}\n\n"
+        if hasattr(self, "input_value") and self.input_value:
+            if isinstance(self.input_value, Message):
+                input_text += self.input_value.text
+            else:
+                input_text += str(self.input_value)
+
+        logger.debug(f"Prepared input text: {input_text[:200]}...")  # Log first 200 chars
+
+        empty_message_error = "The message you want to validate is empty."
+        if not input_text.strip():
+            logger.error("Empty input text provided")
+            raise ValueError(empty_message_error)
+
+        validation_mode = getattr(self, "validation_mode", "input")
+        logger.info(f"Processing validation in {validation_mode} mode")
+
+        try:
+            # Validate using guardrail.checks.create
+            client = self.get_nemo_client()
+
+            logger.debug("Making API call to guardrail.checks.create for validation")
+
+            # Determine message role based on validation mode
+            role = "user" if validation_mode == "input" else "assistant"
+
+            validation_check = await client.guardrail.checks.create(
+                messages=[{"role": role, "content": input_text}],
+                guardrails={"config_id": self.config},
+                extra_headers=self.get_auth_headers(),
+            )
+
+            logger.debug(f"Validation check result: {validation_check}")
+
+            if validation_check.status == "blocked":
+                logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
+                self.status = f"{validation_mode.capitalize()} blocked by guardrails"
+                return {"validation_error": Message(text=f"I cannot process that {validation_mode}.")}
+
+            # If validation passes, return the original input
+            logger.info(f"{validation_mode.capitalize()} passed guardrails validation")
+            self.status = f"{validation_mode.capitalize()} validated successfully"
+            return {"validated_output": Message(text=input_text)}
+
+        except Exception as e:
+            logger.error(f"Error in validation: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            if hasattr(e, "response") and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            if message := self._get_nemo_exception_message(e):
+                logger.error(f"Exception message: {message}")
+                raise ValueError(message) from e
+            raise
+
+    async def fetch_guardrails_models(self) -> list[str]:
+        """Fetch available models for guardrails using the NeMo microservices client."""
+        logger.info("Fetching available models for guardrails using NeMo microservices client")
+        try:
+            client = self.get_nemo_client()
+            logger.debug("Using NeMo microservices client to fetch models")
+
+            # Use the client's models resource
+            models_response = await client.guardrail.models.list(extra_headers=self.get_auth_headers())
+            logger.debug(f"Models response: {models_response}")
+
+            model_names = []
+            if hasattr(models_response, "data") and models_response.data:
+                for model in models_response.data:
+                    logger.debug(f"Processing model: {model}")
+                    # Check for both 'name' and 'id' attributes (some APIs use different field names)
+                    if hasattr(model, "name") and model.name:
+                        model_names.append(model.name)
+                        logger.debug(f"Added model by name: {model.name}")
+                    elif hasattr(model, "id") and model.id:
+                        model_names.append(model.id)
+                        logger.debug(f"Added model by id: {model.id}")
+
+            logger.debug(f"Found {len(model_names)} available models for guardrails")
+            return model_names  # noqa: TRY300
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Error fetching models using NeMo microservices client: {exc}")
+            return []
+
     async def _handle_model_refresh(self, build_config: dotdict) -> dotdict:
         """Handle model refresh with selection preservation."""
         logger.info("Handling model refresh request")
@@ -434,6 +973,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
 
     def build_model(self) -> LanguageModel:
         """Build a language model that uses the guardrails microservice."""
+        mode = getattr(self, "mode", "chat")
+
+        if mode == "check":
+            error_msg = "Check mode does not provide a language model. Use the validation outputs instead."
+            raise NotImplementedError(error_msg)
+
         logger.info(
             f"Building guardrails model with config: {getattr(self, 'config', 'None')}, "
             f"model: {getattr(self, 'model', 'None')}"
@@ -485,5 +1030,11 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent, NeMoGuardrailsBase):
         )
 
     async def text_response(self) -> Message:
-        """Use base class text_response method since our model now returns AIMessage objects."""
+        """Handle text response based on mode."""
+        mode = getattr(self, "mode", "chat")
+
+        if mode == "check":
+            # In check mode, perform validation instead of generating text
+            return await self._validate_input()
+        # In chat mode, use the normal LLM response
         return await super().text_response()

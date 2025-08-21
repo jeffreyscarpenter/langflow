@@ -3,14 +3,13 @@ from typing import Any
 from loguru import logger
 
 from langflow.base.models.model import Component
-from langflow.base.nvidia.nemo_guardrails_base import NeMoGuardrailsBase
 from langflow.inputs import DropdownInput, MessageInput, MultilineInput
 from langflow.io import Output
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import Message
 
 
-class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
+class NVIDIANeMoGuardrailsValidator(Component):
     display_name = "NeMo Guardrails Validator"
     description = (
         "Validate input/output using NVIDIA NeMo Guardrails microservice. "
@@ -29,7 +28,6 @@ class NVIDIANeMoGuardrailsValidator(NeMoGuardrailsBase, Component):
             info="System message to include in validation context.",
             advanced=True,
         ),
-        *NeMoGuardrailsBase._nemo_base_inputs,
         # Validation mode
         DropdownInput(
             name="validation_mode",

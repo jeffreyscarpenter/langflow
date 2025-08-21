@@ -2,13 +2,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from langflow.base.nvidia.nemo_guardrails_base import (
-    GuardrailsConfigInput,
-)
 from langflow.components.nvidia.nemo_guardrails import (
+    GuardrailsConfigInput,
     GuardrailsMicroserviceModel,
     NVIDIANeMoGuardrailsComponent,
 )
+from langflow.schema.message import Message
 
 
 @pytest.fixture
@@ -134,12 +133,6 @@ class TestNVIDIANeMoGuardrailsComponent:
         assert component.display_name == "NeMo Guardrails"
         assert component.name == "NVIDIANemoGuardrails"
         assert component.beta is True
-        assert hasattr(component, "_dialog_state")
-
-    def test_reset_dialog_state(self, component):
-        """Test dialog state reset."""
-        component._reset_dialog_state()
-        assert component._dialog_state == "config_selection"
 
     def test_get_auth_headers_with_token(self, component):
         """Test authentication headers with token."""
@@ -560,26 +553,71 @@ class TestNVIDIANeMoGuardrailsComponent:
 
     @pytest.mark.asyncio
     async def test_fetch_guardrails_configs_empty_description(self, component):
-        """Test that empty descriptions fall back to default text."""
-        mock_config = Mock()
-        mock_config.name = "test_config"
-        mock_config.description = ""  # Empty description
-        mock_config.created = "2024-01-01T00:00:00Z"
-        mock_config.updated = None
-
-        mock_response = Mock()
-        mock_response.data = [mock_config]
-
+        """Test fetching configs with empty description."""
         with patch.object(component, "get_nemo_client") as mock_get_client:
-            mock_client = Mock()
-            mock_client.guardrail.configs.list = AsyncMock(return_value=mock_response)
+            mock_client = AsyncMock()
             mock_get_client.return_value = mock_client
+
+            # Mock response with empty description
+            mock_response = Mock()
+            mock_response.data = [Mock(name="test-config", description="", created=None, updated=None)]
+            mock_client.guardrail.configs.list.return_value = mock_response
 
             configs, metadata = await component.fetch_guardrails_configs()
 
-            assert configs == ["test_config"]
+            assert configs == ["test-config"]
             assert len(metadata) == 1
+            assert metadata[0]["description"] == "Guardrails configuration"
 
-            # Verify fallback to default description
-            config_metadata = metadata[0]
-            assert config_metadata["description"] == "Guardrails configuration"
+    def test_mode_selection(self, component):
+        """Test mode selection functionality."""
+        # Test default mode
+        assert getattr(component, "mode", "chat") == "chat"
+
+        # Test mode attribute can be set
+        component.mode = "check"
+        assert component.mode == "check"
+
+        # Test validation mode attribute
+        component.validation_mode = "output"
+        assert component.validation_mode == "output"
+
+    @pytest.mark.asyncio
+    async def test_build_model_check_mode(self, component):
+        """Test build_model raises error in check mode."""
+        component.mode = "check"
+
+        with pytest.raises(NotImplementedError, match="Check mode does not provide a language model"):
+            component.build_model()
+
+    @pytest.mark.asyncio
+    async def test_text_response_check_mode(self, component):
+        """Test text_response in check mode."""
+        component.mode = "check"
+        component.validation_mode = "input"
+        component.input_value = "Test input"
+
+        with patch.object(component, "_validate_input", new_callable=AsyncMock) as mock_validate:
+            mock_validate.return_value = Message(text="Validated input")
+
+            result = await component.text_response()
+
+            assert result.text == "Validated input"
+            mock_validate.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_text_response_chat_mode(self, component):
+        """Test text_response in chat mode."""
+        component.mode = "chat"
+
+        with (
+            patch.object(component, "build_model", return_value=Mock()),
+            patch.object(component, "get_langchain_callbacks", return_value=[]),
+            patch.object(component, "get_project_name", return_value="test_project"),
+            patch.object(component, "_get_chat_result", new_callable=AsyncMock) as mock_chat_result,
+        ):
+            mock_chat_result.return_value = Message(text="Chat response")
+            result = await component.text_response()
+
+            assert result.text == "Chat response"
+            mock_chat_result.assert_called_once()
