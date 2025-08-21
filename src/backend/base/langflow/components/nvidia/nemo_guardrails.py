@@ -509,18 +509,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                     ),
                 ]
             elif current_mode == "check":
-                # In check mode: show validation outputs
+                # In check mode: show single validation output
                 frontend_node["outputs"] = [
                     Output(
                         display_name="Validated Output",
                         name="validated_output",
                         method="validated_output",
-                        dynamic=True,
-                    ),
-                    Output(
-                        display_name="Validation Error",
-                        name="validation_error",
-                        method="validation_error",
                         dynamic=True,
                     ),
                 ]
@@ -791,18 +785,12 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                     ),
                 ]
             elif mode == "check":
-                # In check mode: show validation outputs
+                # In check mode: show single validation output
                 build_config["outputs"] = [
                     Output(
                         display_name="Validated Output",
                         name="validated_output",
                         method="validated_output",
-                        dynamic=True,
-                    ),
-                    Output(
-                        display_name="Validation Error",
-                        name="validation_error",
-                        method="validation_error",
                         dynamic=True,
                     ),
                 ]
@@ -895,31 +883,43 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         logger.info(f"Processing validation in {validation_mode} mode")
 
         try:
-            # Validate using guardrail.checks.create
+            # Validate using guardrail.chat.completions with guardrails
             client = self.get_nemo_client()
 
-            logger.debug("Making API call to guardrail.checks.create for validation")
+            logger.debug("Making API call to guardrail.chat.completions for validation")
 
             # Determine message role based on validation mode
             role = "user" if validation_mode == "input" else "assistant"
 
-            validation_check = await client.guardrail.checks.create(
+            # Use a minimal completion request to test validation
+            validation_response = await client.guardrail.chat.completions.create(
                 messages=[{"role": role, "content": input_text}],
+                model="gpt-4o",  # Use a default model for validation
                 guardrails={"config_id": self.config},
+                max_tokens=1,  # Minimal tokens to just test validation
                 extra_headers=self.get_auth_headers(),
             )
 
-            logger.debug(f"Validation check result: {validation_check}")
+            logger.debug(f"Validation response: {validation_response}")
 
-            if validation_check.status == "blocked":
-                logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
-                self.status = f"{validation_mode.capitalize()} blocked by guardrails"
-                return {"validation_error": Message(text=f"I cannot process that {validation_mode}.")}
+            # Check if the response indicates blocking
+            # The response should contain information about whether the input was blocked
+            if hasattr(validation_response, "choices") and validation_response.choices:
+                choice = validation_response.choices[0]
+                if hasattr(choice, "finish_reason") and choice.finish_reason == "guardrail_blocked":
+                    logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
+                    self.status = f"{validation_mode.capitalize()} blocked by guardrails"
+                    # Return error message with error=True and category="error"
+                    return {
+                        "validated_output": Message(
+                            text=f"I cannot process that {validation_mode}.", error=True, category="error"
+                        )
+                    }
 
-            # If validation passes, return the original input
+            # If validation passes, return the original input with error=False and category="message"
             logger.info(f"{validation_mode.capitalize()} passed guardrails validation")
             self.status = f"{validation_mode.capitalize()} validated successfully"
-            return {"validated_output": Message(text=input_text)}
+            return {"validated_output": Message(text=input_text, error=False, category="message")}
 
         except Exception as e:
             logger.error(f"Error in validation: {e}")
@@ -933,14 +933,16 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             raise
 
     async def validated_output(self) -> Message:
-        """Return the validated output as a Message (for check mode)."""
-        result = await self.process()
-        return result.get("validated_output", Message(text="Validation completed"))
+        """Return the validated output as a Message (for check mode).
 
-    async def validation_error(self) -> Message:
-        """Return the validation error as a Message (for check mode)."""
+        Returns a single Message that contains either:
+        - The validated input (error=False, category="message") when validation passes
+        - An error message (error=True, category="error") when validation fails
+
+        Downstream components can check the Message's error field to determine validation status.
+        """
         result = await self.process()
-        return result.get("validation_error", Message(text="No validation error"))
+        return result.get("validated_output", Message(text="Validation completed", error=False, category="message"))
 
     async def fetch_guardrails_models(self) -> list[str]:
         """Fetch available models for guardrails using the NeMo microservices client."""
@@ -1076,6 +1078,6 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         if mode == "check":
             # In check mode, perform validation and return the validated output
             result = await self.process()
-            return result.get("validated_output", Message(text="Validation completed"))
+            return result.get("validated_output", Message(text="Validation completed", error=False, category="message"))
         # In chat mode, use the normal LLM response
         return await super().text_response()

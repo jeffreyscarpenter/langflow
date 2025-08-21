@@ -597,13 +597,74 @@ class TestNVIDIANeMoGuardrailsComponent:
         component.validation_mode = "input"
         component.input_value = "Test input"
 
-        with patch.object(component, "_validate_input", new_callable=AsyncMock) as mock_validate:
-            mock_validate.return_value = Message(text="Validated input")
+        with patch.object(component, "process", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = {
+                "validated_output": Message(text="Validated input", error=False, category="message")
+            }
 
             result = await component.text_response()
 
             assert result.text == "Validated input"
-            mock_validate.assert_called_once()
+            assert result.error is False
+            assert result.category == "message"
+            mock_process.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_text_response_check_mode_error(self, component):
+        """Test text_response in check mode with validation error."""
+        component.mode = "check"
+        component.validation_mode = "input"
+        component.input_value = "Blocked input"
+
+        with patch.object(component, "process", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = {
+                "validated_output": Message(text="I cannot process that input.", error=True, category="error")
+            }
+
+            result = await component.text_response()
+
+            assert result.text == "I cannot process that input."
+            assert result.error is True
+            assert result.category == "error"
+            mock_process.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validated_output_method(self, component):
+        """Test the validated_output method returns correct Message structure."""
+        component.mode = "check"
+        component.validation_mode = "input"
+        component.input_value = "Test input"
+
+        with patch.object(component, "process", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = {
+                "validated_output": Message(text="Test input", error=False, category="message")
+            }
+
+            result = await component.validated_output()
+
+            assert result.text == "Test input"
+            assert result.error is False
+            assert result.category == "message"
+            mock_process.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validated_output_method_error(self, component):
+        """Test the validated_output method with validation error."""
+        component.mode = "check"
+        component.validation_mode = "input"
+        component.input_value = "Blocked input"
+
+        with patch.object(component, "process", new_callable=AsyncMock) as mock_process:
+            mock_process.return_value = {
+                "validated_output": Message(text="I cannot process that input.", error=True, category="error")
+            }
+
+            result = await component.validated_output()
+
+            assert result.text == "I cannot process that input."
+            assert result.error is True
+            assert result.category == "error"
+            mock_process.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_text_response_chat_mode(self, component):
