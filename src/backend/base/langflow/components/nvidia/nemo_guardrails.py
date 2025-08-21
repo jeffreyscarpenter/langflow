@@ -945,14 +945,14 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         return result.get("validated_output", Message(text="Validation completed", error=False, category="message"))
 
     async def fetch_guardrails_models(self) -> list[str]:
-        """Fetch available models for guardrails using the NeMo microservices client."""
-        logger.info("Fetching available models for guardrails using NeMo microservices client")
+        """Fetch available models for guardrails using the general models endpoint."""
+        logger.info("Fetching available models using general models endpoint")
         try:
             client = self.get_nemo_client()
             logger.debug("Using NeMo microservices client to fetch models")
 
             # Use the client's models resource
-            models_response = await client.guardrail.models.list(extra_headers=self.get_auth_headers())
+            models_response = await client.models.list(extra_headers=self.get_auth_headers())
             logger.debug(f"Models response: {models_response}")
 
             model_names = []
