@@ -514,13 +514,13 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                     Output(
                         display_name="Validated Output",
                         name="validated_output",
-                        method="process",
+                        method="validated_output",
                         dynamic=True,
                     ),
                     Output(
                         display_name="Validation Error",
                         name="validation_error",
-                        method="process",
+                        method="validation_error",
                         dynamic=True,
                     ),
                 ]
@@ -796,13 +796,13 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                     Output(
                         display_name="Validated Output",
                         name="validated_output",
-                        method="process",
+                        method="validated_output",
                         dynamic=True,
                     ),
                     Output(
                         display_name="Validation Error",
                         name="validation_error",
-                        method="process",
+                        method="validation_error",
                         dynamic=True,
                     ),
                 ]
@@ -931,6 +931,16 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                 logger.error(f"Exception message: {message}")
                 raise ValueError(message) from e
             raise
+
+    async def validated_output(self) -> Message:
+        """Return the validated output as a Message (for check mode)."""
+        result = await self.process()
+        return result.get("validated_output", Message(text="Validation completed"))
+
+    async def validation_error(self) -> Message:
+        """Return the validation error as a Message (for check mode)."""
+        result = await self.process()
+        return result.get("validation_error", Message(text="No validation error"))
 
     async def fetch_guardrails_models(self) -> list[str]:
         """Fetch available models for guardrails using the NeMo microservices client."""
