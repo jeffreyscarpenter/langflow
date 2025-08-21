@@ -955,24 +955,81 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             models_response = await client.models.list(extra_headers=self.get_auth_headers())
             logger.debug(f"Models response: {models_response}")
 
+            # Import ChatNVIDIA's model filtering logic
+            try:
+                from langchain_nvidia_ai_endpoints._statics import determine_model
+            except ImportError:
+                logger.warning("langchain-nvidia-ai-endpoints not available, falling back to basic filtering")
+                return self._fallback_model_filtering(models_response)
+
             model_names = []
+            total_models = 0
+            chat_models = 0
+
             if hasattr(models_response, "data") and models_response.data:
                 for model in models_response.data:
-                    logger.debug(f"Processing model: {model}")
-                    # Check for both 'name' and 'id' attributes (some APIs use different field names)
-                    if hasattr(model, "name") and model.name:
-                        model_names.append(model.name)
-                        logger.debug(f"Added model by name: {model.name}")
-                    elif hasattr(model, "id") and model.id:
-                        model_names.append(model.id)
-                        logger.debug(f"Added model by id: {model.id}")
+                    total_models += 1
+                    model_id = None
 
-            logger.debug(f"Found {len(model_names)} available models for guardrails")
+                    # Extract model ID
+                    if hasattr(model, "id") and model.id:
+                        model_id = model.id
+                    elif hasattr(model, "name") and model.name:
+                        model_id = model.name
+
+                    if model_id:
+                        # Use ChatNVIDIA's lookup table to determine model type
+                        known_model = determine_model(model_id)
+                        if known_model and known_model.model_type == "chat":
+                            model_names.append(model_id)
+                            chat_models += 1
+                            logger.debug(f"Added chat model: {model_id}")
+                        elif known_model:
+                            logger.debug(f"Skipped {known_model.model_type} model: {model_id}")
+                        # Unknown model - use name-based filtering as fallback
+                        elif self._is_likely_chat_model(model_id):
+                            model_names.append(model_id)
+                            chat_models += 1
+                            logger.debug(f"Added likely chat model (fallback): {model_id}")
+                        else:
+                            logger.debug(f"Skipped unknown model: {model_id}")
+
+            logger.info(f"Found {chat_models} chat models out of {total_models} total models")
             return model_names  # noqa: TRY300
 
         except Exception as exc:  # noqa: BLE001
             logger.error(f"Error fetching models using NeMo microservices client: {exc}")
             return []
+
+    def _is_likely_chat_model(self, model_id: str) -> bool:
+        """Fallback method to determine if a model is likely a chat model based on name."""
+        model_id_lower = model_id.lower()
+
+        # Exclude known non-chat models
+        if any(keyword in model_id_lower for keyword in ["embed", "embedqa", "rerank", "rerankqa"]):
+            return False
+
+        # Include likely chat models
+        chat_indicators = ["instruct", "chat", "completion", "nemotron", "llama-3", "gpt", "claude"]
+        return any(indicator in model_id_lower for indicator in chat_indicators)
+
+    def _fallback_model_filtering(self, models_response) -> list[str]:
+        """Fallback method when ChatNVIDIA's lookup table is not available."""
+        logger.info("Using fallback model filtering")
+        model_names = []
+
+        if hasattr(models_response, "data") and models_response.data:
+            for model in models_response.data:
+                model_id = None
+                if hasattr(model, "id") and model.id:
+                    model_id = model.id
+                elif hasattr(model, "name") and model.name:
+                    model_id = model.name
+
+                if model_id and self._is_likely_chat_model(model_id):
+                    model_names.append(model_id)
+
+        return model_names
 
     async def _handle_model_refresh(self, build_config: dotdict) -> dotdict:
         """Handle model refresh with selection preservation."""
@@ -1029,6 +1086,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         # Validate configuration
         base_url_required = "Base URL is required"
         auth_token_required = "Authentication token is required"  # noqa: S105
+        config_required = "Guardrails configuration is required"
         namespace_required = "Namespace is required"
         model_required = "Model selection is required"
 
@@ -1039,9 +1097,9 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         # temp fix for config
         config = self.config or "self-check"
 
-        # if not hasattr(self, "config") or not self.config:
-        #    logger.error("Guardrails configuration is required but not set")
-        #    raise ValueError(config_required)
+        if not hasattr(self, "config") or not self.config:
+            logger.error("Guardrails configuration is required but not set")
+            raise ValueError(config_required)
 
         if not hasattr(self, "base_url") or not self.base_url:
             logger.error("Base URL is required but not set")
