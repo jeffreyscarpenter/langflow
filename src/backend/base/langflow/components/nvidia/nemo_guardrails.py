@@ -425,7 +425,6 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             options=[],
             refresh_button=True,
             required=True,
-            combobox=True,
             real_time_refresh=True,
             dialog_inputs=asdict(GuardrailsConfigInput()),
         ),
@@ -821,33 +820,25 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
 
         # Handle config refresh
         if field_name == "config" and (field_value is None or field_value == ""):
-            try:
-                # Preserve current selection
-                current_value = build_config.get("config", {}).get("value")
-                logger.debug(f"Config refresh - preserving current value: {current_value}")
-
-                # Fetch available configs
-                configs, configs_metadata = await self.fetch_guardrails_configs()
-                build_config["config"]["options"] = configs
-                build_config["config"]["options_metadata"] = configs_metadata
-
-                # Restore selection if still valid
-                if current_value and current_value in configs:
-                    build_config["config"]["value"] = current_value
-                    logger.debug(f"Config refresh - restored selection: {current_value}")
-                else:
-                    logger.debug(
-                        f"Config refresh - no valid selection to restore. "
-                        f"current_value: {current_value}, available: {configs}"
-                    )
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Error refreshing configs: {e}")
-                build_config["config"]["options"] = []
-                build_config["config"]["options_metadata"] = []
+            logger.debug("Config refresh requested")
+            return await self._handle_config_refresh(build_config)
 
         # Handle existing config selection
         if field_name == "config" and isinstance(field_value, str):
             logger.debug(f"Config selection: {field_value}")
+
+            # Populate options if they're empty (similar to KBRetrievalComponent pattern)
+            if not build_config.get("config", {}).get("options"):
+                try:
+                    configs, configs_metadata = await self.fetch_guardrails_configs()
+                    build_config["config"]["options"] = configs
+                    build_config["config"]["options_metadata"] = configs_metadata
+                    logger.debug(f"Populated config options: {configs}")
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Error fetching configs for selection: {e}")
+                    build_config["config"]["options"] = []
+                    build_config["config"]["options_metadata"] = []
+
             build_config["config"]["value"] = field_value
             return build_config
 
@@ -855,6 +846,55 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         if field_name == "model" and (field_value is None or field_value == ""):
             logger.debug("Model refresh requested")
             return await self._handle_model_refresh(build_config)
+
+        return build_config
+
+    async def _handle_config_refresh(self, build_config: dotdict) -> dotdict:
+        """Handle config refresh with selection preservation."""
+        logger.info("Handling config refresh request")
+
+        try:
+            # Preserve the current selection before refreshing
+            current_value = build_config.get("config", {}).get("value")
+            logger.debug(f"Preserving current config selection: {current_value}")
+
+            # Fetch available configs
+            logger.debug("Refreshing available configs for guardrails")
+            configs, configs_metadata = await self.fetch_guardrails_configs()
+            build_config["config"]["options"] = configs
+            build_config["config"]["options_metadata"] = configs_metadata
+
+            # Restore the current selection if it's still valid
+            if current_value and current_value in configs:
+                build_config["config"]["value"] = current_value
+                logger.debug(f"Restored config selection: {current_value}")
+            elif configs and not current_value:
+                # Set default config if no current selection
+                default_config = None
+                for config in configs:
+                    if "default" in config.lower():
+                        default_config = config
+                        break
+
+                if not default_config:
+                    default_config = configs[0]
+
+                build_config["config"]["value"] = default_config
+                logger.debug(f"Set default config selection: {default_config}")
+            elif current_value:
+                logger.warning(f"Previously selected config '{current_value}' no longer available in refreshed list")
+                # Clear the value when the selected config is no longer available
+                build_config["config"]["value"] = ""
+            else:
+                # No configs available, clear the value
+                build_config["config"]["value"] = ""
+
+            logger.info(f"Refreshed {len(configs)} available configs for guardrails")
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error refreshing configs: {e}")
+            build_config["config"]["options"] = []
+            build_config["config"]["options_metadata"] = []
 
         return build_config
 

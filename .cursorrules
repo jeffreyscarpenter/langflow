@@ -1,0 +1,19 @@
+# Langflow Development Rules
+
+## Virtual Environment Management
+- ALWAYS use uv for Langflow development and testing
+- Use `uv sync` to install dependencies before testing components
+- Use `uv run python` or `uv run pytest` for running tests
+- Never test Langflow components with system Python - always use the uv-managed environment
+- When importing Langflow components for testing, ensure uv environment is activated first
+
+## Testing Components
+- Before testing any Langflow component, run: `uv sync` to ensure dependencies are installed
+- Use `uv run python -c "..."` for quick component tests
+- For running tests: `uv run pytest`
+- The uv environment includes all required dependencies like nemo_microservices
+
+## Component Development
+- When working on Langflow components, always test within the uv environment
+- Import errors for packages like nemo_microservices indicate uv environment is not being used
+- Use `uv run` prefix for all Python commands when testing Langflow code
