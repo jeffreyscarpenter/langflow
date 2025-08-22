@@ -7,7 +7,6 @@ from langflow.components._importing import import_mod
 
 if TYPE_CHECKING:
     from .nemo_guardrails import NVIDIANeMoGuardrailsComponent
-    from .nemo_guardrails_validator import NVIDIANeMoGuardrailsValidator
     from .nvidia import NVIDIAModelComponent
     from .nvidia_customizer import NvidiaCustomizerComponent
     from .nvidia_data_preparation import NeMoDataPreparationComponent
@@ -21,7 +20,6 @@ if TYPE_CHECKING:
 
 _dynamic_imports = {
     "NVIDIANeMoGuardrailsComponent": "nemo_guardrails",
-    "NVIDIANeMoGuardrailsValidator": "nemo_guardrails_validator",
     "NVIDIAModelComponent": "nvidia",
     "NvidiaCustomizerComponent": "nvidia_customizer",
     "NeMoDataPreparationComponent": "nvidia_data_preparation",
@@ -37,7 +35,6 @@ if sys.platform == "win32":
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
         "NVIDIANeMoGuardrailsComponent",
-        "NVIDIANeMoGuardrailsValidator",
         "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
@@ -50,7 +47,6 @@ else:
         "NVIDIAEmbeddingsComponent",
         "NVIDIAModelComponent",
         "NVIDIANeMoGuardrailsComponent",
-        "NVIDIANeMoGuardrailsValidator",
         "NeMoDataPreparationComponent",
         "NvidiaCustomizerComponent",
         "NvidiaEvaluatorComponent",
