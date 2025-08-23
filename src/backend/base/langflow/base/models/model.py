@@ -48,6 +48,13 @@ class LCModelComponent(Component):
             advanced=False,
         ),
         BoolInput(name="stream", display_name="Stream", info=STREAM_INFO_TEXT, advanced=True),
+        BoolInput(
+            name="skip_empty_input",
+            display_name="Skip Empty Input",
+            info="Skip LLM call and return empty message when input is empty (useful for conditional routing)",
+            value=True,
+            advanced=True,
+        ),
     ]
 
     outputs = [
@@ -212,17 +219,25 @@ class LCModelComponent(Component):
         """
         messages: list[BaseMessage] = []
         if not input_value and not system_message:
-            logger.warning(f"Empty input received for {self.display_name} - skipping LLM call")
-            # Return an empty message instead of raising an error
-            return Message(text="")
+            if getattr(self, "skip_empty_input", True):
+                logger.warning(f"Empty input received for {self.display_name} - skipping LLM call")
+                # Return an empty message instead of raising an error
+                return Message(text="")
+            # Original behavior: raise error
+            msg = "The message you want to send to the model is empty."
+            raise ValueError(msg)
         system_message_added = False
         message = None
         if input_value:
             if isinstance(input_value, Message):
                 # Check if the message has empty text
                 if not input_value.text or input_value.text.strip() == "":
-                    logger.warning(f"Empty message text received for {self.display_name} - skipping LLM call")
-                    return Message(text="")
+                    if getattr(self, "skip_empty_input", True):
+                        logger.warning(f"Empty message text received for {self.display_name} - skipping LLM call")
+                        return Message(text="")
+                    # Original behavior: raise error
+                    msg = "The message you want to send to the model is empty."
+                    raise ValueError(msg)
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -240,8 +255,12 @@ class LCModelComponent(Component):
             else:
                 # Check if string input is empty
                 if not input_value or str(input_value).strip() == "":
-                    logger.warning(f"Empty string input received for {self.display_name} - skipping LLM call")
-                    return Message(text="")
+                    if getattr(self, "skip_empty_input", True):
+                        logger.warning(f"Empty string input received for {self.display_name} - skipping LLM call")
+                        return Message(text="")
+                    # Original behavior: raise error
+                    msg = "The message you want to send to the model is empty."
+                    raise ValueError(msg)
                 messages.append(HumanMessage(content=input_value))
 
         if system_message and not system_message_added:
