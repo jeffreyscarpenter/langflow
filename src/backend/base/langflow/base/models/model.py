@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.llms import LLM
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import BaseOutputParser
+from loguru import logger
 
 from langflow.base.constants import STREAM_INFO_TEXT
 from langflow.custom.custom_component.component import Component
@@ -211,12 +212,18 @@ class LCModelComponent(Component):
         """
         messages: list[BaseMessage] = []
         if not input_value and not system_message:
-            msg = "The message you want to send to the model is empty."
-            raise ValueError(msg)
+            logger.warning(f"Empty input received for {self.display_name} - skipping LLM call")
+            # Return an empty message instead of raising an error
+            return Message(text="")
         system_message_added = False
         message = None
         if input_value:
             if isinstance(input_value, Message):
+                # Check if the message has empty text
+                if not input_value.text or input_value.text.strip() == "":
+                    logger.warning(f"Empty message text received for {self.display_name} - skipping LLM call")
+                    return Message(text="")
+
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     if "prompt" in input_value:
@@ -231,6 +238,10 @@ class LCModelComponent(Component):
                     else:
                         messages.append(input_value.to_lc_message())
             else:
+                # Check if string input is empty
+                if not input_value or str(input_value).strip() == "":
+                    logger.warning(f"Empty string input received for {self.display_name} - skipping LLM call")
+                    return Message(text="")
                 messages.append(HumanMessage(content=input_value))
 
         if system_message and not system_message_added:
