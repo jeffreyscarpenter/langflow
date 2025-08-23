@@ -34,7 +34,8 @@ if TYPE_CHECKING:
     from langflow.components.processing.select_data import SelectDataComponent
     from langflow.components.processing.split_text import SplitTextComponent
     from langflow.components.processing.structured_output import StructuredOutputComponent
-    from langflow.components.processing.update_data import UpdateDataComponent
+from langflow.components.processing.message_operations import MessageOperationsComponent
+from langflow.components.processing.update_data import UpdateDataComponent
 
 _dynamic_imports = {
     "AlterMetadataComponent": "alter_metadata",
@@ -65,6 +66,7 @@ _dynamic_imports = {
     "SplitTextComponent": "split_text",
     "StructuredOutputComponent": "structured_output",
     "UpdateDataComponent": "update_data",
+    "MessageOperationsComponent": "message_operations",
 }
 
 __all__ = [
@@ -82,6 +84,7 @@ __all__ = [
     "LLMRouterComponent",
     "LambdaFilterComponent",
     "MergeDataComponent",
+    "MessageOperationsComponent",
     "MessageToDataComponent",
     "ParseDataComponent",
     "ParseDataFrameComponent",
