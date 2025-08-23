@@ -982,7 +982,13 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         Downstream components can check the Message's error field to determine validation status.
         """
         result = await self.process()
-        return result.get("validated_output", Message(text="Validation completed", error=False, category="message"))
+        validated_output = result.get("validated_output")
+        if validated_output is None:
+            # This should never happen if process() is working correctly
+            logger.error("process() returned result without 'validated_output' key")
+            error_msg = "Unexpected result format from guardrails validation"
+            raise RuntimeError(error_msg)
+        return validated_output
 
     async def fetch_guardrails_models(self) -> list[str]:
         """Fetch available models for guardrails using the general models endpoint."""
