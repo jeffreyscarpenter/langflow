@@ -1052,7 +1052,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         model_id_lower = model_id.lower()
 
         # Exclude known non-chat models
-        if any(keyword in model_id_lower for keyword in ["embed", "embedqa", "rerank", "rerankqa"]):
+        if any(keyword in model_id_lower for keyword in ["embed", "embedqa", "rerank", "rerankqa", "nemoguard"]):
             return False
 
         # Include likely chat models
