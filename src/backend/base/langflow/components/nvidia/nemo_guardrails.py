@@ -25,6 +25,8 @@ from langflow.io import MessageTextInput, Output
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import Message
 
+GUARDRAIL_MODEL_INTERNAL_URL = "http://ai-platform-proxy.ai-platform.svc.cluster.local:8080/v1"
+
 # Default prompts (shared between components)
 DEFAULT_CONTENT_SAFETY_PROMPT = (
     "Task: Check if there is unsafe content in the user message in the below conversation...\n"
@@ -167,6 +169,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
             "accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.auth_token}",
+            "X-Model-Authorization": self.auth_token,
         }
 
     def invoke(self, inputs, **kwargs):
@@ -532,6 +535,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             "accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.auth_token}",
+            "X-Model-Authorization": self.auth_token,
         }
 
     def get_nemo_client(self) -> AsyncNeMoMicroservices:
@@ -678,51 +682,74 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             "prompts": [],
         }
 
-        # Add rail types to flows
-        for rail_type in rail_types:
-            if rail_type == "content_safety_input":
-                params["rails"]["input"]["flows"].append("content safety check input")
-            elif rail_type == "content_safety_output":
-                params["rails"]["output"]["flows"].append("content safety check output")
-            elif rail_type == "topic_control":
-                params["rails"]["input"]["flows"].append("topic safety check input")
-            elif rail_type == "jailbreak_detection":
-                params["rails"]["input"]["flows"].append("jailbreak detection")
-            elif rail_type == "self_check_input":
-                params["rails"]["input"]["flows"].append("self check input")
-            elif rail_type == "self_check_output":
-                params["rails"]["output"]["flows"].append("self check output")
-            elif rail_type == "self_check_hallucination":
-                params["rails"]["output"]["flows"].append("self check hallucination")
+        # Configure content safety rails
+        if "content_safety_input" in rail_types or "content_safety_output" in rail_types:
+            params["models"].append(
+                {
+                    "type": "content_safety",
+                    "engine": "nim",
+                    "model": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+                    "parameters": {
+                        "base_url": GUARDRAIL_MODEL_INTERNAL_URL,
+                    },
+                }
+            )
 
-        # Add prompts
         if "content_safety_input" in rail_types:
+            params["rails"]["input"]["flows"].append("content safety check input $model=content_safety")
             content_safety_prompt = config_data.get("04_content_safety_prompt", DEFAULT_CONTENT_SAFETY_PROMPT)
-            params["prompts"].append({"task": "content_safety_check_input", "content": content_safety_prompt})
+            params["prompts"].append(
+                {"task": "content_safety_check_input $model=content_safety", "content": content_safety_prompt}
+            )
 
         if "content_safety_output" in rail_types:
+            params["rails"]["output"]["flows"].append("content safety check output $model=content_safety")
             content_safety_prompt = config_data.get("04_content_safety_prompt", DEFAULT_CONTENT_SAFETY_PROMPT)
-            params["prompts"].append({"task": "content_safety_check_output", "content": content_safety_prompt})
+            params["prompts"].append(
+                {"task": "content_safety_check_output $model=content_safety", "content": content_safety_prompt}
+            )
+
+        # Configure topic control rail
 
         if "topic_control" in rail_types:
+            params["models"].append(
+                {
+                    "type": "topic_control",
+                    "engine": "nim",
+                    "model": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+                    "parameters": {
+                        "base_url": GUARDRAIL_MODEL_INTERNAL_URL,
+                    },
+                }
+            )
+            params["rails"]["input"]["flows"].append("topic safety check input $model=topic_control")
             topic_control_prompt = config_data.get("05_topic_control_prompt", DEFAULT_TOPIC_CONTROL_PROMPT)
-            params["prompts"].append({"task": "topic_safety_check_input", "content": topic_control_prompt})
+            params["prompts"].append(
+                {"task": "topic_safety_check_input $model=topic_control", "content": topic_control_prompt}
+            )
 
+        # Configure jailbreak detection rail
+        if "jailbreak_detection" in rail_types:
+            params["rails"]["input"]["flows"].append("jailbreak detection")
+            params["rails"]["input"]["flows"].append("jailbreak detection heuristics")
+
+        # Configure self check input rail
         if "self_check_input" in rail_types:
+            params["rails"]["input"]["flows"].append("self check input")
             self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
             params["prompts"].append({"task": "self_check_input", "content": self_check_prompt})
 
+        # Configure self check output rail
         if "self_check_output" in rail_types:
+            params["rails"]["output"]["flows"].append("self check output")
             self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
             params["prompts"].append({"task": "self_check_output", "content": self_check_prompt})
 
+        # Configure self check hallucination rail
         if "self_check_hallucination" in rail_types:
+            params["rails"]["output"]["flows"].append("self check hallucination")
             self_check_prompt = config_data.get("06_self_check_prompt", DEFAULT_SELF_CHECK_PROMPT)
             params["prompts"].append({"task": "self_check_hallucination", "content": self_check_prompt})
-
-        # Add jailbreak detection
-        if "jailbreak_detection" in rail_types:
-            params["rails"]["input"]["flows"].append("jailbreak detection heuristics")
 
         logger.debug(f"Built guardrails params: {json.dumps(params, indent=2)}")
         return params
@@ -1132,7 +1159,6 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         # Validate configuration
         base_url_required = "Base URL is required"
         auth_token_required = "Authentication token is required"  # noqa: S105
-        config_required = "Guardrails configuration is required"
         namespace_required = "Namespace is required"
         model_required = "Model selection is required"
 
@@ -1141,11 +1167,11 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             raise ValueError(model_required)
 
         # temp fix for config
-        config = self.config or "self-check"
+        config = self.config or "content-safety"
 
-        if not hasattr(self, "config") or not self.config:
-            logger.error("Guardrails configuration is required but not set")
-            raise ValueError(config_required)
+        # if not hasattr(self, "config") or not self.config:
+        #    logger.error("Guardrails configuration is required but not set")
+        #    raise ValueError(config_required)
 
         if not hasattr(self, "base_url") or not self.base_url:
             logger.error("Base URL is required but not set")
