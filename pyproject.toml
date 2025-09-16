@@ -129,7 +129,7 @@ dependencies = [
     "jigsawstack==0.2.7",
     "aiosqlite==0.21.0",
     "fastparquet>=2024.11.0",
-    "nemo-microservices>=1.0.1",
+    "nemo-microservices>=1.2.0",
     "arize>=7.48.1",
 ]
 
