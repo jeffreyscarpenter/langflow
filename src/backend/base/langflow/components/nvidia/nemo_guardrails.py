@@ -146,7 +146,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
     auth_token: str = Field(description="Authentication token for NeMo microservices")
     config_id: str = Field(description="Guardrails configuration ID")
     model_name: str = Field(description="Model name to use")
-    stream: bool = Field(default=False, description="Whether to stream responses")
+    streaming: bool = Field(default=False, description="Whether to stream responses")
     max_tokens: int = Field(default=1024, description="Maximum tokens to generate")
     temperature: float = Field(default=0.7, description="Temperature for generation")
     top_p: float = Field(default=0.9, description="Top-p for generation")
@@ -157,7 +157,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
         self.client = AsyncNeMoMicroservices(base_url=self.base_url)
         logger.info(
             f"Initialized GuardrailsMicroserviceModel with config_id: {self.config_id}, "
-            f"model: {self.model_name}, stream: {self.stream}"
+            f"model: {self.model_name}, streaming: {self.streaming}"
         )
         logger.debug(
             f"LLM parameters: max_tokens={self.max_tokens}, temperature={self.temperature}, top_p={self.top_p}"
@@ -216,15 +216,18 @@ class GuardrailsMicroserviceModel(BaseChatModel):
                     messages.append({"role": "system", "content": msg.content})
                 elif isinstance(msg, AIMessage):
                     messages.append({"role": "assistant", "content": msg.content})
-                else:
+                # Handle case where msg might not have content attribute
+                elif hasattr(msg, "content"):
                     messages.append({"role": "user", "content": str(msg.content)})
+                else:
+                    messages.append({"role": "user", "content": str(msg)})
         else:
             # Handle dict format (backward compatibility)
             messages = inputs.get("messages", [])
 
         logger.info(
             f"Invoking guardrails microservice with config_id: {self.config_id}, "
-            f"model: {self.model_name}, stream: {self.stream}"
+            f"model: {self.model_name}, streaming: {self.streaming}"
         )
         logger.debug(f"Input messages: {messages}")
 
@@ -237,7 +240,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
                 "max_tokens": self.max_tokens,
                 "temperature": self.temperature,
                 "top_p": self.top_p,
-                "stream": self.stream,
+                "stream": self.streaming,
                 **kwargs,
             }
 
@@ -253,7 +256,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
                 "max_tokens": self.max_tokens,
                 "temperature": self.temperature,
                 "top_p": self.top_p,
-                "stream": self.stream,
+                "stream": self.streaming,
                 **kwargs,
             }
 
@@ -261,13 +264,25 @@ class GuardrailsMicroserviceModel(BaseChatModel):
             logger.debug(f"Response received: {type(response)}")
 
             # Extract content from response
+            content = None
             if hasattr(response, "choices") and response.choices:
-                content = response.choices[0].message.content
+                choice = response.choices[0]
+                if hasattr(choice, "message") and hasattr(choice.message, "content"):
+                    content = choice.message.content
+                elif hasattr(choice, "content"):
+                    content = choice.content
             elif hasattr(response, "content"):
                 content = response.content
             elif isinstance(response, dict) and "choices" in response:
-                content = response["choices"][0]["message"]["content"]
-            else:
+                choice = response["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    content = choice["message"]["content"]
+                elif "content" in choice:
+                    content = choice["content"]
+
+            # Fallback if content extraction failed
+            if content is None:
+                logger.warning(f"Could not extract content from response: {response}")
                 content = str(response)
 
             # Create AIMessage with metadata
@@ -344,7 +359,7 @@ class GuardrailsMicroserviceModel(BaseChatModel):
             auth_token=self.auth_token,
             config_id=self.config_id,
             model_name=self.model_name,
-            stream=self.stream,
+            streaming=self.streaming,
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             top_p=self.top_p,
@@ -354,6 +369,202 @@ class GuardrailsMicroserviceModel(BaseChatModel):
         """Support for tool binding (if needed)."""
         # For now, return self as tools may not be supported in guardrails
         return self
+
+    def stream(self, inputs, **kwargs):
+        """Stream method required for LangChain streaming interface."""
+        # This method is called by LangChain when streaming is enabled
+        # It should return an iterator that yields chunks
+        if not self.streaming:
+            # If streaming is disabled, just return the result as a single chunk
+            result = self.invoke(inputs, **kwargs)
+            if hasattr(result, "content"):
+                yield result.content
+            else:
+                yield str(result)
+            return
+
+        # For real streaming, we need to handle the async streaming from NeMo
+        try:
+            # Convert inputs to messages format
+            if isinstance(inputs, list):
+                messages = inputs
+            elif isinstance(inputs, dict) and "messages" in inputs:
+                messages = []
+                for msg in inputs["messages"]:
+                    if isinstance(msg, dict):
+                        if msg.get("role") == "user":
+                            messages.append(HumanMessage(content=msg["content"]))
+                        elif msg.get("role") == "system":
+                            messages.append(SystemMessage(content=msg["content"]))
+                        elif msg.get("role") == "assistant":
+                            messages.append(AIMessage(content=msg["content"]))
+                        else:
+                            messages.append(HumanMessage(content=str(msg.get("content", ""))))
+                    else:
+                        messages.append(msg)
+            else:
+                messages = [HumanMessage(content=str(inputs))]
+
+            # Use asyncio to run the async streaming
+            import asyncio
+
+            # Create a wrapper function to collect all chunks from the async generator
+            def collect_chunks():
+                async def _collect():
+                    return [chunk async for chunk in self._astream_impl(messages, **kwargs)]
+
+                try:
+                    asyncio.get_running_loop()
+                    # We're in an async context, use ThreadPoolExecutor
+                    import concurrent.futures
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(lambda: asyncio.run(_collect()))
+                        return future.result()
+                except RuntimeError:
+                    # No event loop running, we can create one
+                    return asyncio.run(_collect())
+
+            # Create a proper chunk class that Langflow expects
+            # The streaming system expects chunks with .content attribute
+            class Chunk:
+                def __init__(self, content):
+                    self.content = content
+
+            # Get all chunks and yield them as proper message chunks
+            debug_chunk_limit = 3
+            for chunk_count, chunk in enumerate(collect_chunks(), 1):
+                if chunk_count <= debug_chunk_limit:
+                    logger.info(f"Stream yielding chunk {chunk_count}: '{chunk}'")
+                yield Chunk(chunk)
+
+        except (RuntimeError, AttributeError, TypeError) as e:
+            logger.error(f"Error in stream method: {e}")
+            yield f"Error: {e!s}"
+
+    async def _astream_impl(self, messages, **kwargs):
+        """Async implementation of streaming."""
+        try:
+            # Convert LangChain messages to the format expected by NeMo API
+            nemo_messages = []
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    nemo_messages.append({"role": "user", "content": msg.content})
+                elif isinstance(msg, SystemMessage):
+                    nemo_messages.append({"role": "system", "content": msg.content})
+                elif isinstance(msg, AIMessage):
+                    nemo_messages.append({"role": "assistant", "content": msg.content})
+                # Handle case where msg might not have content attribute
+                elif hasattr(msg, "content"):
+                    nemo_messages.append({"role": "user", "content": str(msg.content)})
+                else:
+                    nemo_messages.append({"role": "user", "content": str(msg)})
+
+            logger.info(
+                f"Starting streaming with config_id: {self.config_id}, "
+                f"model: {self.model_name}, streaming: {self.streaming}"
+            )
+
+            # Prepare the request payload
+            payload = {
+                "model": self.model_name,
+                "messages": nemo_messages,
+                "guardrails": {"config_id": self.config_id},
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "stream": True,  # Force streaming for this method
+                **kwargs,
+            }
+
+            # Prepare parameters for the client call
+            client_params = {
+                "model": self.model_name,
+                "messages": nemo_messages,
+                "guardrails": {"config_id": self.config_id},
+                "extra_headers": self.get_auth_headers(),
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "stream": True,  # Force streaming
+                **kwargs,
+            }
+
+            # Use the microservice client for streaming
+            logger.debug(f"Making streaming request with payload: {json.dumps(payload, indent=2)}")
+
+            # According to NeMo documentation, streaming is done with regular create method + stream=True
+            # The client should handle the streaming internally when stream=True is passed
+            try:
+                logger.info("Attempting streaming with regular create method...")
+                # Use the regular create method - the client should handle streaming internally
+                # The create method returns a coroutine, so we need to await it
+                stream_response = await self.client.guardrail.chat.completions.create(**client_params)
+
+                # Log the response type and structure for debugging
+                logger.info(f"Response type: {type(stream_response)}")
+                logger.info(f"Response attributes: {dir(stream_response)}")
+
+                # Check if the response is iterable (streaming response)
+                if hasattr(stream_response, "__aiter__"):
+                    logger.info("Response is async iterable, processing streaming chunks...")
+                    chunk_count = 0
+                    async for chunk in stream_response:
+                        chunk_count += 1
+
+                        # Extract content from the chunk - simplified approach
+                        content = None
+
+                        # Try to get content from the chunk
+                        try:
+                            if hasattr(chunk, "choices") and chunk.choices:
+                                choice = chunk.choices[0]
+                                if hasattr(choice, "delta") and hasattr(choice.delta, "content"):
+                                    content = choice.delta.content
+                        except (AttributeError, IndexError, KeyError):
+                            pass
+
+                        # Only yield if we have actual content (not empty string)
+                        if content and content.strip():
+                            yield content
+                else:
+                    # Response is not iterable, treat as single response
+                    logger.info("Response is not iterable, treating as single response...")
+                    logger.info(f"Response content: {stream_response}")
+
+                    # Extract content from single response
+                    content = None
+                    if hasattr(stream_response, "choices") and stream_response.choices:
+                        choice = stream_response.choices[0]
+                        if hasattr(choice, "message") and hasattr(choice.message, "content"):
+                            content = choice.message.content
+                        elif hasattr(choice, "content"):
+                            content = choice.content
+                    elif hasattr(stream_response, "content"):
+                        content = stream_response.content
+
+                    if content:
+                        # Simulate streaming by yielding in chunks
+                        chunk_size = 50
+                        for i in range(0, len(content), chunk_size):
+                            yield content[i : i + chunk_size]
+                    else:
+                        logger.warning(f"No content found in response. Response: {stream_response}")
+                        yield "No content found in response"
+
+            except (RuntimeError, AttributeError, TypeError, ValueError) as stream_error:
+                logger.warning(f"Error with streaming: {stream_error}")
+                # If streaming fails, just return an error message
+                yield f"Error: {stream_error!s}"
+                return
+
+        except (RuntimeError, AttributeError, TypeError, ValueError) as e:
+            logger.error(f"Error during streaming: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            if hasattr(e, "response") and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            yield f"Error: {e!s}"
 
 
 class NVIDIANeMoGuardrailsComponent(LCModelComponent):
@@ -1185,7 +1396,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             auth_token=self.auth_token,
             config_id=config,
             model_name=self.model,
-            stream=self.stream,
+            streaming=self.stream,
             max_tokens=getattr(self, "max_tokens", 1024),
             temperature=getattr(self, "temperature", 0.7),
             top_p=getattr(self, "top_p", 0.9),
