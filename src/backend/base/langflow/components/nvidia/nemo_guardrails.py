@@ -2,7 +2,6 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from loguru import logger
@@ -25,7 +24,8 @@ from langflow.io import MessageTextInput, Output
 from langflow.schema.dotdict import dotdict
 from langflow.schema.message import Message
 
-GUARDRAIL_MODEL_INTERNAL_URL = "http://ai-platform-proxy.ai-platform.svc.cluster.local:8080/v1"
+# GUARDRAIL_MODEL_INTERNAL_URL = "http://ai-platform-proxy.ai-platform.svc.cluster.local:8080/v1"
+GUARDRAIL_MODEL_INTERNAL_URL = "http://nvidia-nim-proxy-nemo-nim-proxy.nvidia-nim-proxy.svc.cluster.local:8000/v1"
 
 # Default prompts (shared between components)
 DEFAULT_CONTENT_SAFETY_PROMPT = (
@@ -241,66 +241,49 @@ class GuardrailsMicroserviceModel(BaseChatModel):
                 **kwargs,
             }
 
-            if self.stream:
-                # For streaming, we'll use the chat completions endpoint
-                chat_url = f"{self.base_url}/v1/guardrail/chat/completions"
-                logger.debug(f"Making streaming request to: {chat_url}")
-                logger.debug(f"Request payload: {json.dumps(payload, indent=2)}")
+            # Use the microservice client for both streaming and non-streaming
+            logger.debug(f"Making request with payload: {json.dumps(payload, indent=2)}")
 
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(chat_url, json=payload, headers=self.get_auth_headers(), timeout=30.0)
-                    logger.debug(f"Streaming response status: {response.status_code}")
-                    response.raise_for_status()
-                    result = response.json()
-                    logger.debug(f"Streaming response: {json.dumps(result, indent=2)}")
-                    return result
+            # Prepare parameters for the client call
+            client_params = {
+                "model": self.model_name,
+                "messages": messages,
+                "guardrails": {"config_id": self.config_id},
+                "extra_headers": self.get_auth_headers(),
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "stream": self.stream,
+                **kwargs,
+            }
+
+            response = await self.client.guardrail.chat.completions.create(**client_params)
+            logger.debug(f"Response received: {type(response)}")
+
+            # Extract content from response
+            if hasattr(response, "choices") and response.choices:
+                content = response.choices[0].message.content
+            elif hasattr(response, "content"):
+                content = response.content
+            elif isinstance(response, dict) and "choices" in response:
+                content = response["choices"][0]["message"]["content"]
             else:
-                # For non-streaming, use the microservice client
-                logger.debug(f"Making non-streaming request with payload: {json.dumps(payload, indent=2)}")
+                content = str(response)
 
-                # Prepare parameters for the client call
-                client_params = {
-                    "model": self.model_name,
-                    "messages": messages,
-                    "guardrails": {"config_id": self.config_id},
-                    "extra_headers": self.get_auth_headers(),
-                    "max_tokens": self.max_tokens,
-                    "temperature": self.temperature,
-                    "top_p": self.top_p,
-                    "stream": self.stream,
-                    **kwargs,
-                }
+            # Create AIMessage with metadata
+            metadata = {}
+            if hasattr(response, "usage"):
+                metadata["usage"] = response.usage
+            if hasattr(response, "model"):
+                metadata["model"] = response.model
 
-                response = await self.client.guardrail.chat.completions.create(**client_params)
-                logger.debug(f"Non-streaming response received: {type(response)}")
-
-                # Extract content from response
-                if hasattr(response, "choices") and response.choices:
-                    content = response.choices[0].message.content
-                elif hasattr(response, "content"):
-                    content = response.content
-                elif isinstance(response, dict) and "choices" in response:
-                    content = response["choices"][0]["message"]["content"]
-                else:
-                    content = str(response)
-
-                # Create AIMessage with metadata
-                metadata = {}
-                if hasattr(response, "usage"):
-                    metadata["usage"] = response.usage
-                if hasattr(response, "model"):
-                    metadata["model"] = response.model
-
-                return AIMessage(content=content, response_metadata=metadata)
-        except httpx.HTTPStatusError as exc:
-            logger.error(f"HTTP error {exc.response.status_code} during guardrails inference")
-            logger.error(f"Response text: {exc.response.text}")
-            raise
-        except httpx.RequestError as exc:
-            logger.error(f"Request error during guardrails inference: {exc}")
-            raise
+            return AIMessage(content=content, response_metadata=metadata)
         except Exception as e:
-            logger.error(f"Unexpected error during guardrails inference: {e}")
+            logger.error(f"Error during guardrails inference: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            if hasattr(e, "response") and e.response:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
             raise
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # noqa: ARG002
@@ -950,33 +933,40 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
         logger.info(f"Processing validation in {validation_mode} mode")
 
         try:
-            # Validate using guardrail.chat.completions with guardrails
+            # Use the proper guardrail.check operation for validation
             client = self.get_nemo_client()
 
-            logger.debug("Making API call to guardrail.chat.completions for validation")
+            logger.debug("Making API call to guardrail.check for validation")
 
             # Determine message role based on validation mode
             role = "user" if validation_mode == "input" else "assistant"
 
-            # Use a minimal completion request to test validation
-            validation_response = await client.guardrail.chat.completions.create(
+            # Use the dedicated validation endpoint
+            validation_response = await client.guardrail.check(
                 messages=[{"role": role, "content": input_text}],
-                model="gpt-4o",  # Use a default model for validation
                 guardrails={"config_id": self.config},
-                max_tokens=1,  # Minimal tokens to just test validation
                 extra_headers=self.get_auth_headers(),
             )
 
             logger.debug(f"Validation response: {validation_response}")
 
             # Check if the response indicates blocking
-            # The response should contain information about whether the input was blocked
+            # The guardrail.check response should indicate whether validation passed or failed
+            if hasattr(validation_response, "blocked") and validation_response.blocked:
+                logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
+                self.status = f"{validation_mode.capitalize()} blocked by guardrails"
+                # Return error message with error=True and category="error"
+                return {
+                    "validated_output": Message(
+                        text=f"I cannot process that {validation_mode}.", error=True, category="error"
+                    )
+                }
             if hasattr(validation_response, "choices") and validation_response.choices:
+                # Fallback to checking choices if blocked field not available
                 choice = validation_response.choices[0]
                 if hasattr(choice, "finish_reason") and choice.finish_reason == "guardrail_blocked":
                     logger.info(f"{validation_mode.capitalize()} blocked by guardrails")
                     self.status = f"{validation_mode.capitalize()} blocked by guardrails"
-                    # Return error message with error=True and category="error"
                     return {
                         "validated_output": Message(
                             text=f"I cannot process that {validation_mode}.", error=True, category="error"
