@@ -738,35 +738,134 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
             base_url=self.base_url,
         )
 
+    # Constants for pagination safety checks
+    MAX_CONSECUTIVE_SAME_COUNT = 3
+    MAX_PAGES_FALLBACK = 10
+    MAX_PAGES_SAFETY_LIMIT = 100
+
     async def fetch_guardrails_configs(self) -> tuple[list[str], list[dict[str, Any]]]:
-        """Fetch available guardrails configurations with metadata."""
+        """Fetch available guardrails configurations with metadata using pagination.
+
+        Note: The guardrails microservice as of 25.09 release has a pagination bug where it returns
+        the same 10 configurations on every page instead of different ones. This method
+        works around this bug by detecting duplicate configurations and stopping pagination
+        early to prevent infinite loops and duplicate results.
+        """
         namespace = getattr(self, "namespace", "default")
         logger.info(f"Fetching guardrails configs from {self.base_url} with namespace: {namespace}")
         try:
             nemo_client = self.get_nemo_client()
-            logger.debug(f"Making API call to guardrail.configs.list with namespace: {namespace}")
-            response = await nemo_client.guardrail.configs.list(extra_headers=self.get_auth_headers())
             configs = []
             configs_metadata = []
+            seen_configs = set()  # Track seen config names to avoid duplicates
+            page = 1
+            has_more_pages = True
+            last_page_item_count = 0
+            consecutive_same_count = 0
 
-            if hasattr(response, "data") and response.data:
-                logger.debug(f"Found {len(response.data)} configs in response")
-                for config in response.data:
-                    config_name = getattr(config, "name", "")
-                    config_description = getattr(config, "description", "")
-                    config_created = getattr(config, "created", None)
-                    config_updated = getattr(config, "updated", None)
+            while has_more_pages:
+                logger.debug(f"Fetching page {page}")
+                response = await nemo_client.guardrail.configs.list(page=page, extra_headers=self.get_auth_headers())
 
-                    logger.debug(f"Processing config: {config_name}")
+                if hasattr(response, "data") and response.data:
+                    current_page_item_count = len(response.data)
+                    logger.debug(f"Found {current_page_item_count} configs on page {page}")
 
-                    if config_name:
-                        configs.append(config_name)
-                        # Build metadata for this config
-                        metadata = self._build_config_metadata(config_description, config_created, config_updated)
-                        configs_metadata.append(metadata)
-                        logger.debug(f"Added config: {config_name}")
+                    # Check if we're getting the same number of items repeatedly (possible loop)
+                    # This is a workaround for the guardrails API bug where it returns the same data on every page
+                    if current_page_item_count == last_page_item_count and current_page_item_count > 0:
+                        consecutive_same_count += 1
+                        logger.debug(
+                            f"Same item count as last page ({current_page_item_count}), "
+                            f"consecutive count: {consecutive_same_count}"
+                        )
+                        if consecutive_same_count >= self.MAX_CONSECUTIVE_SAME_COUNT:
+                            logger.warning(
+                                f"Getting same item count ({current_page_item_count}) repeatedly, "
+                                f"stopping pagination to prevent loop"
+                            )
+                            has_more_pages = False
+                            break
+                    else:
+                        consecutive_same_count = 0
 
-            logger.info(f"Successfully fetched {len(configs)} guardrails configurations")
+                    last_page_item_count = current_page_item_count
+                    new_configs_count = 0
+
+                    for config in response.data:
+                        config_name = getattr(config, "name", "")
+                        config_description = getattr(config, "description", "")
+                        config_created = getattr(config, "created", None)
+                        config_updated = getattr(config, "updated", None)
+
+                        logger.debug(f"Processing config: {config_name}")
+
+                        if config_name and config_name not in seen_configs:
+                            configs.append(config_name)
+                            # Build metadata for this config
+                            metadata = self._build_config_metadata(config_description, config_created, config_updated)
+                            configs_metadata.append(metadata)
+                            seen_configs.add(config_name)
+                            new_configs_count += 1
+                            logger.debug(f"Added config: {config_name}")
+                        elif config_name in seen_configs:
+                            # Skip duplicates caused by the API pagination bug
+                            logger.debug(f"Skipping duplicate config: {config_name}")
+
+                    # If we didn't get any new unique configs on this page, we might be done
+                    if new_configs_count == 0:
+                        logger.debug(f"No new unique configs found on page {page}, stopping pagination")
+                        has_more_pages = False
+                        break
+                else:
+                    logger.debug(f"No configs found on page {page}")
+                    # If we get no data, we've definitely reached the end
+                    has_more_pages = False
+                    logger.debug("No data found, stopping pagination")
+                    break
+
+                # Check if there are more pages using the correct pagination structure
+                has_more_pages = False
+
+                # Strategy 1: Check pagination object (primary method based on API structure)
+                if hasattr(response, "pagination") and response.pagination:
+                    pagination = response.pagination
+                    if hasattr(pagination, "total_pages") and hasattr(pagination, "page"):
+                        has_more_pages = pagination.page < pagination.total_pages
+                        logger.debug(
+                            f"Using pagination page comparison: {pagination.page} < "
+                            f"{pagination.total_pages} = {has_more_pages}"
+                        )
+                    elif hasattr(pagination, "has_next") and pagination.has_next is not None:
+                        has_more_pages = bool(pagination.has_next)
+                        logger.debug(f"Using pagination.has_next field: {has_more_pages}")
+
+                # Strategy 2: Check for has_next field directly on response (fallback)
+                elif hasattr(response, "has_next") and response.has_next is not None:
+                    has_more_pages = bool(response.has_next)
+                    logger.debug(f"Using has_next field: {has_more_pages}")
+
+                # Strategy 3: Check if we got no data (indicates end of data)
+                elif len(response.data) == 0:
+                    has_more_pages = False
+                    logger.debug(f"Using data length comparison: {len(response.data)} == 0 = {has_more_pages}")
+
+                # Strategy 4: Conservative fallback - stop if we've hit a reasonable limit
+                else:
+                    # Stop after a reasonable number of pages to prevent infinite loops
+                    has_more_pages = page < self.MAX_PAGES_FALLBACK
+                    logger.debug(f"Using fallback page limit: page < {self.MAX_PAGES_FALLBACK} = {has_more_pages}")
+
+                logger.debug(f"has_more_pages: {has_more_pages}")
+
+                page += 1
+
+                # Safety check to prevent infinite loops
+                if page > self.MAX_PAGES_SAFETY_LIMIT:
+                    logger.warning("Reached maximum page limit (100), stopping pagination")
+                    break
+
+            logger.info(f"Successfully fetched {len(configs)} guardrails configurations across {page - 1} pages")
             return configs, configs_metadata  # noqa: TRY300
 
         except Exception as e:  # noqa: BLE001
