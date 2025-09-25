@@ -71,6 +71,50 @@ DEFAULT_CONTENT_SAFETY_PROMPT = (
     "Output JSON:"
 )
 
+DEFAULT_CONTENT_SAFETY_OUTPUT_PROMPT = (
+    "Task: Check if there is unsafe content in the user or agent messages in the below conversation "
+    "in accordance with our safety policy with the below categories. "
+    "Provide a 'safe' or 'unsafe' rating for both the user message and the agent response. "
+    "If there is unsafe content, please also provide a list of violated categories "
+    "according to our safety policy below.\n\n"
+    "<BEGIN UNSAFE CONTENT CATEGORIES>\n"
+    "S1: Violence.\n"
+    "S2: Sexual.\n"
+    "S3: Criminal Planning/Confessions.\n"
+    "S4: Guns and Illegal Weapons.\n"
+    "S5: Controlled/Regulated Substances.\n"
+    "S6: Suicide and Self Harm.\n"
+    "S7: Sexual (minor).\n"
+    "S8: Hate/Identity Hate.\n"
+    "S9: PII/Privacy.\n"
+    "S10: Harassment.\n"
+    "S11: Threat.\n"
+    "S12: Profanity.\n"
+    "S13: Needs Caution.\n"
+    "S14: Other.\n"
+    "S15: Manipulation.\n"
+    "S16: Fraud/Deception.\n"
+    "S17: Malware.\n"
+    "S18: High Risk Gov Decision Making.\n"
+    "S19: Political/Misinformation/Conspiracy.\n"
+    "S20: Copyright/Trademark/Plagiarism.\n"
+    "S21: Unauthorized Advice.\n"
+    "S22: Illegal Activity.\n"
+    "S23: Immoral/Unethical.\n"
+    "<END UNSAFE CONTENT CATEGORIES>\n\n"
+    "<BEGIN CONVERSATION>\n\n"
+    "user: {{ user_input }}\n\n"
+    "response: agent: {{ bot_response }}\n\n"
+    "<END CONVERSATION>\n\n"
+    "Provide your safety assessment for the above conversation in the below output JSON format:\n"
+    '{"User Safety": safe or unsafe rating for the user message, '
+    '"Response Safety": safe or unsafe rating for the agent response. '
+    'Omit if no agent response present. "Safety Categories": a comma-separated list of '
+    "applicable safety categories from the provided taxonomy. Omit if all safe.}\n\n"
+    "Do not include anything other than the output JSON in your response.\n"
+    "Output JSON:"
+)
+
 DEFAULT_TOPIC_CONTROL_PROMPT = "Ensure that the input stays within the allowed discussion topics."
 
 DEFAULT_SELF_CHECK_PROMPT = """Instruction: {{ user_input }}
@@ -102,9 +146,10 @@ class GuardrailsConfigInput:
                         "02_config_description",
                         "03_rail_types",
                         "04_content_safety_prompt",
-                        "05_topic_control_prompt",
-                        "06_self_check_prompt",
-                        "07_off_topic_message",
+                        "05_content_safety_output_prompt",
+                        "06_topic_control_prompt",
+                        "07_self_check_prompt",
+                        "08_off_topic_message",
                     ],
                     "template": {
                         "01_config_name": StrInput(
@@ -138,26 +183,33 @@ class GuardrailsConfigInput:
                         ),
                         "04_content_safety_prompt": MultilineInput(
                             name="content_safety_prompt",
-                            display_name="Content Safety Prompt",
-                            info="Prompt for content safety checking",
+                            display_name="Content Safety Input Prompt",
+                            info="Prompt for content safety input checking",
                             value=DEFAULT_CONTENT_SAFETY_PROMPT,
                             required=False,
                         ),
-                        "05_topic_control_prompt": MultilineInput(
+                        "05_content_safety_output_prompt": MultilineInput(
+                            name="content_safety_output_prompt",
+                            display_name="Content Safety Output Prompt",
+                            info="Prompt for content safety output checking",
+                            value=DEFAULT_CONTENT_SAFETY_OUTPUT_PROMPT,
+                            required=False,
+                        ),
+                        "06_topic_control_prompt": MultilineInput(
                             name="topic_control_prompt",
                             display_name="Topic Control Prompt",
                             info="Prompt for topic control checking",
                             value=DEFAULT_TOPIC_CONTROL_PROMPT,
                             required=False,
                         ),
-                        "06_self_check_prompt": MultilineInput(
+                        "07_self_check_prompt": MultilineInput(
                             name="self_check_prompt",
                             display_name="Self Check Prompt",
                             info="Prompt for self-checking guardrails",
                             value=DEFAULT_SELF_CHECK_PROMPT,
                             required=False,
                         ),
-                        "07_off_topic_message": MultilineInput(
+                        "08_off_topic_message": MultilineInput(
                             name="off_topic_message",
                             display_name="Off-Topic Message",
                             info="Message to display when input is off-topic",
@@ -1034,12 +1086,14 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
 
         if "content_safety_output" in rail_types:
             params["rails"]["output"]["flows"].append("content safety check output $model=content_safety")
-            content_safety_prompt = config_data.get("04_content_safety_prompt", DEFAULT_CONTENT_SAFETY_PROMPT)
+            content_safety_output_prompt = config_data.get(
+                "05_content_safety_output_prompt", DEFAULT_CONTENT_SAFETY_OUTPUT_PROMPT
+            )
             params["prompts"].append(
                 {
                     "task": "content_safety_check_output $model=content_safety",
-                    "content": content_safety_prompt,
-                    "output_parser": "nemoguard_parse_prompt_safety",
+                    "content": content_safety_output_prompt,
+                    "output_parser": "nemoguard_parse_response_safety",
                     "max_tokens": 50,
                 }
             )
