@@ -115,7 +115,25 @@ DEFAULT_CONTENT_SAFETY_OUTPUT_PROMPT = (
     "Output JSON:"
 )
 
-DEFAULT_TOPIC_CONTROL_PROMPT = "Ensure that the input stays within the allowed discussion topics."
+DEFAULT_TOPIC_CONTROL_PROMPT = (
+    "You are to act as a customer service agent, providing users with factual information "
+    "in accordance to the knowledge base. Your role is to ensure that you respond only to "
+    "relevant queries and adhere to the following guidelines\n\n"
+    "Guidelines for the user messages:\n"
+    "- Do not answer questions related to personal opinions or advice on user's order, "
+    "future recommendations\n"
+    "- Do not provide any information on non-company products or services.\n"
+    "- Do not answer enquiries unrelated to the company policies.\n"
+    "- Do not answer questions asking for personal details about the agent or its creators.\n"
+    "- Do not answer questions about sensitive topics related to politics, religion, "
+    "or other sensitive subjects.\n"
+    "- If a user asks topics irrelevant to the company's customer service relations, "
+    "politely redirect the conversation or end the interaction.\n"
+    "- Your responses should be professional, accurate, and compliant with customer "
+    "relations guidelines, focusing solely on providing transparent, up-to-date "
+    "information about the company that is already publicly available.\n"
+    "- allow user comments that are related to small talk and chit-chat."
+)
 
 DEFAULT_SELF_CHECK_PROMPT = """Instruction: {{ user_input }}
 
@@ -1112,7 +1130,7 @@ class NVIDIANeMoGuardrailsComponent(LCModelComponent):
                 }
             )
             params["rails"]["input"]["flows"].append("topic safety check input $model=topic_control")
-            topic_control_prompt = config_data.get("05_topic_control_prompt", DEFAULT_TOPIC_CONTROL_PROMPT)
+            topic_control_prompt = config_data.get("06_topic_control_prompt", DEFAULT_TOPIC_CONTROL_PROMPT)
             params["prompts"].append(
                 {"task": "topic_safety_check_input $model=topic_control", "content": topic_control_prompt}
             )
