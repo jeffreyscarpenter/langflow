@@ -3,7 +3,7 @@ from enum import Enum
 
 import pandas as pd
 from fastapi.encoders import jsonable_encoder
-from loguru import logger
+from lfx.log.logger import logger
 from pydantic import BaseModel
 
 from langflow.schema.data import Data
@@ -76,7 +76,7 @@ def post_process_raw(raw, artifact_type: str):
                 raw = jsonable_encoder(raw, custom_encoder=CUSTOM_ENCODERS)
                 artifact_type = ArtifactType.OBJECT.value
             except Exception:  # noqa: BLE001
-                logger.opt(exception=True).debug(f"Error converting to json: {raw} ({type(raw)})")
+                logger.debug(f"Error converting to json: {raw} ({type(raw)})", exc_info=True)
                 raw = default_message
         else:
             raw = default_message

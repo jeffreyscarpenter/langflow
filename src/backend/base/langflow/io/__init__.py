@@ -1,9 +1,8 @@
-from langflow.inputs import (
+from lfx.io import (
     BoolInput,
     CodeInput,
     DataFrameInput,
     DataInput,
-    DatasetInput,
     DefaultPromptField,
     DictInput,
     DropdownInput,
@@ -28,14 +27,13 @@ from langflow.inputs import (
     TableInput,
     ToolsInput,
 )
-from langflow.template import Output
+from lfx.template import Output
 
 __all__ = [
     "BoolInput",
     "CodeInput",
     "DataFrameInput",
     "DataInput",
-    "DatasetInput",
     "DefaultPromptField",
     "DefaultPromptField",
     "DictInput",

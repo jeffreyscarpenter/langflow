@@ -1,4 +1,4 @@
-from .inputs import (
+from lfx.inputs.inputs import (
     AuthInput,
     BoolInput,
     CodeInput,
@@ -9,6 +9,7 @@ from .inputs import (
     DefaultPromptField,
     DictInput,
     DropdownInput,
+    FieldTypes,
     FileInput,
     FloatInput,
     HandleInput,
@@ -42,9 +43,9 @@ __all__ = [
     "DataInput",
     "DatasetInput",
     "DefaultPromptField",
-    "DefaultPromptField",
     "DictInput",
     "DropdownInput",
+    "FieldTypes",
     "FileInput",
     "FloatInput",
     "HandleInput",
